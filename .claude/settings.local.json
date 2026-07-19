@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node node_modules/.bin/tsc:*)",
+      "Bash(npx tsc:*)",
+      "Bash(/usr/local/bin/npx tsc --noEmit)",
+      "Bash(tree:*)",
+      "Bash(bash:*)"
+    ]
+  }
+}

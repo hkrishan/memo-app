@@ -1,0 +1,373 @@
+import React, { memo, useCallback, useMemo, useState } from "react";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Dimensions,
+  Text,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+} from "react-native";
+import { Image } from "expo-image";
+import { Video, ResizeMode } from "expo-av";
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated from "react-native-reanimated";
+import { AlbumPagePost, AlbumPagePostMedia } from "../types/post.types";
+import {
+  useLikePostMutation,
+  useUnlikePostMutation,
+} from "../api/pagePost.queries";
+
+const AnimatedScrollView = Animated.ScrollView;
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const MEDIA_SIZE = SCREEN_WIDTH;
+
+interface PostCardProps {
+  post: AlbumPagePost;
+  albumId: string;
+  pageId: string;
+  onCommentsPress?: (postId: string) => void;
+}
+
+const formatCount = (count: number): string => {
+  if (count >= 1000000) {
+    return `${(count / 1000000).toFixed(1)}M`;
+  }
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}K`;
+  }
+  return count.toString();
+};
+
+const formatTimeAgo = (date: Date | string): string => {
+  const now = Date.now();
+  const postTime = new Date(date).getTime();
+  const diffMs = now - postTime;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
+  return new Date(date).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const MediaItem = memo<{
+  media: AlbumPagePostMedia;
+}>(({ media }) => {
+  if (media.mediaType === "video") {
+    return (
+      <View style={styles.mediaContainer}>
+        <Video
+          source={{ uri: media.url }}
+          style={styles.media}
+          resizeMode={ResizeMode.COVER}
+          useNativeControls
+          isLooping={false}
+          posterSource={
+            media.thumbnailUrl ? { uri: media.thumbnailUrl } : undefined
+          }
+          usePoster={!!media.thumbnailUrl}
+        />
+        <View style={styles.videoIndicator}>
+          <Ionicons name="play-circle" size={48} color="rgba(255,255,255,0.9)" />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.mediaContainer}>
+      <Image
+        source={{ uri: media.url }}
+        style={styles.media}
+        contentFit="cover"
+        transition={200}
+      />
+    </View>
+  );
+});
+
+const MediaCarousel = memo<{
+  media: AlbumPagePostMedia[];
+  onDoubleTap: () => void;
+}>(({ media, onDoubleTap }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const sortedMedia = useMemo(
+    () => [...media].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+    [media]
+  );
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetX = event.nativeEvent.contentOffset.x;
+      const index = Math.round(offsetX / MEDIA_SIZE);
+      setCurrentIndex(index);
+    },
+    []
+  );
+
+  const doubleTapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .onEnd(() => {
+          onDoubleTap();
+        })
+        .runOnJS(true),
+    [onDoubleTap]
+  );
+
+  if (sortedMedia.length === 1) {
+    return (
+      <GestureDetector gesture={doubleTapGesture}>
+        <Animated.View>
+          <MediaItem media={sortedMedia[0]} />
+        </Animated.View>
+      </GestureDetector>
+    );
+  }
+
+  return (
+    <View style={styles.carouselWrapper}>
+      <GestureDetector gesture={doubleTapGesture}>
+        <AnimatedScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          decelerationRate="fast"
+          snapToInterval={MEDIA_SIZE}
+          snapToAlignment="start"
+        >
+          {sortedMedia.map((item) => (
+            <MediaItem key={item.mediaId} media={item} />
+          ))}
+        </AnimatedScrollView>
+      </GestureDetector>
+
+      {/* Page indicator dots */}
+      <View style={styles.dotsContainer}>
+        {sortedMedia.map((_, index) => (
+          <View
+            key={index}
+            style={[
+              styles.dot,
+              index === currentIndex && styles.dotActive,
+            ]}
+          />
+        ))}
+      </View>
+
+      {/* Counter badge */}
+      <View style={styles.counterBadge}>
+        <Text style={styles.counterText}>
+          {currentIndex + 1}/{sortedMedia.length}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+const PostCard = memo<PostCardProps>(
+  ({ post, albumId, pageId, onCommentsPress }) => {
+    const likeMutation = useLikePostMutation();
+    const unlikeMutation = useUnlikePostMutation();
+
+    const isLiked = post.likedByCurrentUser ?? false;
+    const isLiking = likeMutation.isPending || unlikeMutation.isPending;
+
+    const handleLikePress = useCallback(() => {
+      if (isLiking) return;
+
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      if (isLiked) {
+        unlikeMutation.mutate({ albumId, pageId, postId: post.postId });
+      } else {
+        likeMutation.mutate({ albumId, pageId, postId: post.postId });
+      }
+    }, [isLiked, isLiking, albumId, pageId, post.postId, likeMutation, unlikeMutation]);
+
+    const handleCommentsPress = useCallback(() => {
+      onCommentsPress?.(post.postId);
+    }, [post.postId, onCommentsPress]);
+
+    const handleDoubleTap = useCallback(() => {
+      if (!isLiked && !isLiking) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        likeMutation.mutate({ albumId, pageId, postId: post.postId });
+      }
+    }, [isLiked, isLiking, albumId, pageId, post.postId, likeMutation]);
+
+    return (
+      <View style={styles.container}>
+        {/* Media carousel */}
+        <MediaCarousel media={post.media} onDoubleTap={handleDoubleTap} />
+
+        {/* Actions */}
+        <View style={styles.actionsRow}>
+          <Pressable
+            onPress={handleLikePress}
+            style={styles.actionButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={isLiked ? "heart" : "heart-outline"}
+              size={26}
+              color={isLiked ? "#e53935" : "#000"}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={handleCommentsPress}
+            style={styles.actionButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chatbubble-outline" size={24} color="#000" />
+          </Pressable>
+
+          <Pressable
+            style={styles.actionButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="paper-plane-outline" size={24} color="#000" />
+          </Pressable>
+        </View>
+
+        {/* Like count */}
+        {post.likeCount > 0 && (
+          <Text style={styles.likeCount}>
+            {formatCount(post.likeCount)} {post.likeCount === 1 ? "like" : "likes"}
+          </Text>
+        )}
+
+        {/* Caption */}
+        {post.caption && (
+          <Text style={styles.caption} numberOfLines={3}>
+            {post.caption}
+          </Text>
+        )}
+
+        {/* Comments preview */}
+        {post.commentCount > 0 && (
+          <Pressable onPress={handleCommentsPress}>
+            <Text style={styles.commentsLink}>
+              View {post.commentCount === 1 ? "1 comment" : `all ${post.commentCount} comments`}
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Timestamp */}
+        <Text style={styles.timestamp}>{formatTimeAgo(post.createdAt)}</Text>
+      </View>
+    );
+  }
+);
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: "#fff",
+    marginBottom: 24,
+  },
+  mediaContainer: {
+    width: MEDIA_SIZE,
+    height: MEDIA_SIZE,
+    backgroundColor: "#f0f0f0",
+    position: "relative",
+  },
+  media: {
+    width: "100%",
+    height: "100%",
+  },
+  videoIndicator: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -24 }, { translateY: -24 }],
+  },
+  carouselWrapper: {
+    position: "relative",
+  },
+  dotsContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 12,
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#d0d0d0",
+  },
+  dotActive: {
+    backgroundColor: "#007AFF",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  counterBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  counterText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 16,
+  },
+  actionButton: {
+    padding: 4,
+  },
+  likeCount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#000",
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  caption: {
+    fontSize: 14,
+    color: "#000",
+    lineHeight: 20,
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  commentsLink: {
+    fontSize: 14,
+    color: "#666",
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  timestamp: {
+    fontSize: 12,
+    color: "#999",
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+});
+
+export default PostCard;

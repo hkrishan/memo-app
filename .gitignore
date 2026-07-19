@@ -32,6 +32,10 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+.env.development
+.env.staging
+.env.production
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +43,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# large media assets (exceed GitHub 100 MiB limit)
+assets/memo-background-vid.mp4

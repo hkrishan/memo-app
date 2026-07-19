@@ -1,8 +1,6 @@
-import { registerRootComponent } from 'expo';
+// Performance instrumentation - mark startup as early as possible
+import { perf } from "@/lib/performance";
+perf.markStartup();
 
-import App from './App';
-
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+// Use expo-router as the app entry so navigation is driven from /src/app.
+import "expo-router/entry";
