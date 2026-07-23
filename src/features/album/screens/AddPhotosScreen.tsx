@@ -3,7 +3,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Pressable,
-  ScrollView,
+  FlatList,
   StatusBar,
   StyleSheet,
   View,
@@ -14,25 +14,11 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQueryClient } from "@tanstack/react-query";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  withDelay,
-  FadeIn,
-  FadeOut,
-  ZoomIn,
-  SlideOutLeft,
-  SlideInRight,
-} from "react-native-reanimated";
 
-import albumApi from "../api/album.api";
-import { photoKeys } from "../api/photo.queries";
-import { usePhotoAlbumStore } from "../store/photoAlbumStore";
 import { usePendingUploadsStore } from "../store/pendingUploadsStore";
+import { startUploadBatch } from "../store/uploadManager";
 import { useGetAlbumQuery } from "../api/album.queries";
+import { gpsFromExif } from "@/utils/image";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const NUM_COLUMNS = 3;
@@ -40,148 +26,27 @@ const GRID_SPACING = 2;
 const ITEM_SIZE =
   (SCREEN_WIDTH - GRID_SPACING * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
 
-// Animated component for showing current upload with success animation
-const AnimatedUploadPhoto = ({
-  uri,
-  isComplete,
-}: {
-  uri: string;
-  isComplete: boolean;
-}) => {
-  const successOpacity = useSharedValue(0);
-  const successScale = useSharedValue(0.5);
-  const checkScale = useSharedValue(0);
-
-  useEffect(() => {
-    if (isComplete) {
-      successOpacity.value = withTiming(1, { duration: 300 });
-      successScale.value = withSpring(1, { damping: 12, stiffness: 200 });
-      checkScale.value = withDelay(
-        150,
-        withSpring(1, { damping: 10, stiffness: 300 })
-      );
-    } else {
-      successOpacity.value = 0;
-      successScale.value = 0.5;
-      checkScale.value = 0;
-    }
-  }, [isComplete, successOpacity, successScale, checkScale]);
-
-  const successOverlayStyle = useAnimatedStyle(() => ({
-    opacity: successOpacity.value,
-    transform: [{ scale: successScale.value }],
-  }));
-
-  const checkmarkStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: checkScale.value }],
-  }));
-
-  return (
-    <View style={styles.uploadPhotoContainer}>
-      <Animated.View
-        entering={SlideInRight.duration(400).springify()}
-        exiting={SlideOutLeft.duration(300)}
-        style={styles.uploadPhotoWrapper}
-      >
-        <Image
-          source={{ uri }}
-          style={styles.uploadPhoto}
-          contentFit="cover"
-          transition={200}
-        />
-        {!isComplete && (
-          <Animated.View
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut.duration(200)}
-            style={styles.uploadingOverlay}
-          >
-            <View style={styles.uploadingSpinner}>
-              <ActivityIndicator size="large" color="#fff" />
-            </View>
-          </Animated.View>
-        )}
-        <Animated.View style={[styles.successOverlay, successOverlayStyle]}>
-          <Animated.View style={[styles.successCheckCircle, checkmarkStyle]}>
-            <Ionicons name="checkmark" size={40} color="#fff" />
-          </Animated.View>
-        </Animated.View>
-      </Animated.View>
-    </View>
-  );
-};
-
-// Progress dots showing upload queue
-const ProgressDots = ({
-  total,
-  current,
-  uploadedCount,
-}: {
-  total: number;
-  current: number;
-  uploadedCount: number;
-}) => {
-  const maxDots = Math.min(total, 7);
-  const dots = [];
-
-  for (let i = 0; i < maxDots; i++) {
-    const isCompleted = i < uploadedCount;
-    const isCurrent = i === current;
-    const isPending = i > current;
-
-    dots.push(
-      <Animated.View
-        key={i}
-        entering={ZoomIn.delay(i * 50).duration(200)}
-        style={[
-          styles.progressDot,
-          isCompleted && styles.progressDotCompleted,
-          isCurrent && styles.progressDotCurrent,
-          isPending && styles.progressDotPending,
-        ]}
-      >
-        {isCompleted && (
-          <Ionicons name="checkmark" size={10} color="#fff" />
-        )}
-      </Animated.View>
-    );
-  }
-
-  if (total > maxDots) {
-    dots.push(
-      <Animated.View
-        key="more"
-        entering={ZoomIn.delay(maxDots * 50).duration(200)}
-        style={styles.progressDotMore}
-      >
-        <Text style={styles.progressDotMoreText}>+{total - maxDots}</Text>
-      </Animated.View>
-    );
-  }
-
-  return <View style={styles.progressDotsContainer}>{dots}</View>;
-};
-
 const AddPhotosScreen: React.FC = () => {
-  const { albumId } = useLocalSearchParams<{ albumId: string }>();
+  const { albumId, autoPick } = useLocalSearchParams<{
+    albumId: string;
+    autoPick?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
   const { data: album } = useGetAlbumQuery(albumId as string);
 
-  // Get assets from store (set by GalleryPage before navigating here)
   const pendingAssets = usePendingUploadsStore((s) => s.assets);
+  const setPendingAssets = usePendingUploadsStore((s) => s.setAssets);
   const addPendingAssets = usePendingUploadsStore((s) => s.addAssets);
-  const clearPendingAssets = usePendingUploadsStore((s) => s.clearAssets);
   const removeAsset = usePendingUploadsStore((s) => s.removeAsset);
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
-  const [uploadedCount, setUploadedCount] = useState(0);
-  const [currentUploadUri, setCurrentUploadUri] = useState<string | null>(null);
   const uploadCompletedRef = useRef(false);
 
-  const addAssociation = usePhotoAlbumStore((state) => state.addAssociation);
+  // With autoPick, the gallery pushed this screen bare and the system
+  // picker runs from here — after its "Add", the picker keeps transcoding
+  // for a while before resolving, and this flag keeps a "Preparing"
+  // state up (instead of bouncing straight back) until it settles.
+  const [isPicking, setIsPicking] = useState(autoPick === "1");
 
   const inferMimeType = (fileName: string) => {
     const lower = fileName.toLowerCase();
@@ -194,91 +59,124 @@ const AddPhotosScreen: React.FC = () => {
     return "image/jpeg";
   };
 
-  const openImagePicker = useCallback(async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+  const openImagePicker = useCallback(
+    async (replaceSelection = false) => {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      quality: 1,
-      selectionLimit: 20,
-    });
-
-    if (!result.canceled && result.assets.length > 0) {
-      const assets = result.assets.map((asset) => {
-        const fileName = asset.fileName || asset.uri.split("/").pop() || "photo.jpg";
-        return {
-          uri: asset.uri,
-          fileName,
-          mimeType: asset.mimeType || inferMimeType(fileName),
-        };
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        // Compress before upload — full-res phone photos are several MB each
+        quality: 0.8,
+        // 0 = no selection cap — uploads run through the background manager
+        selectionLimit: 0,
+        // The re-encode strips file metadata — GPS must come from here
+        exif: true,
       });
-      addPendingAssets(assets);
-    }
-  }, [addPendingAssets]);
 
-  // Go back if no assets on initial mount (shouldn't happen normally)
-  // Skip if upload just completed (we handle navigation in handleUpload)
-  useEffect(() => {
-    if (pendingAssets.length === 0 && !uploadCompletedRef.current) {
-      router.back();
-    }
-  }, [pendingAssets.length, router]);
-
-  const handleUpload = useCallback(async () => {
-    if (!pendingAssets.length || uploading || !albumId) return;
-
-    setUploading(true);
-    setUploadError(null);
-    setUploadProgress({ current: 0, total: pendingAssets.length });
-    setUploadedCount(0);
-    setCurrentUploadUri(null);
-
-    try {
-      for (let i = 0; i < pendingAssets.length; i++) {
-        const asset = pendingAssets[i];
-
-        setCurrentUploadUri(asset.uri);
-        setUploadProgress({ current: i, total: pendingAssets.length });
-
-        await albumApi.uploadPhoto({
-          albumId: albumId as string,
-          fileUri: asset.uri,
-          fileName: asset.fileName,
-          mimeType: asset.mimeType,
+      if (!result.canceled && result.assets.length > 0) {
+        const assets = result.assets.map((asset) => {
+          const fileName = asset.fileName || asset.uri.split("/").pop() || "photo.jpg";
+          const gps = gpsFromExif(asset.exif);
+          return {
+            uri: asset.uri,
+            fileName,
+            mimeType: asset.mimeType || inferMimeType(fileName),
+            ...(gps ?? {}),
+          };
         });
-
-        addAssociation(asset.uri, albumId as string, album?.title ?? "Album");
-        setUploadedCount((prev) => prev + 1);
-
-        // Wait for success animation
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        // The entry pick replaces whatever a previous batch left behind
+        // (matching the old gallery-side setAssets); "Add more" appends
+        if (replaceSelection) {
+          setPendingAssets(assets);
+        } else {
+          addPendingAssets(assets);
+        }
       }
+    },
+    [addPendingAssets, setPendingAssets],
+  );
 
-      setUploadProgress({ current: pendingAssets.length, total: pendingAssets.length });
+  // autoPick entry: launch the system picker as soon as we're on screen
+  const autoPickStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoPick !== "1" || autoPickStartedRef.current) return;
+    autoPickStartedRef.current = true;
+    void (async () => {
+      try {
+        await openImagePicker(true);
+      } finally {
+        setIsPicking(false);
+      }
+    })();
+  }, [autoPick, openImagePicker]);
 
-      uploadCompletedRef.current = true;
-      clearPendingAssets();
-      queryClient.invalidateQueries({ queryKey: photoKeys.byAlbum(albumId) });
-      queryClient.invalidateQueries({ queryKey: ["albums", albumId] });
+  // Go back when there's nothing to show: picker canceled/denied, or no
+  // assets on mount without autoPick. Skip while the picker is still out,
+  // and once the batch has been handed off (we navigate back ourselves)
+  useEffect(() => {
+    if (pendingAssets.length === 0 && !isPicking && !uploadCompletedRef.current) {
       router.back();
-    } catch (error) {
-      console.error("Upload failed", error);
-      setUploadError("Failed to upload photos. Please try again.");
-    } finally {
-      setUploading(false);
-      setCurrentUploadUri(null);
     }
-  }, [addAssociation, album?.title, albumId, clearPendingAssets, pendingAssets, queryClient, router, uploading]);
+  }, [pendingAssets.length, isPicking, router]);
+
+  // Hand the whole batch to the global upload manager (which keeps the
+  // uploads running through backgrounding) and leave immediately — the
+  // floating progress pill takes over from here. Successful photos are
+  // removed from the pending list by the manager, so anything left after
+  // the batch settles is exactly what failed.
+  const handleUpload = useCallback(() => {
+    if (!pendingAssets.length || !albumId) return;
+    uploadCompletedRef.current = true;
+    startUploadBatch(albumId as string, album?.title ?? "Album", [
+      ...pendingAssets,
+    ]);
+    router.back();
+  }, [albumId, album?.title, pendingAssets, router]);
+
+  const keyExtractor = useCallback(
+    (asset: (typeof pendingAssets)[number]) => asset.uri,
+    [],
+  );
+
+  const renderPendingItem = useCallback(
+    ({ item: asset }: { item: (typeof pendingAssets)[number] }) => (
+      <View style={styles.gridItem}>
+        <Image
+          source={{ uri: asset.uri }}
+          style={styles.gridImage}
+          contentFit="cover"
+          recyclingKey={asset.uri}
+        />
+        <Pressable
+          style={styles.removeButton}
+          onPress={() => removeAsset(asset.uri)}
+        >
+          <Ionicons name="close" size={16} color="#fff" />
+        </Pressable>
+      </View>
+    ),
+    [removeAsset],
+  );
 
   const selectedCount = pendingAssets.length;
 
-  // Show nothing if no assets
+  // No assets yet: while the picker is out this sits behind the system
+  // sheet, and once it dismisses it covers the picker's transcoding wait
+  // (which can run a couple of seconds for big batches). Otherwise blank —
+  // the effect above navigates back.
   if (pendingAssets.length === 0) {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" />
+        {isPicking && (
+          <View style={styles.preparingContainer}>
+            <ActivityIndicator size="small" color="#666" />
+            <Text style={styles.preparingText}>Preparing photos...</Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -292,118 +190,53 @@ const AddPhotosScreen: React.FC = () => {
         <Text style={styles.headerTitle}>
           {selectedCount} photo{selectedCount !== 1 ? "s" : ""} selected
         </Text>
-        <Pressable style={styles.addMoreButton} onPress={openImagePicker}>
+        <Pressable
+          style={styles.addMoreButton}
+          onPress={() => openImagePicker()}
+        >
           <Ionicons name="add" size={18} color="#111" />
           <Text style={styles.addMoreText}>Add more</Text>
         </Pressable>
       </View>
 
-      {/* Selected photos grid */}
-      <ScrollView
+      {/* Selected photos grid — virtualized: selections can be huge now */}
+      <FlatList
+        data={pendingAssets}
+        keyExtractor={keyExtractor}
+        renderItem={renderPendingItem}
+        numColumns={NUM_COLUMNS}
         style={styles.scrollContainer}
         contentContainerStyle={styles.gridContainer}
         showsVerticalScrollIndicator={false}
-      >
-        {pendingAssets.map((asset) => (
-          <View key={asset.uri} style={styles.gridItem}>
-            <Image
-              source={{ uri: asset.uri }}
-              style={styles.gridImage}
-              contentFit="cover"
-            />
-            <Pressable
-              style={styles.removeButton}
-              onPress={() => removeAsset(asset.uri)}
-            >
-              <Ionicons name="close" size={16} color="#fff" />
-            </Pressable>
-          </View>
-        ))}
-      </ScrollView>
+        initialNumToRender={18}
+        maxToRenderPerBatch={12}
+        windowSize={7}
+        removeClippedSubviews
+      />
 
       {/* Footer */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
         <Pressable
-          style={[
-            styles.primaryButton,
-            (!selectedCount || uploading) && styles.buttonDisabled,
-          ]}
+          style={[styles.primaryButton, !selectedCount && styles.buttonDisabled]}
           onPress={handleUpload}
-          disabled={!selectedCount || uploading}
+          disabled={!selectedCount}
         >
           <Text
             style={[
               styles.primaryButtonText,
-              (!selectedCount || uploading) && styles.buttonDisabledText,
+              !selectedCount && styles.buttonDisabledText,
             ]}
           >
-            {uploading
-              ? "Uploading..."
-              : `Upload ${selectedCount} photo${selectedCount !== 1 ? "s" : ""}`}
+            Upload {selectedCount} photo{selectedCount !== 1 ? "s" : ""}
           </Text>
           <Ionicons
             name="arrow-forward"
             size={18}
-            color={selectedCount && !uploading ? "#fff" : "#c5c5c5"}
+            color={selectedCount ? "#fff" : "#c5c5c5"}
             style={{ marginLeft: 6 }}
           />
         </Pressable>
       </View>
-
-      {/* Upload progress overlay */}
-      {uploading && (
-        <View style={styles.loadingOverlay}>
-          <Animated.View
-            entering={FadeIn.duration(300)}
-            exiting={FadeOut.duration(200)}
-            style={styles.loadingCard}
-          >
-            <ProgressDots
-              total={uploadProgress.total}
-              current={uploadProgress.current}
-              uploadedCount={uploadedCount}
-            />
-
-            {currentUploadUri && (
-              <AnimatedUploadPhoto
-                key={currentUploadUri}
-                uri={currentUploadUri}
-                isComplete={uploadedCount > uploadProgress.current}
-              />
-            )}
-
-            <Animated.Text
-              entering={FadeIn.delay(100).duration(200)}
-              style={styles.loadingTitle}
-            >
-              {uploadedCount === uploadProgress.total
-                ? "All photos uploaded!"
-                : `Uploading ${uploadProgress.current + 1} of ${uploadProgress.total}`}
-            </Animated.Text>
-
-            <View style={styles.progressBarContainer}>
-              <Animated.View
-                style={[
-                  styles.progressBar,
-                  {
-                    width: `${(uploadedCount / uploadProgress.total) * 100}%`,
-                  },
-                ]}
-              />
-            </View>
-
-            <Text style={styles.loadingSubtitle}>
-              Keep the app open until it finishes
-            </Text>
-          </Animated.View>
-        </View>
-      )}
-
-      {uploadError && (
-        <View style={styles.errorToast}>
-          <Text style={styles.errorText}>{uploadError}</Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -445,8 +278,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
     paddingLeft: GRID_SPACING,
     paddingTop: GRID_SPACING,
     paddingBottom: 100,
@@ -504,154 +335,14 @@ const styles = StyleSheet.create({
   buttonDisabledText: {
     color: "#a0a0a0",
   },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.25)",
+  preparingContainer: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    gap: 12,
   },
-  loadingCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
-    width: "86%",
-    alignItems: "center",
-    gap: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  loadingTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#111",
-  },
-  loadingSubtitle: {
-    fontSize: 13,
-    color: "#666",
-    textAlign: "center",
-  },
-  progressBarContainer: {
-    width: "100%",
-    height: 6,
-    backgroundColor: "#e5e5e5",
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressBar: {
-    height: "100%",
-    backgroundColor: "#111",
-    borderRadius: 3,
-  },
-  errorToast: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 120,
-    backgroundColor: "#fceaea",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#f3c6c6",
-  },
-  errorText: {
-    color: "#b3261e",
-    fontSize: 13,
-    textAlign: "center",
-  },
-  uploadPhotoContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-  },
-  uploadPhotoWrapper: {
-    width: SCREEN_WIDTH * 0.55,
-    height: SCREEN_WIDTH * 0.55,
-    borderRadius: 16,
-    overflow: "hidden",
-    backgroundColor: "#f0f0f0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  uploadPhoto: {
-    width: "100%",
-    height: "100%",
-  },
-  uploadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  uploadingSpinner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  successOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(34, 197, 94, 0.85)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  successCheckCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 3,
-    borderColor: "#fff",
-  },
-  progressDotsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 16,
-  },
-  progressDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#e5e5e5",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  progressDotCompleted: {
-    backgroundColor: "#22c55e",
-  },
-  progressDotCurrent: {
-    backgroundColor: "#111",
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  progressDotPending: {
-    backgroundColor: "#e5e5e5",
-  },
-  progressDotMore: {
-    paddingHorizontal: 8,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#e5e5e5",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  progressDotMoreText: {
-    fontSize: 11,
-    fontWeight: "600",
+  preparingText: {
+    fontSize: 14,
     color: "#666",
   },
 });

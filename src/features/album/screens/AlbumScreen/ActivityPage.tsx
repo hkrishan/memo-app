@@ -1,16 +1,51 @@
-import React, { memo, useMemo, useState, useEffect, useRef } from "react";
+import React, {
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import {
   View,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
   InteractionManager,
+  Pressable,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useGetAlbumActivitiesQuery } from "../../api/album.queries";
 import { AlbumActivity, AlbumPhoto } from "../../types/album.types";
+import { PhotoViewer } from "@/features/photos/components";
+import { MediaAsset } from "@/features/album/hooks";
+import { useAlbumPhotoViewerExtras } from "../../hooks/useAlbumPhotoViewerExtras";
+
+// Batches this small open straight in the fullscreen viewer (with the
+// filmstrip carousel); bigger ones go to the filtered gallery grid.
+const MAX_VIEWER_PHOTOS = 3;
+
+// AlbumPhoto → viewer asset. Mirrors photoToMediaAsset, which needs the
+// uploader-shaped photo the activity payload doesn't carry.
+const activityPhotoToAsset = (p: AlbumPhoto): MediaAsset => ({
+  id: p.photoId,
+  uri: p.url,
+  // Videos must never fall back to the video URL as a "thumbnail" —
+  // expo-image can't render it (see photoToMediaAsset)
+  thumbnailUrl:
+    p.mediaType === "video"
+      ? (p.thumbnailUrl ?? null)
+      : (p.thumbnailUrl ?? p.url),
+  mediaType: p.mediaType === "video" ? "video" : "photo",
+  width: 0,
+  height: 0,
+  duration: 0,
+  creationTime: new Date(p.createdAt).getTime(),
+  modificationTime: new Date(p.createdAt).getTime(),
+});
 
 interface ActivityPageProps {
   contentTop: number;
@@ -130,15 +165,48 @@ const UserAvatar = memo<{ avatarUrl: string | null; activityType: string }>(
     prev.activityType === next.activityType,
 );
 
-// Single activity item - deeply memoized
-const ActivityItem = memo<{ activity: AlbumActivity }>(
-  ({ activity }) => {
-    const { user, photos, photoCount, createdAt, type } = activity;
+// Single activity item - deeply memoized. Tapping a photos_added row
+// opens the batch fullscreen: small batches straight in the viewer
+// (filmstrip carousel), bigger ones as a filtered gallery grid.
+const ActivityItem = memo<{
+  activity: AlbumActivity;
+  albumId?: string;
+  onOpenViewer: (photos: AlbumPhoto[]) => void;
+}>(
+  ({ activity, albumId, onOpenViewer }) => {
+    const router = useRouter();
+    const { activityId, user, photos, photoCount, createdAt, type } = activity;
     const activityText = getActivityText(type, photoCount);
     const timestamp = formatRelativeTime(createdAt);
 
+    const canOpen = type === "photos_added" && !!albumId;
+    const openBatch = () => {
+      if (!canOpen) return;
+      if (photoCount <= MAX_VIEWER_PHOTOS && photos.length > 0) {
+        onOpenViewer(photos);
+        return;
+      }
+      router.push({
+        pathname: `/album/${albumId}/gallery`,
+        params: {
+          filter: "activity",
+          activityId,
+          title: `Added by ${user.name}`,
+        },
+      });
+    };
+
     return (
-      <View style={styles.activityItem}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.activityItem,
+          pressed && canOpen && styles.activityItemPressed,
+        ]}
+        onPress={openBatch}
+        disabled={!canOpen}
+        accessibilityRole="button"
+        accessibilityLabel={`${user.name} ${activityText}. View photos`}
+      >
         <UserAvatar avatarUrl={user.avatarUrl} activityType={type} />
         <View style={styles.activityContent}>
           <View style={styles.activityHeader}>
@@ -150,10 +218,13 @@ const ActivityItem = memo<{ activity: AlbumActivity }>(
             <PhotoThumbnails photos={photos} totalCount={photoCount} />
           )}
         </View>
-      </View>
+      </Pressable>
     );
   },
-  (prev, next) => prev.activity.activityId === next.activity.activityId,
+  (prev, next) =>
+    prev.activity.activityId === next.activity.activityId &&
+    prev.albumId === next.albumId &&
+    prev.onOpenViewer === next.onOpenViewer,
 );
 
 // Static components - no props, never re-render
@@ -212,6 +283,24 @@ const ActivityPage = memo<ActivityPageProps>(
       isError,
     } = useGetAlbumActivitiesQuery(albumId ?? "");
 
+    // Small-batch rows open their photos right here in the viewer
+    const [viewerPhotos, setViewerPhotos] = useState<AlbumPhoto[] | null>(
+      null,
+    );
+    const openViewer = useCallback(
+      (photos: AlbumPhoto[]) => setViewerPhotos(photos),
+      [],
+    );
+    const closeViewer = useCallback(() => setViewerPhotos(null), []);
+    const viewerAssets = useMemo(
+      () => (viewerPhotos ?? []).map(activityPhotoToAsset),
+      [viewerPhotos],
+    );
+    // Same album-aware viewer layer as the gallery: like/comment/tag
+    // overlay and double-tap like
+    const { renderSocialOverlay, onDoubleTapAsset } =
+      useAlbumPhotoViewerExtras(albumId, viewerAssets);
+
     // Memoize content container style
     const contentContainerStyle = useMemo(
       () => ({
@@ -267,9 +356,23 @@ const ActivityPage = memo<ActivityPageProps>(
         >
           <SectionHeader />
           {activities.map((activity) => (
-            <ActivityItem key={activity.activityId} activity={activity} />
+            <ActivityItem
+              key={activity.activityId}
+              activity={activity}
+              albumId={albumId}
+              onOpenViewer={openViewer}
+            />
           ))}
         </ScrollView>
+
+        <PhotoViewer
+          visible={viewerPhotos != null}
+          assets={viewerAssets}
+          initialIndex={0}
+          onClose={closeViewer}
+          renderSocialOverlay={renderSocialOverlay}
+          onDoubleTapAsset={onDoubleTapAsset}
+        />
       </View>
     );
   },
@@ -296,6 +399,9 @@ const styles = StyleSheet.create({
   activityItem: {
     flexDirection: "row",
     marginBottom: 20,
+  },
+  activityItemPressed: {
+    opacity: 0.6,
   },
   avatarContainer: {
     position: "relative",

@@ -15,10 +15,7 @@ import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
 import { AlbumPagePost, AlbumPagePostMedia } from "../types/post.types";
-import {
-  useLikePostMutation,
-  useUnlikePostMutation,
-} from "../api/pagePost.queries";
+import { useTogglePostLikeMutation } from "../api/pagePost.queries";
 
 const AnimatedScrollView = Animated.ScrollView;
 
@@ -182,34 +179,26 @@ const MediaCarousel = memo<{
 
 const PostCard = memo<PostCardProps>(
   ({ post, albumId, pageId, onCommentsPress }) => {
-    const likeMutation = useLikePostMutation();
-    const unlikeMutation = useUnlikePostMutation();
+    const likeMutation = useTogglePostLikeMutation(albumId, pageId, post.postId);
 
     const isLiked = post.likedByCurrentUser ?? false;
-    const isLiking = likeMutation.isPending || unlikeMutation.isPending;
 
+    // Rapid toggles are safe: the mutation's scope serializes them per post
     const handleLikePress = useCallback(() => {
-      if (isLiking) return;
-
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      if (isLiked) {
-        unlikeMutation.mutate({ albumId, pageId, postId: post.postId });
-      } else {
-        likeMutation.mutate({ albumId, pageId, postId: post.postId });
-      }
-    }, [isLiked, isLiking, albumId, pageId, post.postId, likeMutation, unlikeMutation]);
+      likeMutation.mutate({ like: !isLiked });
+    }, [isLiked, likeMutation]);
 
     const handleCommentsPress = useCallback(() => {
       onCommentsPress?.(post.postId);
     }, [post.postId, onCommentsPress]);
 
     const handleDoubleTap = useCallback(() => {
-      if (!isLiked && !isLiking) {
+      if (!isLiked) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        likeMutation.mutate({ albumId, pageId, postId: post.postId });
+        likeMutation.mutate({ like: true });
       }
-    }, [isLiked, isLiking, albumId, pageId, post.postId, likeMutation]);
+    }, [isLiked, likeMutation]);
 
     return (
       <View style={styles.container}>

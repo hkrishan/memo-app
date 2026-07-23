@@ -2,7 +2,13 @@ import { StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 
-export type LoginProvider = "google" | "apple" | "facebook" | "email" | "test";
+export type LoginProvider =
+  | "phone"
+  | "google"
+  | "apple"
+  | "facebook"
+  | "email"
+  | "test";
 
 interface LoginProviderButtonProps {
   provider: LoginProvider;
@@ -20,6 +26,12 @@ const providerConfig: Record<
     textColor: string;
   }
 > = {
+  phone: {
+    label: "Continue with Phone",
+    icon: "chatbubble-ellipses",
+    bgColor: "#000000",
+    textColor: "#ffffff",
+  },
   google: {
     label: "Continue with Google",
     icon: "logo-google",

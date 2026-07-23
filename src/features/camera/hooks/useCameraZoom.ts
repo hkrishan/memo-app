@@ -1,9 +1,14 @@
 /**
  * useCameraZoom Hook
- * Handles zoom functionality with pinch-to-zoom gesture support
+ * Handles zoom in "display zoom" space (what the user sees: 0.5x / 1x / 2x…).
+ *
+ * VisionCamera's native zoom factor treats the device's widest lens as its
+ * minimum — on multi-cam devices the ultra-wide sits at zoom 1 and the regular
+ * wide lens at `device.neutralZoom`. All values in this hook are display zoom;
+ * multiply by `neutralZoom` at the Camera prop boundary to get native zoom.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Gesture } from 'react-native-gesture-handler';
 import {
   useSharedValue,
@@ -32,27 +37,39 @@ export function useCameraZoom({
   initialZoom = ZOOM_CONFIG.DEFAULT_ZOOM,
   onZoomChange,
 }: UseCameraZoomOptions): UseCameraZoomReturn {
-  // Get device zoom limits
-  const minZoom = device?.minZoom ?? ZOOM_CONFIG.MIN_ZOOM;
-  const maxZoom = Math.min(device?.maxZoom ?? ZOOM_CONFIG.MAX_ZOOM, ZOOM_CONFIG.MAX_ZOOM);
+  const neutralZoom = device?.neutralZoom ?? 1;
+
+  // Display-space zoom limits
+  const minZoom = (device?.minZoom ?? 1) / neutralZoom;
+  const maxZoom = Math.min(
+    (device?.maxZoom ?? ZOOM_CONFIG.MAX_ZOOM) / neutralZoom,
+    ZOOM_CONFIG.MAX_ZOOM,
+  );
 
   // State for UI updates
   const [currentZoom, setCurrentZoom] = useState(initialZoom);
   const [activePreset, setActivePreset] = useState<ZoomLevel | null>(
-    ZOOM_PRESETS.find((p) => p.isDefault) ?? null
+    ZOOM_PRESETS.find((p) => p.isDefault) ?? null,
   );
 
-  // Animated zoom value for smooth transitions
+  // Animated zoom value (display space) for smooth transitions
   const animatedZoom = useSharedValue(initialZoom);
   const savedZoom = useSharedValue(initialZoom);
+
+  // Reset to 1x whenever the device changes (front/back flip)
+  useEffect(() => {
+    animatedZoom.value = 1;
+    savedZoom.value = 1;
+    setCurrentZoom(1);
+    setActivePreset(ZOOM_PRESETS.find((p) => p.isDefault) ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [device?.id]);
 
   // Filter zoom presets based on device capabilities
   const zoomLevels = useMemo(() => {
     return ZOOM_PRESETS.filter((preset) => {
-      if (preset.value < minZoom || preset.value > maxZoom) {
-        return false;
-      }
-      if (preset.isUltraWide && minZoom > 0.5) {
+      // Small tolerance: 0.5x preset should match a 0.498 min zoom
+      if (preset.value < minZoom - 0.02 || preset.value > maxZoom) {
         return false;
       }
       return true;
@@ -65,7 +82,23 @@ export function useCameraZoom({
       'worklet';
       return Math.max(minZoom, Math.min(maxZoom, zoom));
     },
-    [minZoom, maxZoom]
+    [minZoom, maxZoom],
+  );
+
+  const findPreset = useCallback(
+    (zoom: number, tolerance: number) =>
+      zoomLevels.find((p) => Math.abs(p.value - zoom) < tolerance) ?? null,
+    [zoomLevels],
+  );
+
+  // Called from gesture worklets when zoom settles
+  const syncZoomState = useCallback(
+    (zoom: number) => {
+      setCurrentZoom(zoom);
+      setActivePreset(findPreset(zoom, 0.05));
+      onZoomChange?.(zoom);
+    },
+    [findPreset, onZoomChange],
   );
 
   // Update zoom with timing animation
@@ -74,18 +107,13 @@ export function useCameraZoom({
       const clampedZoom = Math.max(minZoom, Math.min(maxZoom, zoom));
 
       animatedZoom.value = withTiming(clampedZoom, TIMING_CONFIG);
-
-      setCurrentZoom(clampedZoom);
       savedZoom.value = clampedZoom;
 
-      const matchingPreset = zoomLevels.find(
-        (p) => Math.abs(p.value - clampedZoom) < 0.05
-      );
-      setActivePreset(matchingPreset ?? null);
-
+      setCurrentZoom(clampedZoom);
+      setActivePreset(findPreset(clampedZoom, 0.05));
       onZoomChange?.(clampedZoom);
     },
-    [animatedZoom, savedZoom, minZoom, maxZoom, zoomLevels, onZoomChange]
+    [animatedZoom, savedZoom, minZoom, maxZoom, findPreset, onZoomChange],
   );
 
   // Set zoom to a specific preset
@@ -94,7 +122,7 @@ export function useCameraZoom({
       setZoom(preset.value);
       setActivePreset(preset);
     },
-    [setZoom]
+    [setZoom],
   );
 
   // Pinch gesture handler for zoom
@@ -105,45 +133,27 @@ export function useCameraZoom({
           savedZoom.value = animatedZoom.value;
         })
         .onUpdate((event) => {
-          const scaleFactor = event.scale;
-          const newZoom = savedZoom.value * scaleFactor;
-          const clampedZoom = clampZoom(newZoom);
-
-          animatedZoom.value = clampedZoom;
-          runOnJS(setCurrentZoom)(clampedZoom);
+          const newZoom = clampZoom(savedZoom.value * event.scale);
+          animatedZoom.value = newZoom;
+          runOnJS(setCurrentZoom)(newZoom);
         })
         .onEnd(() => {
           savedZoom.value = animatedZoom.value;
-
-          const currentValue = animatedZoom.value;
-          const closestPreset = zoomLevels.find(
-            (p) => Math.abs(p.value - currentValue) < 0.1
-          );
-
-          if (closestPreset) {
-            animatedZoom.value = withTiming(closestPreset.value, TIMING_CONFIG);
-            savedZoom.value = closestPreset.value;
-            runOnJS(setCurrentZoom)(closestPreset.value);
-            runOnJS(setActivePreset)(closestPreset);
-          } else {
-            runOnJS(setActivePreset)(null);
-          }
-
-          if (onZoomChange) {
-            runOnJS(onZoomChange)(animatedZoom.value);
-          }
+          runOnJS(syncZoomState)(animatedZoom.value);
         }),
-    [animatedZoom, savedZoom, clampZoom, zoomLevels, onZoomChange]
+    [animatedZoom, savedZoom, clampZoom, syncZoomState],
   );
 
   return {
     zoom: currentZoom,
     minZoom,
     maxZoom,
+    neutralZoom,
     setZoom,
     zoomLevels,
     activePreset,
     setZoomPreset,
+    syncZoomState,
     pinchGestureHandler: pinchGesture,
     animatedZoom,
   };

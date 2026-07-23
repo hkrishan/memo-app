@@ -20,6 +20,10 @@ export interface ChatMessage {
   status: SendStatus;
   type: MessageType;
   replyToMessageId?: string;
+  // Author info carried on the wire message (preferred over the members
+  // list when rendering, so messages from ex-members still show correctly).
+  authorName?: string;
+  authorAvatarUrl?: string | null;
 }
 
 export interface AlbumMember {
@@ -63,6 +67,11 @@ export interface ChatState {
 export interface SendMessageParams {
   text: string;
   replyToMessageId?: string;
+  /**
+   * Stable client-generated id for optimistic updates / retries.
+   * The transport echoes it so broadcasts of our own send can be deduped.
+   */
+  clientId?: string;
 }
 
 export interface FetchPageParams {
@@ -78,4 +87,4 @@ export interface FetchPageResult {
 }
 
 // Action sheet actions
-export type MessageAction = "copy" | "reply" | "react";
+export type MessageAction = "copy" | "reply" | "react" | "report" | "block";

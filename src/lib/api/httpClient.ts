@@ -37,6 +37,7 @@ class HttpClient {
   private responseInterceptors: ResponseInterceptor[] = [];
   private errorInterceptors: ErrorInterceptor[] = [];
   private tokenRefreshFn: TokenRefreshFn | null = null;
+  private onSessionExpired: (() => void) | null = null;
   private isRefreshing = false;
   private refreshPromise: Promise<boolean> | null = null;
 
@@ -93,6 +94,14 @@ class HttpClient {
    */
   setTokenRefreshFn(fn: TokenRefreshFn): void {
     this.tokenRefreshFn = fn;
+  }
+
+  /**
+   * Called when a session can no longer be refreshed, so the app can log the
+   * user out instead of leaving them stranded with endless 401s.
+   */
+  setOnSessionExpired(fn: () => void): void {
+    this.onSessionExpired = fn;
   }
 
   /**
@@ -159,7 +168,7 @@ class HttpClient {
   }
 
   /**
-   * Log request/response in development
+   * Log request/response in development. Never log credentials or tokens.
    */
   private log(
     type: "request" | "response" | "error",
@@ -170,7 +179,18 @@ class HttpClient {
     if (!this.config.enableLogging) return;
 
     const emoji = type === "request" ? "➡️" : type === "response" ? "✅" : "❌";
-    console.log(`${emoji} [${method}] ${url}`, data ?? "");
+    console.log(`${emoji} [${method}] ${url}`, this.sanitizeForLog(data) ?? "");
+  }
+
+  private sanitizeForLog(data: unknown): unknown {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return data;
+
+    const SENSITIVE = /password|token|secret|authorization/i;
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      result[key] = SENSITIVE.test(key) ? "[REDACTED]" : value;
+    }
+    return result;
   }
 
   /**
@@ -259,20 +279,28 @@ class HttpClient {
 
     this.isRefreshing = true;
     this.refreshPromise = (async () => {
+      const hadTokens = !!(await tokenStorage.getTokens());
+      let refreshed = false;
       try {
         const tokens = await this.tokenRefreshFn!();
         if (tokens) {
           await tokenStorage.setTokens(tokens);
-          return true;
+          refreshed = true;
         }
-        return false;
       } catch {
-        await tokenStorage.clearTokens();
-        return false;
+        refreshed = false;
       } finally {
         this.isRefreshing = false;
         this.refreshPromise = null;
       }
+
+      if (!refreshed && hadTokens) {
+        // The session is dead — clear it and let the app route to login
+        await tokenStorage.clearTokens();
+        this.onSessionExpired?.();
+      }
+
+      return refreshed;
     })();
 
     return this.refreshPromise;
@@ -284,6 +312,7 @@ class HttpClient {
   private async executeWithRetry<T>(
     options: RequestOptions,
     retriesLeft: number,
+    hasRefreshed = false,
   ): Promise<ApiResponse<T>> {
     const {
       method,
@@ -324,8 +353,9 @@ class HttpClient {
     );
 
     // Combine with external signal if provided
+    const onExternalAbort = () => controller.abort();
     if (signal) {
-      signal.addEventListener("abort", () => controller.abort());
+      signal.addEventListener("abort", onExternalAbort, { once: true });
     }
 
     this.log("request", method, url, body);
@@ -365,12 +395,13 @@ class HttpClient {
         });
       }
 
-      // Handle 401 with token refresh
-      if (response.status === 401 && !skipAuth) {
+      // Handle 401 with token refresh — retry at most once so a server that
+      // keeps returning 401 can't cause an unbounded refresh/retry loop
+      if (response.status === 401 && !skipAuth && !hasRefreshed) {
         const refreshed = await this.handleTokenRefresh();
         if (refreshed) {
           // Retry the request with new token
-          return this.executeWithRetry(options, retriesLeft);
+          return this.executeWithRetry(options, retriesLeft, true);
         }
       }
 
@@ -399,14 +430,14 @@ class HttpClient {
           method === "GET"
         ) {
           await this.delay(1000 * (DEFAULT_RETRIES - retriesLeft + 1));
-          return this.executeWithRetry(options, retriesLeft - 1);
+          return this.executeWithRetry(options, retriesLeft - 1, hasRefreshed);
         }
 
         // Retry on rate limit with backoff
         if (error instanceof RateLimitError && retriesLeft > 0) {
           const waitTime = (error.retryAfter ?? 5) * 1000;
           await this.delay(waitTime);
-          return this.executeWithRetry(options, retriesLeft - 1);
+          return this.executeWithRetry(options, retriesLeft - 1, hasRefreshed);
         }
 
         this.log("error", method, url, error);
@@ -419,6 +450,10 @@ class HttpClient {
       throw new NetworkError(
         error instanceof Error ? error.message : "Unknown error occurred",
       );
+    } finally {
+      if (signal) {
+        signal.removeEventListener("abort", onExternalAbort);
+      }
     }
   }
 
@@ -528,6 +563,7 @@ class HttpClient {
     endpoint: string,
     formData: FormData,
     config?: Omit<RequestConfig, "body">,
+    hasRefreshed = false,
   ): Promise<T> {
     const url = this.buildUrl(endpoint, config?.params);
 
@@ -553,8 +589,9 @@ class HttpClient {
       config?.timeout ?? this.config.timeout ?? DEFAULT_TIMEOUT,
     );
 
+    const onExternalAbort = () => controller.abort();
     if (config?.signal) {
-      config.signal.addEventListener("abort", () => controller.abort());
+      config.signal.addEventListener("abort", onExternalAbort, { once: true });
     }
 
     this.log("request", "UPLOAD", url, "[FormData]");
@@ -575,11 +612,11 @@ class HttpClient {
         return data;
       }
 
-      // Handle 401 with token refresh
-      if (response.status === 401 && !config?.skipAuth) {
+      // Handle 401 with token refresh — retry at most once
+      if (response.status === 401 && !config?.skipAuth && !hasRefreshed) {
         const refreshed = await this.handleTokenRefresh();
         if (refreshed) {
-          return this.upload(endpoint, formData, config);
+          return this.upload(endpoint, formData, config, true);
         }
       }
 
@@ -604,6 +641,10 @@ class HttpClient {
       throw new NetworkError(
         error instanceof Error ? error.message : "Upload failed",
       );
+    } finally {
+      if (config?.signal) {
+        config.signal.removeEventListener("abort", onExternalAbort);
+      }
     }
   }
 }

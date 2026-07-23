@@ -4,6 +4,9 @@ export type PendingAsset = {
   uri: string;
   fileName: string;
   mimeType: string;
+  /** GPS position from the photo's EXIF, when it has one */
+  latitude?: number;
+  longitude?: number;
 };
 
 interface PendingUploadsState {

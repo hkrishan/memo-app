@@ -3,4 +3,5 @@ export type User = {
   name?: string | null;
   email?: string | null;
   avatarUrl?: string | null;
+  createdAt?: string;
 };

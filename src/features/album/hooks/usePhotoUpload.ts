@@ -3,9 +3,14 @@ import * as MediaLibrary from "expo-media-library";
 import { useUploadPhotoMutation } from "../api/photo.queries";
 import { MediaAsset } from "./useMediaLibrary";
 import { perf, PerfInteractions } from "@/lib/performance";
+import { uploadIndicator } from "@/components/global/uploadIndicator";
 
 // Maximum concurrent uploads to balance speed and resource usage
 const MAX_CONCURRENT_UPLOADS = 3;
+
+// Unique id per upload batch for the global upload indicator pill
+let uploadBatchCounter = 0;
+const nextIndicatorId = () => `album-photo-upload-${++uploadBatchCounter}`;
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
@@ -44,8 +49,18 @@ export function usePhotoUpload({
 
   const uploadMutation = useUploadPhotoMutation();
 
-  const getMimeType = (mediaType: "photo" | "video"): string => {
-    return mediaType === "video" ? "video/mp4" : "image/jpeg";
+  // Derive the mimetype from the RESOLVED file's extension — iOS library
+  // videos are .mov (video/quicktime); calling them video/mp4 made the
+  // backend store broken media
+  const getMimeType = (
+    mediaType: "photo" | "video",
+    uri: string,
+  ): string => {
+    if (mediaType !== "video") return "image/jpeg";
+    const extension = uri.split(".").pop()?.toLowerCase();
+    if (extension === "mov") return "video/quicktime";
+    if (extension === "webm") return "video/webm";
+    return "video/mp4";
   };
 
   const uploadSinglePhoto = useCallback(
@@ -56,6 +71,9 @@ export function usePhotoUpload({
 
       const endPerfTrace = perf.startInteraction(PerfInteractions.UPLOAD_SINGLE);
 
+      const indicatorId = nextIndicatorId();
+      uploadIndicator.begin(indicatorId, "Adding photo…");
+
       try {
         // Get the asset info to ensure we have the correct URI
         const assetInfo = await MediaLibrary.getAssetInfoAsync(asset.id);
@@ -64,12 +82,13 @@ export function usePhotoUpload({
         await uploadMutation.mutateAsync({
           albumId,
           uri,
-          mimeType: getMimeType(asset.mediaType),
+          mimeType: getMimeType(asset.mediaType, uri),
           caption,
         });
 
         setProgress({ current: 1, total: 1 });
         setStatus("success");
+        uploadIndicator.succeed(indicatorId, "Photo added");
         endPerfTrace();
         onSuccess?.();
       } catch (err) {
@@ -77,6 +96,7 @@ export function usePhotoUpload({
           err instanceof Error ? err : new Error("Upload failed");
         setError(uploadError);
         setStatus("error");
+        uploadIndicator.fail(indicatorId);
         endPerfTrace();
         onError?.(uploadError);
         throw uploadError;
@@ -101,6 +121,15 @@ export function usePhotoUpload({
         `${PerfInteractions.UPLOAD_BATCH}[${assets.length}]`,
       );
 
+      // ONE pill for the whole batch
+      const indicatorId = nextIndicatorId();
+      uploadIndicator.begin(
+        indicatorId,
+        assets.length === 1
+          ? "Adding photo…"
+          : `Adding ${assets.length} photos…`,
+      );
+
       try {
         // Create upload task for each asset
         const uploadTask = async (asset: MediaAsset, index: number) => {
@@ -111,7 +140,7 @@ export function usePhotoUpload({
           await uploadMutation.mutateAsync({
             albumId,
             uri,
-            mimeType: getMimeType(asset.mediaType),
+            mimeType: getMimeType(asset.mediaType, uri),
             // Only add caption to first photo if batch uploading
             caption: index === 0 ? caption : undefined,
           });
@@ -140,6 +169,12 @@ export function usePhotoUpload({
         await Promise.all(executing);
 
         setStatus("success");
+        uploadIndicator.succeed(
+          indicatorId,
+          assets.length === 1
+            ? "Photo added"
+            : `${assets.length} photos added`,
+        );
         endPerfTrace();
         onSuccess?.();
       } catch (err) {
@@ -147,6 +182,7 @@ export function usePhotoUpload({
           err instanceof Error ? err : new Error("Upload failed");
         setError(uploadError);
         setStatus("error");
+        uploadIndicator.fail(indicatorId);
         endPerfTrace();
         onError?.(uploadError);
         throw uploadError;

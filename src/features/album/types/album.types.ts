@@ -30,6 +30,13 @@ export type Photo = {
   caption: string | null;
   createdAt: string;
   thumbnailUrl?: string | null;
+  /**
+   * "video" for video uploads (thumbnailUrl is then the poster frame).
+   * Optional — older cached responses may lack it; treat missing as "photo".
+   */
+  mediaType?: "photo" | "video";
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type AlbumPhoto = {
@@ -37,6 +44,38 @@ export type AlbumPhoto = {
   url: string;
   createdAt: Date;
   thumbnailUrl?: string | null;
+  /** See Photo.mediaType — optional, missing means "photo". */
+  mediaType?: "photo" | "video";
+};
+
+export type PhotoComment = {
+  commentId: string;
+  photoId: string;
+  content: string;
+  createdAt: string;
+  author: {
+    userId: string;
+    name: string;
+    avatarUrl: string | null;
+  };
+};
+
+export type PhotoTag = {
+  tag: string;
+  /** userId of the member who added the tag */
+  createdBy: string;
+};
+
+export type AlbumTagCount = {
+  tag: string;
+  count: number;
+};
+
+export type PhotoSocial = {
+  likeCount: number;
+  likedByMe: boolean;
+  commentCount: number;
+  tags: PhotoTag[];
 };
 
 export type PhotoWithUploader = Photo & {
@@ -45,6 +84,8 @@ export type PhotoWithUploader = Photo & {
     name: string;
     avatarUrl: string | null;
   };
+  // Optional — older cached responses may lack it
+  social?: PhotoSocial;
 };
 
 export type ActivityUser = {
@@ -62,6 +103,36 @@ export type AlbumActivity = {
   photos: AlbumPhoto[];
   photoCount: number;
   createdAt: Date;
+};
+
+/** Multi-use album invite link. The inviteId doubles as the link token. */
+export type AlbumInviteLink = {
+  inviteId: string;
+  url: string;
+  role: Role;
+  expiresAt: string;
+};
+
+/**
+ * Preview of an invite as seen by a (possibly non-member) invitee.
+ * Expired invites are deliberately bare on the wire (no album/inviter
+ * data is leaked), so everything beyond id + status is optional — check
+ * `status === "active"` before relying on the rest.
+ */
+export type InviteInfo = {
+  inviteId: string;
+  status: "active" | "expired";
+  album?: {
+    albumId: string;
+    title: string;
+    coverPhotoUrl: string | null;
+    memberCount: number;
+  };
+  inviter?: {
+    name: string;
+    avatarUrl: string | null;
+  };
+  alreadyMember?: boolean;
 };
 
 export type AlbumJoinRequest = {

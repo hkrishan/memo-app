@@ -1,150 +1,255 @@
 /**
- * AlbumMembers Component
- * Displays album members list (placeholder for future implementation)
+ * AlbumMembers — the album's people, as a clean white group:
+ * a "N members" header, an optional leading Invite row (person-add in a
+ * dashed circle) that opens the invite screen, then one row per member —
+ * avatar, name, role pill. The owner is listed first. Membership is
+ * read-only here: the backend has no member removal.
  */
 
-import React from "react";
-import { View, StyleSheet } from "react-native";
-import { Text } from "react-native-paper";
+import React, { useCallback, useMemo } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { AlbumMember } from "../types/album.types";
-import { CachedImage } from "@/components/ui/CachedImage";
+import { useRouter } from "expo-router";
+import { AlbumMember, Role } from "../types/album.types";
+import Avatar from "@/components/ui/Avatar";
+import { selectUser, useAuthStore } from "@/features/auth/store/authStore";
 
 interface AlbumMembersProps {
   members: AlbumMember[];
+  /** Enables the leading Invite row, which opens the album's invite screen. */
+  albumId?: string;
+  /** Hide the Invite row (e.g. when already on the invite screen). */
+  showInviteRow?: boolean;
 }
 
-interface MemberItemProps {
-  member: AlbumMember;
-}
+const ROLE_ORDER: Record<Role, number> = { owner: 0, contributor: 1, viewer: 2 };
 
-const MemberItem: React.FC<MemberItemProps> = ({ member }) => {
+const ROLE_LABEL: Record<Role, string> = {
+  owner: "Owner",
+  contributor: "Contributor",
+  viewer: "Viewer",
+};
+
+const RolePill = ({ role }: { role: Role }) => {
+  const filled = role === "owner";
   return (
-    <View style={styles.memberItem}>
-      {member.avatarUrl ? (
-        <CachedImage
-          uri={member.avatarUrl}
-          style={styles.avatar}
-          showPlaceholder={false}
-        />
-      ) : (
-        <View style={[styles.avatar, styles.avatarPlaceholder]}>
-          <Ionicons name="person" size={24} color="#999" />
-        </View>
-      )}
-      <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>{member.name ?? "Unknown"}</Text>
-        {member.userId && (
-          <Text style={styles.memberRole}>Member</Text>
+    <View style={[styles.rolePill, filled ? styles.rolePillFilled : styles.rolePillOutlined]}>
+      <Text
+        style={[
+          styles.rolePillText,
+          filled ? styles.rolePillTextFilled : styles.rolePillTextOutlined,
+        ]}
+      >
+        {ROLE_LABEL[role] ?? "Member"}
+      </Text>
+    </View>
+  );
+};
+
+const MemberRow = ({
+  member,
+  isFirst,
+  onPress,
+}: {
+  member: AlbumMember;
+  isFirst: boolean;
+  /** Opens the member's profile — undefined for the current user's own row. */
+  onPress?: (member: AlbumMember) => void;
+}) => (
+  <Pressable
+    onPress={onPress ? () => onPress(member) : undefined}
+    disabled={!onPress}
+    style={({ pressed }) => [
+      styles.row,
+      !isFirst && styles.rowDivided,
+      pressed && onPress && styles.rowPressed,
+    ]}
+    accessible
+    accessibilityRole={onPress ? "button" : undefined}
+    accessibilityLabel={`${member.name ?? "Unknown"}, ${ROLE_LABEL[member.role] ?? "member"}`}
+  >
+    <Avatar user={member} size={44} />
+    <Text style={styles.memberName} numberOfLines={1}>
+      {member.name ?? "Unknown"}
+    </Text>
+    <RolePill role={member.role} />
+  </Pressable>
+);
+
+export const AlbumMembers: React.FC<AlbumMembersProps> = ({
+  members,
+  albumId,
+  showInviteRow = true,
+}) => {
+  const router = useRouter();
+  const currentUser = useAuthStore(selectUser);
+
+  const sortedMembers = useMemo(
+    () =>
+      [...members].sort(
+        (a, b) =>
+          (ROLE_ORDER[a.role] ?? 3) - (ROLE_ORDER[b.role] ?? 3) ||
+          (a.name ?? "").localeCompare(b.name ?? ""),
+      ),
+    [members],
+  );
+
+  const handleInvite = useCallback(() => {
+    if (albumId) router.push(`/album/${albumId}/add-members`);
+  }, [albumId, router]);
+
+  // Other members open their profile modal (report/block live there)
+  const handleMemberPress = useCallback(
+    (member: AlbumMember) => {
+      router.push({
+        pathname: "/user/[userId]",
+        params: {
+          userId: member.userId,
+          name: member.name ?? "",
+          avatarUrl: member.avatarUrl ?? "",
+        },
+      });
+    },
+    [router],
+  );
+
+  const inviteRowVisible = showInviteRow && !!albumId;
+
+  return (
+    <View>
+      <Text style={styles.header}>
+        {members.length} {members.length === 1 ? "member" : "members"}
+      </Text>
+
+      <View style={styles.group}>
+        {inviteRowVisible && (
+          <Pressable
+            onPress={handleInvite}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Invite people to this album"
+          >
+            <View style={styles.inviteCircle}>
+              <Ionicons name="person-add-outline" size={18} color="#111" />
+            </View>
+            <Text style={styles.inviteText}>Invite people</Text>
+            <Ionicons name="chevron-forward" size={18} color="#B5B5B2" />
+          </Pressable>
+        )}
+
+        {sortedMembers.length === 0 ? (
+          <View style={styles.empty}>
+            <Ionicons name="people-outline" size={36} color="#C9C9C6" />
+            <Text style={styles.emptyText}>No members yet</Text>
+            <Text style={styles.emptySubtext}>
+              Share the invite link to bring people in
+            </Text>
+          </View>
+        ) : (
+          sortedMembers.map((member, index) => (
+            <MemberRow
+              key={member.userId}
+              member={member}
+              isFirst={index === 0 && !inviteRowVisible}
+              onPress={
+                member.userId !== currentUser?.id ? handleMemberPress : undefined
+              }
+            />
+          ))
         )}
       </View>
     </View>
   );
 };
 
-export const AlbumMembers: React.FC<AlbumMembersProps> = ({ members }) => {
-  if (members.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="people-outline" size={48} color="#ccc" />
-        <Text style={styles.emptyText}>No members</Text>
-        <Text style={styles.emptySubtext}>
-          Invite people to join this album
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Members</Text>
-        <Text style={styles.headerCount}>{members.length}</Text>
-      </View>
-      <View style={styles.membersList}>
-        {members.map((member) => (
-          <MemberItem key={member.userId} member={member} />
-        ))}
-      </View>
-    </View>
-  );
-};
-
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-  },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
+    fontSize: 12,
     fontWeight: "600",
-    color: "#000",
+    color: "#9C9C99",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 10,
   },
-  headerCount: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#888",
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
+  group: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    overflow: "hidden",
   },
-  membersList: {
-    gap: 12,
-  },
-  memberItem: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 12,
-    backgroundColor: "#f8f8f8",
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  rowDivided: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#ECECEA",
   },
-  avatarPlaceholder: {
-    backgroundColor: "#e0e0e0",
+  rowPressed: {
+    backgroundColor: "#F5F5F3",
+  },
+  inviteCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "#B5B5B2",
+    borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
   },
-  memberInfo: {
+  inviteText: {
     flex: 1,
-    gap: 2,
-  },
-  memberName: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#000",
+    color: "#111",
   },
-  memberRole: {
-    fontSize: 13,
-    color: "#888",
-  },
-  emptyContainer: {
+  memberName: {
     flex: 1,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111",
+  },
+  rolePill: {
+    borderRadius: 13,
+    paddingHorizontal: 11,
+    height: 26,
     justifyContent: "center",
+  },
+  rolePillFilled: {
+    backgroundColor: "#000",
+  },
+  rolePillOutlined: {
+    borderWidth: 1,
+    borderColor: "#D6D6D3",
+  },
+  rolePillText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  rolePillTextFilled: {
+    color: "#fff",
+  },
+  rolePillTextOutlined: {
+    color: "#555",
+  },
+  empty: {
     alignItems: "center",
-    paddingVertical: 60,
-    gap: 8,
+    paddingVertical: 36,
+    paddingHorizontal: 32,
+    gap: 6,
   },
   emptyText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
     color: "#666",
   },
   emptySubtext: {
-    fontSize: 14,
-    color: "#999",
+    fontSize: 13,
+    color: "#9C9C99",
     textAlign: "center",
-    paddingHorizontal: 40,
   },
 });
 

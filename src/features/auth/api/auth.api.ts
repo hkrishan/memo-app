@@ -3,6 +3,7 @@ import {
   AuthResponse,
   EmailLoginRequest,
   EmailRegisterRequest,
+  SmsVerifyRequest,
   AuthTokens,
 } from "../types/auth.types";
 
@@ -48,6 +49,28 @@ const authApi = {
    */
   emailRegister: async (data: EmailRegisterRequest) => {
     return httpClient.post<AuthResponse>(endpoints.auth.register, data);
+  },
+
+  /**
+   * SMS OTP: send (or resend) a verification code.
+   * skipAuth: these run unauthenticated, and a wrong-code 401 must surface
+   * as-is instead of triggering the client's token-refresh interception.
+   */
+  smsRequestCode: async (phone: string) => {
+    return httpClient.post<{ message: string }>(
+      endpoints.auth.smsRequest,
+      { phone },
+      { skipAuth: true },
+    );
+  },
+
+  /**
+   * SMS OTP: verify the code — logs in or creates the account
+   */
+  smsVerify: async (data: SmsVerifyRequest) => {
+    return httpClient.post<AuthResponse>(endpoints.auth.smsVerify, data, {
+      skipAuth: true,
+    });
   },
 
   /**

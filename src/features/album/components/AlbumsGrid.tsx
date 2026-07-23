@@ -1,6 +1,7 @@
 /**
  * AlbumsGrid Component
- * Displays albums in a grid layout using AlbumCover cards
+ * Displays albums in a grid layout using AlbumCover cards, each captioned
+ * with its title (and who's in it) below the cover.
  */
 
 import React, { useCallback, useEffect, memo } from "react";
@@ -8,11 +9,13 @@ import { View, StyleSheet, Pressable, Dimensions } from "react-native";
 import { Text, ActivityIndicator } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useLiveDropAlbumIds } from "@/features/moments/hooks/useLiveDropAlbumIds";
 import { Album } from "../types/album.types";
 import { AlbumCover } from "./AlbumCover";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_GAP = 12;
+const GRID_ROW_GAP = 20;
 const GRID_PADDING = 20;
 const ALBUM_CARD_SIZE = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
@@ -24,34 +27,56 @@ interface AlbumsGridProps {
 
 interface AlbumCardProps {
   album: Album;
-  onPress?: () => void | null;
+  onPress?: (album: Album) => void;
   size?: number;
-  titleSize?: number;
+  /** True while the album has an open drop the user hasn't posted to */
+  hasLiveDrop?: boolean;
 }
 
+/** "Just you" / "n members" — matches the avatars overlaid on the cover. */
+const membersLabel = (album: Album): string => {
+  const count = album.members?.length ?? 0;
+  if (count <= 1) return "Just you";
+  return `${count} members`;
+};
+
 export const AlbumCard: React.FC<AlbumCardProps> = memo(
-  ({ album, onPress = null, size = ALBUM_CARD_SIZE, titleSize = 16 }) => {
+  ({ album, onPress, size = ALBUM_CARD_SIZE, hasLiveDrop = false }) => {
+    const handlePress = useCallback(() => {
+      onPress?.(album);
+    }, [onPress, album]);
+
     return (
       <Pressable
-        style={({ pressed }) =>
-          onPress && [styles.albumCard, pressed && styles.albumCardPressed]
-        }
-        onPress={onPress ?? undefined}
+        style={({ pressed }) => [
+          styles.albumCard,
+          { width: size },
+          pressed && onPress != null && styles.albumCardPressed,
+        ]}
+        onPress={onPress ? handlePress : undefined}
+        accessibilityRole={onPress ? "button" : undefined}
+        accessibilityLabel={album.title}
       >
-        <AlbumCover
-          album={album}
-          size={size}
-          titleSize={titleSize}
-          borderRadius={30}
-        />
+        <AlbumCover album={album} size={size} borderRadius={24} />
+        {hasLiveDrop && (
+          <View style={styles.liveBadge} pointerEvents="none">
+            <Ionicons name="flash" size={11} color="#fff" />
+            <Text style={styles.liveBadgeLabel}>LIVE</Text>
+          </View>
+        )}
+        <View style={styles.caption}>
+          <Text style={styles.title} numberOfLines={1}>
+            {album.title}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {membersLabel(album)}
+          </Text>
+        </View>
       </Pressable>
     );
   },
-  (prev, next) =>
-    prev.album.albumId === next.album.albumId &&
-    prev.size === next.size &&
-    prev.titleSize === next.titleSize,
 );
+AlbumCard.displayName = "AlbumCard";
 
 export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
   albums,
@@ -59,6 +84,8 @@ export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
   onAlbumPress,
 }) => {
   const router = useRouter();
+  // One shared query for the whole grid — cards get a plain boolean
+  const liveDropAlbumIds = useLiveDropAlbumIds();
 
   // Prefetch album screens so navigation feels instant
   useEffect(() => {
@@ -109,7 +136,8 @@ export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
         <AlbumCard
           key={album.albumId}
           album={album}
-          onPress={() => handleAlbumPress(album)}
+          onPress={handleAlbumPress}
+          hasLiveDrop={liveDropAlbumIds.has(album.albumId)}
         />
       ))}
     </View>
@@ -121,13 +149,47 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     paddingHorizontal: GRID_PADDING,
-    gap: GRID_GAP,
+    columnGap: GRID_GAP,
+    rowGap: GRID_ROW_GAP,
   },
   albumCard: {
     width: ALBUM_CARD_SIZE,
   },
   albumCardPressed: {
-    opacity: 0.8,
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
+  liveBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FF3B30",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveBadgeLabel: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  caption: {
+    paddingTop: 8,
+    paddingHorizontal: 4,
+    gap: 1,
+  },
+  title: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111",
+  },
+  meta: {
+    fontSize: 13,
+    color: "#8E8E93",
   },
   placeholder: {
     alignItems: "center",

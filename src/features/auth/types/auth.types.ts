@@ -1,7 +1,13 @@
 /**
  * Supported authentication providers
  */
-export type AuthProvider = "google" | "apple" | "facebook" | "email" | "test";
+export type AuthProvider =
+  | "google"
+  | "apple"
+  | "facebook"
+  | "email"
+  | "phone"
+  | "test";
 
 /**
  * Authentication tokens returned from the server
@@ -42,6 +48,8 @@ export interface OAuthLoginRequest {
 export interface AuthResponse {
   user: AuthUser;
   tokens: AuthTokens;
+  /** Phone verification only: the account was created by this call. */
+  isNewUser?: boolean;
 }
 
 /**
@@ -91,6 +99,14 @@ export interface EmailRegisterRequest {
   email: string;
   password: string;
   name?: string;
+}
+
+/**
+ * SMS OTP: verify request
+ */
+export interface SmsVerifyRequest {
+  phone: string;
+  code: string;
 }
 
 /**

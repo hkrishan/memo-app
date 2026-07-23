@@ -7,38 +7,56 @@ import { useSharedValue } from "react-native-reanimated";
 
 import { useGetPhotosQuery } from "../../api/photo.queries";
 import { useGetAlbumQuery } from "../../api/album.queries";
+import { useGetPageQuery } from "@/features/page/api/page.queries";
 import { AlbumNavBar, AlbumTabs } from "../../components";
-import { MediaAsset } from "../../hooks";
-import { PhotoWithUploader } from "../../types/album.types";
+import { photoToMediaAsset } from "../../utils/mediaAsset";
 import GalleryPage from "./GalleryPage";
-import GalleryPage2 from "./GalleryPage2";
 import PagePage from "./PagePage";
-import ChatPage from "./ChatPage";
-import SettingsPage from "@/features/album/screens/AlbumScreen/SettingsPage";
+import MomentsPage from "@/features/moments/screens/MomentsPage";
+import { useLiveDropAlbumIds } from "@/features/moments/hooks/useLiveDropAlbumIds";
 
-const photoToMediaAsset = (photo: PhotoWithUploader): MediaAsset => ({
-  id: photo.photoId,
-  uri: photo.url,
-  thumbnailUrl: photo.thumbnailUrl ?? photo.url,
-  mediaType: "photo",
-  width: 0,
-  height: 0,
-  duration: 0,
-  creationTime: new Date(photo.createdAt).getTime(),
-  modificationTime: new Date(photo.createdAt).getTime(),
-});
+const TAB_COUNT = 3;
 
 const AlbumScreen = () => {
-  const { albumId } = useLocalSearchParams<{ albumId: string }>();
+  const { albumId, initialTab } = useLocalSearchParams<{
+    albumId: string;
+    /** Optional deep-selected tab index (e.g. push routing → Moments) */
+    initialTab?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // Resolved once on mount: which tab the screen opens on. Push routing
+  // passes initialTab=2 to land on Moments.
+  const initialTabIndexRef = useRef<number | null>(null);
+  if (initialTabIndexRef.current === null) {
+    const parsed = Number(initialTab);
+    initialTabIndexRef.current =
+      Number.isInteger(parsed) && parsed >= 0 && parsed < TAB_COUNT
+        ? parsed
+        : 0;
+  }
+  const initialTabIndex = initialTabIndexRef.current;
+
   const pagerRef = useRef<PagerView>(null);
+  // While true, onPageScroll is ignored so a programmatic setPage
+  // doesn't sweep the nav title / tab highlights through intermediate tabs
+  const isTabJumpRef = useRef(false);
   const galleryScrollY = useSharedValue(0);
-  const tabPosition = useSharedValue(0);
+  const tabPosition = useSharedValue(initialTabIndex);
 
   const { data: album } = useGetAlbumQuery(albumId!);
+  // The nav bar suppresses its "Page" tab title/background while the
+  // album has no page (the create-page hero shows there instead). While
+  // still loading, assume a page exists so the title never flashes away.
+  const { data: page, isLoading: pageLoading } = useGetPageQuery(albumId!);
+  const pageExists = pageLoading ? true : page != null;
   const { data: photos, isLoading } = useGetPhotosQuery(albumId);
+  // Live-drop badge on the Moments tab — refreshed by the global takeover
+  // hook (foreground, socket, push), so it flips without this screen doing
+  // anything
+  const liveDropAlbumIds = useLiveDropAlbumIds();
+  const momentsLive = albumId ? liveDropAlbumIds.has(albumId) : false;
 
   const assets = useMemo(() => {
     if (!photos) return [];
@@ -47,10 +65,15 @@ const AlbumScreen = () => {
       .sort((a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0));
   }, [photos]);
 
-  const galleryUrls = useMemo(() => assets.map((asset) => asset.uri), [assets]);
   const members = useMemo(() => album?.members ?? [], [album?.members]);
 
   const handleBack = useCallback(() => router.back(), [router]);
+
+  const handleOpenSettings = useCallback(() => {
+    if (albumId) {
+      router.push(`/album/${albumId}/settings`);
+    }
+  }, [albumId, router]);
 
   const handlePageSelected = useCallback(
     (e: any) => {
@@ -62,16 +85,26 @@ const AlbumScreen = () => {
 
   const handlePageScroll = useCallback(
     (e: any) => {
+      if (isTabJumpRef.current) return;
       const { position, offset } = e.nativeEvent;
       tabPosition.value = position + offset;
     },
     [tabPosition],
   );
 
+  const handlePageScrollStateChanged = useCallback((e: any) => {
+    const { pageScrollState } = e.nativeEvent;
+    // idle: jump finished; dragging: user grabbed the pager mid-jump
+    if (pageScrollState === "idle" || pageScrollState === "dragging") {
+      isTabJumpRef.current = false;
+    }
+  }, []);
+
   const handleTabPress = useCallback(
     (index: number) => {
-      pagerRef.current?.setPage(index);
+      isTabJumpRef.current = true;
       tabPosition.value = index;
+      pagerRef.current?.setPage(index);
     },
     [tabPosition],
   );
@@ -85,37 +118,34 @@ const AlbumScreen = () => {
         scrollPosition={tabPosition}
         galleryScrollY={galleryScrollY}
         onBack={handleBack}
+        onSettingsPress={handleOpenSettings}
+        pageExists={pageExists}
       />
 
       <PagerView
         ref={pagerRef}
         style={styles.pager}
-        initialPage={0}
+        initialPage={initialTabIndex}
         onPageScroll={handlePageScroll}
         onPageSelected={handlePageSelected}
+        onPageScrollStateChanged={handlePageScrollStateChanged}
         overdrag={false}
         offscreenPageLimit={1}
       >
         <GalleryPage
           key="gallery"
           album={album}
+          albumId={albumId}
           assets={assets}
-          galleryUrls={galleryUrls}
           isLoading={isLoading}
           galleryScrollY={galleryScrollY}
+          contentTop={contentTop}
         />
 
         <PagePage key="page" contentTop={contentTop} />
 
-        <ChatPage
-          key="chat"
-          contentTop={contentTop}
-          albumId={albumId}
-          albumTitle={album?.title}
-        />
-
-        <SettingsPage
-          key="settings"
+        <MomentsPage
+          key="moments"
           contentTop={contentTop}
           albumId={albumId}
         />
@@ -126,6 +156,7 @@ const AlbumScreen = () => {
         onTabPress={handleTabPress}
         photoCount={assets.length}
         memberCount={members.length}
+        momentsLive={momentsLive}
       />
     </View>
   );

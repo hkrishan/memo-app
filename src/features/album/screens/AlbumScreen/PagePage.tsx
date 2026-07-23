@@ -1,14 +1,40 @@
 import { ResizeMode, Video } from "expo-av";
 import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useMemo } from "react";
-import { View, StyleSheet, Text, Image, Pressable } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  View,
+  StyleSheet,
+  Text,
+  Image,
+  Pressable,
+  Modal,
+  Dimensions,
+} from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { Button } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useGetPageQuery } from "@/features/page/api/page.queries";
 import { Page } from "@/features/page/types/page.types";
 import PostGrid from "@/features/page/components/PostGrid";
+
+/** Cover frame geometry — the preview scales this exact shape up. */
+const COVER_SIZE = 72;
+const COVER_RADIUS = 20;
+const PREVIEW_SIZE = Math.min(
+  Dimensions.get("window").width * 0.78,
+  320,
+);
+/** Same corner-to-size ratio as the small frame, so the shape reads identical */
+const PREVIEW_RADIUS = PREVIEW_SIZE * (COVER_RADIUS / COVER_SIZE);
 
 interface PagePageProps {
   contentTop: number;
@@ -47,23 +73,50 @@ const PageContent = ({
     router.push(`/album/${albumId}/page/${pageId}/create-post`);
   }, [albumId, pageId]);
 
+  const handleOpenSettings = useCallback(() => {
+    router.push(`/album/${albumId}/page/${pageId}/settings`);
+  }, [albumId, pageId]);
+
+  const coverUri =
+    page?.coverPhoto?.thumbnailUrl ?? page?.coverPhoto?.url ?? null;
+
   const headerComponent = useMemo(
     () => (
-      <View style={styles.headerSection}>
+      // The header owns the top inset so its blurred-cover backdrop reaches
+      // the very top of the screen and slides under the frosted nav bar
+      <View style={[styles.headerSection, { paddingTop: contentTop + 20 }]}>
+        {coverUri != null && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {/* The page's own cover, blown up and heavily blurred, as the
+                header's hero backdrop; a light frost keeps text legible */}
+            <ExpoImage
+              source={{ uri: coverUri }}
+              style={styles.headerBackdropImage}
+              contentFit="cover"
+              blurRadius={45}
+              transition={200}
+            />
+            <View style={styles.headerBackdropFrost} />
+          </View>
+        )}
         <View style={styles.profileRow}>
           <PageCoverPhoto page={page} />
           <View style={styles.profileInfo}>
             <Text style={styles.pageTitle}>{page?.pageTitle}</Text>
             <Text style={styles.pageHandle}>@{page?.pageHandle}</Text>
           </View>
+          <Pressable
+            onPress={handleOpenSettings}
+            style={styles.settingsButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color="#000" />
+          </Pressable>
         </View>
-        <Pressable onPress={handleCreatePost} style={styles.createPostButton}>
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.createPostButtonText}>New Post</Text>
-        </Pressable>
+        {!!page?.bio && <Text style={styles.pageBio}>{page.bio}</Text>}
       </View>
     ),
-    [page, handleCreatePost]
+    [page, coverUri, contentTop, handleOpenSettings]
   );
 
   return (
@@ -72,7 +125,7 @@ const PageContent = ({
         albumId={albumId}
         pageId={pageId}
         ListHeaderComponent={headerComponent}
-        contentContainerStyle={{ paddingTop: contentTop, paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
       />
 
       {/* FAB for creating posts */}
@@ -139,23 +192,158 @@ const NoPage = ({ albumId }: { albumId: string }) => {
   );
 };
 
+// Rounded square matching the gallery's album cover (AlbumHeader/tiles) —
+// same shape language, hairline edge, quiet placeholder; no gradient ring.
+// Tapping it opens an enlarged preview in the exact same shape.
+type OriginFrame = { x: number; y: number; width: number; height: number };
+
 const PageCoverPhoto = ({ page }: { page: Page }) => {
+  const thumbUri = page?.coverPhoto?.thumbnailUrl ?? page?.coverPhoto?.url;
+  const fullUri = page?.coverPhoto?.url ?? thumbUri;
+  const [previewOrigin, setPreviewOrigin] = useState<OriginFrame | null>(null);
+  const frameRef = React.useRef<View>(null);
+
+  // Measure the small frame at press time — the preview flies out of (and
+  // back into) this exact rect
+  const handlePress = useCallback(() => {
+    if (!fullUri) return;
+    Haptics.selectionAsync();
+    const node = frameRef.current;
+    if (!node) return;
+    node.measureInWindow((x, y, width, height) => {
+      setPreviewOrigin(
+        width > 0 && height > 0
+          ? { x, y, width, height }
+          : { x: 0, y: 0, width: 0, height: 0 },
+      );
+    });
+  }, [fullUri]);
+
   return (
-    <LinearGradient
-      colors={["#ff00b7ff", "#495bffff", "#9b69ffff"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.coverPhotoGradient}
-    >
-      <View style={styles.coverPhotoInner}>
-        <Image
-          source={{
-            uri: page?.coverPhoto?.thumbnailUrl ?? page?.coverPhoto?.url,
-          }}
-          style={styles.coverPhotoImage}
+    <>
+      <Pressable
+        ref={frameRef}
+        onPress={handlePress}
+        disabled={!fullUri}
+        style={({ pressed }) => [
+          styles.coverPhotoFrame,
+          pressed && styles.coverPhotoPressed,
+        ]}
+        accessibilityRole="imagebutton"
+        accessibilityLabel="View page picture"
+      >
+        {thumbUri ? (
+          <ExpoImage
+            source={{ uri: thumbUri }}
+            style={styles.coverPhotoImage}
+            contentFit="cover"
+            transition={150}
+          />
+        ) : (
+          <View style={styles.coverPhotoFallback}>
+            <Ionicons name="images-outline" size={24} color="#C7C7CC" />
+          </View>
+        )}
+        <View style={styles.coverPhotoEdge} pointerEvents="none" />
+      </Pressable>
+      {fullUri != null && previewOrigin != null && (
+        <CoverPreviewModal
+          uri={fullUri}
+          thumbUri={thumbUri ?? undefined}
+          origin={previewOrigin}
+          onClose={() => setPreviewOrigin(null)}
         />
-      </View>
-    </LinearGradient>
+      )}
+    </>
+  );
+};
+
+/**
+ * Enlarged cover preview that FLIES out of the small frame: position, size
+ * and corner radius all interpolate from the measured origin rect to the
+ * centered preview rect (the same shape at both ends), and fly back home on
+ * dismiss. The backdrop blur/dim fades with the flight.
+ */
+const CoverPreviewModal = ({
+  uri,
+  thumbUri,
+  origin,
+  onClose,
+}: {
+  uri: string;
+  thumbUri?: string;
+  origin: OriginFrame;
+  onClose: () => void;
+}) => {
+  const progress = useSharedValue(0);
+
+  const window = Dimensions.get("window");
+  const finalX = (window.width - PREVIEW_SIZE) / 2;
+  const finalY = (window.height - PREVIEW_SIZE) / 2;
+
+  useEffect(() => {
+    progress.value = withTiming(1, {
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [progress]);
+
+  const handleDismiss = useCallback(() => {
+    progress.value = withTiming(
+      0,
+      { duration: 210, easing: Easing.inOut(Easing.cubic) },
+      (finished) => {
+        if (finished) {
+          runOnJS(onClose)();
+        }
+      },
+    );
+  }, [progress, onClose]);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
+
+  const cardStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return {
+      left: origin.x + (finalX - origin.x) * p,
+      top: origin.y + (finalY - origin.y) * p,
+      width: origin.width + (PREVIEW_SIZE - origin.width) * p,
+      height: origin.height + (PREVIEW_SIZE - origin.height) * p,
+      borderRadius: COVER_RADIUS + (PREVIEW_RADIUS - COVER_RADIUS) * p,
+    };
+  });
+
+  return (
+    <Modal
+      visible
+      transparent
+      statusBarTranslucent
+      animationType="none"
+      onRequestClose={handleDismiss}
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
+        <BlurView
+          style={StyleSheet.absoluteFill}
+          intensity={40}
+          tint="dark"
+        />
+        <View style={styles.previewDim} />
+      </Animated.View>
+      {/* Tap anywhere — backdrop or the flying card itself — to dismiss */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss}>
+        <Animated.View style={[styles.previewCard, cardStyle]}>
+          <ExpoImage
+            source={{ uri }}
+            placeholder={thumbUri ? { uri: thumbUri } : undefined}
+            style={styles.coverPhotoImage}
+            contentFit="cover"
+            transition={0}
+          />
+        </Animated.View>
+      </Pressable>
+    </Modal>
   );
 };
 
@@ -167,20 +355,37 @@ const styles = StyleSheet.create({
   },
   headerSection: {
     paddingHorizontal: 16,
-    paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e0e0e0",
     marginBottom: 2,
+    overflow: "hidden",
+  },
+  headerBackdropImage: {
+    ...StyleSheet.absoluteFillObject,
+    // Overscale so the blur never shows hard edges at the borders
+    transform: [{ scale: 1.25 }],
+  },
+  headerBackdropFrost: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.62)",
   },
   profileRow: {
     flexDirection: "row",
     gap: 16,
-    marginBottom: 16,
   },
   profileInfo: {
     flex: 1,
     justifyContent: "center",
+  },
+  settingsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#f5f5f5",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
   },
   pageTitle: {
     fontSize: 20,
@@ -193,36 +398,52 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#666",
   },
-  createPostButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#000",
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 8,
+  pageBio: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#333",
+    marginTop: 12,
   },
-  createPostButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  coverPhotoGradient: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    padding: 3,
-  },
-  coverPhotoInner: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 34,
-    backgroundColor: "#fff",
+  coverPhotoFrame: {
+    width: COVER_SIZE,
+    height: COVER_SIZE,
+    borderRadius: COVER_RADIUS,
     overflow: "hidden",
+    backgroundColor: "#F1F1F3",
+  },
+  coverPhotoPressed: {
+    opacity: 0.75,
   },
   coverPhotoImage: {
     width: "100%",
     height: "100%",
+  },
+  coverPhotoFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coverPhotoEdge: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: COVER_RADIUS,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0, 0, 0, 0.08)",
+  },
+  previewDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  },
+  previewCard: {
+    position: "absolute",
+    overflow: "hidden",
+    backgroundColor: "#1c1c1e",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.28)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.4,
+    shadowRadius: 32,
+    elevation: 16,
   },
   fab: {
     position: "absolute",

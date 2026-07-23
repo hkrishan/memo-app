@@ -44,17 +44,19 @@ const getIconName = (type: NotificationType): keyof typeof Ionicons.glyphMap => 
   }
 };
 
-const getColors = (type: NotificationType) => {
+// One black pill for every type — only the icon carries the accent
+// (green check for success, iOS-style)
+const getIconColor = (type: NotificationType): string => {
   switch (type) {
     case "success":
-      return { bg: "#1a3d1a", icon: "#4ade80", border: "#22c55e" };
+      return "#30D158";
     case "error":
-      return { bg: "#3d1a1a", icon: "#f87171", border: "#ef4444" };
+      return "#FF6961";
     case "warning":
-      return { bg: "#3d3a1a", icon: "#fbbf24", border: "#f59e0b" };
+      return "#FFD60A";
     case "info":
     default:
-      return { bg: "#1a2a3d", icon: "#60a5fa", border: "#3b82f6" };
+      return "#64A8FF";
   }
 };
 
@@ -67,7 +69,7 @@ export default function Toast({ notification, onRemove }: ToastProps) {
   const isAnimatingOut = useRef(false);
 
   const isTop = notification.position === "top";
-  const colors = getColors(notification.type);
+  const iconColor = getIconColor(notification.type);
 
   // Animate in on mount
   useEffect(() => {
@@ -147,32 +149,33 @@ export default function Toast({ notification, onRemove }: ToastProps) {
     opacity: opacity.value,
   }));
 
-  const containerStyle = [
-    styles.container,
+  const wrapperStyle = [
+    styles.wrapper,
     {
-      backgroundColor: colors.bg,
-      borderLeftColor: colors.border,
       [isTop ? "top" : "bottom"]: isTop ? insets.top + 10 : insets.bottom + 10,
     },
   ];
 
   return (
     <GestureDetector gesture={panGesture}>
-      <Animated.View style={[containerStyle, animatedStyle]}>
+      <Animated.View
+        style={[wrapperStyle, animatedStyle]}
+        pointerEvents="box-none"
+      >
+        {/* Compact black pill; a tap runs the action (if any) or dismisses */}
         <Pressable
-          style={styles.content}
+          style={styles.pill}
           onPress={() => {
             if (notification.onPress) {
               notification.onPress();
-              handleManualDismiss();
             }
+            handleManualDismiss();
           }}
         >
           <Ionicons
             name={getIconName(notification.type)}
-            size={24}
-            color={colors.icon}
-            style={styles.icon}
+            size={18}
+            color={iconColor}
           />
           <Animated.View style={styles.textContainer}>
             <Text style={styles.title} numberOfLines={1}>
@@ -184,9 +187,6 @@ export default function Toast({ notification, onRemove }: ToastProps) {
               </Text>
             )}
           </Animated.View>
-          <Pressable onPress={handleManualDismiss} hitSlop={10}>
-            <Ionicons name="close" size={20} color="#888" />
-          </Pressable>
         </Pressable>
       </Animated.View>
     </GestureDetector>
@@ -194,39 +194,39 @@ export default function Toast({ notification, onRemove }: ToastProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  wrapper: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    left: 24,
+    right: 24,
+    alignItems: "center",
     zIndex: 9999,
   },
-  content: {
+  pill: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
-  },
-  icon: {
-    marginRight: 12,
+    gap: 9,
+    maxWidth: "100%",
+    backgroundColor: "rgba(22, 22, 24, 0.97)",
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 8,
   },
   textContainer: {
-    flex: 1,
-    marginRight: 8,
+    flexShrink: 1,
   },
   title: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
     color: "#fff",
   },
   message: {
-    fontSize: 13,
-    color: "#aaa",
-    marginTop: 2,
+    fontSize: 12.5,
+    color: "#a9a9b0",
+    marginTop: 1,
   },
 });

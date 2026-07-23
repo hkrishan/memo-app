@@ -96,3 +96,52 @@ export type FeedItem = AlbumActivityFeedItem | PagePostFeedItem;
 export interface FeedResponse {
   items: FeedItem[];
 }
+
+// ---------------------------------------------------------------------------
+// Albums feed (GET /feed/albums) — cross-album updates timeline
+// ---------------------------------------------------------------------------
+
+export interface AlbumUpdatePhoto {
+  photoId: string;
+  url: string;
+  thumbnailUrl: string | null;
+  mediaType: "photo" | "video";
+}
+
+interface AlbumUpdateBase {
+  id: string;
+  albumId: string;
+  albumTitle: string;
+  actor: FeedUser;
+  createdAt: string;
+}
+
+export interface PhotosAddedUpdate extends AlbumUpdateBase {
+  type: "photos_added";
+  /** Up to 4 newest of the group */
+  photos: AlbumUpdatePhoto[];
+  photoCount: number;
+}
+
+export interface MemberJoinedUpdate extends AlbumUpdateBase {
+  type: "member_joined";
+}
+
+export interface MomentStartedUpdate extends AlbumUpdateBase {
+  type: "moment_started";
+  moment: {
+    momentId: string;
+    momentType: "daily_drop" | "challenge";
+    title: string;
+  };
+}
+
+export type AlbumFeedUpdate =
+  | PhotosAddedUpdate
+  | MemberJoinedUpdate
+  | MomentStartedUpdate;
+
+export interface AlbumsFeedResponse {
+  items: AlbumFeedUpdate[];
+  nextCursor: string | null;
+}

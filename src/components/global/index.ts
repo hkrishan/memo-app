@@ -5,6 +5,10 @@ export {
   notify,
 } from "./notification";
 
+export { uploadIndicator, UploadIndicatorHost } from "./uploadIndicator";
+
+export { UploadProgressHost } from "./uploadProgress";
+
 export type {
   Notification,
   ToastNotification,

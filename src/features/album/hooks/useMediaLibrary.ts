@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { AppState } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import { perf, PerfInteractions } from "@/lib/performance";
 
@@ -17,6 +18,8 @@ export interface MediaAsset {
   duration: number;
   creationTime: number;
   modificationTime: number;
+  /** Album photos: like count for the grid badges. Device assets omit it. */
+  likeCount?: number;
 }
 
 interface UseMediaLibraryOptions {
@@ -30,6 +33,8 @@ interface UseMediaLibraryReturn {
   hasPermission: boolean | null;
   isLoading: boolean;
   hasMore: boolean;
+  /** Total number of matching assets in the library (null until known). */
+  totalCount: number | null;
   requestPermission: () => Promise<boolean>;
   loadMore: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -43,11 +48,16 @@ export function useMediaLibrary(
   const [isLoading, setIsLoading] = useState(false);
   const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
 
   // Use refs for values that shouldn't trigger callback recreation
   const isLoadingRef = useRef(false);
   const endCursorRef = useRef<string | undefined>(undefined);
   const hasMoreRef = useRef(true);
+  const hasPermissionRef = useRef<boolean | null>(null);
+  // Bumped by refresh(); loads that started under an older generation must
+  // discard their results so a stale loadMore can't overwrite the fresh page
+  const generationRef = useRef(0);
 
   // Store options in refs to keep callbacks stable
   const optionsRef = useRef({
@@ -62,32 +72,26 @@ export function useMediaLibrary(
   // Check permission on mount
   useEffect(() => {
     checkPermission();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkPermission = async () => {
     const { status } = await MediaLibrary.getPermissionsAsync();
-    setHasPermission(status === "granted");
-
-    if (status === "granted") {
-      loadAssets();
-    }
-  };
-
-  const requestPermission = useCallback(async (): Promise<boolean> => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
     const granted = status === "granted";
+    hasPermissionRef.current = granted;
     setHasPermission(granted);
 
     if (granted) {
       loadAssets();
     }
+  };
 
-    return granted;
-  }, []);
+  const loadAssets = useCallback(async (cursor?: string, force = false) => {
+    // `force` lets refresh() start its fresh first-page load even while a
+    // stale (now-discarded) load is still in flight
+    if (isLoadingRef.current && !force) return;
 
-  const loadAssets = useCallback(async (cursor?: string) => {
-    if (isLoadingRef.current) return;
-
+    const generation = generationRef.current;
     isLoadingRef.current = true;
     setIsLoading(true);
 
@@ -104,6 +108,10 @@ export function useMediaLibrary(
         sortBy,
         after: cursor,
       });
+
+      // A refresh() bumped the generation while we were in flight — this
+      // result belongs to the old list, so discard it (no state/cursor writes)
+      if (generation !== generationRef.current) return;
 
       // Map assets immediately without blocking on URI resolution.
       // Components that need resolved file:// URIs should use useResolvedAssetUri hook.
@@ -131,14 +139,52 @@ export function useMediaLibrary(
       hasMoreRef.current = result.hasNextPage;
       setEndCursor(result.endCursor);
       setHasMore(result.hasNextPage);
+      setTotalCount(result.totalCount);
     } catch (error) {
       console.error("Error loading media assets:", error);
     } finally {
-      isLoadingRef.current = false;
-      setIsLoading(false);
+      // Only the load that owns the current generation may clear the loading
+      // flags — a discarded stale load must not stomp the fresh load's state
+      if (generation === generationRef.current) {
+        isLoadingRef.current = false;
+        setIsLoading(false);
+      }
       endPerfTrace();
     }
   }, []);
+
+  const requestPermission = useCallback(async (): Promise<boolean> => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    const granted = status === "granted";
+    hasPermissionRef.current = granted;
+    setHasPermission(granted);
+
+    if (granted) {
+      loadAssets();
+    }
+
+    return granted;
+  }, [loadAssets]);
+
+  // Re-check permission when the app returns to the foreground: the user may
+  // have granted access in Settings after seeing the denied screen
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || hasPermissionRef.current === true) return;
+      MediaLibrary.getPermissionsAsync()
+        .then(({ status }) => {
+          if (status === "granted" && hasPermissionRef.current !== true) {
+            hasPermissionRef.current = true;
+            setHasPermission(true);
+            loadAssets();
+          }
+        })
+        .catch(() => {
+          // Ignore — next foreground will retry
+        });
+    });
+    return () => subscription.remove();
+  }, [loadAssets]);
 
   const loadMore = useCallback(async () => {
     if (!hasMoreRef.current || isLoadingRef.current || !endCursorRef.current)
@@ -147,11 +193,15 @@ export function useMediaLibrary(
   }, [loadAssets]);
 
   const refresh = useCallback(async () => {
+    // Invalidate any in-flight load (its results/cursor writes are discarded)
+    generationRef.current += 1;
     endCursorRef.current = undefined;
     hasMoreRef.current = true;
     setEndCursor(undefined);
     setHasMore(true);
-    await loadAssets();
+    // Force so the fresh first-page load always runs, even if a stale load
+    // still holds the isLoading flag
+    await loadAssets(undefined, true);
   }, [loadAssets]);
 
   return {
@@ -159,6 +209,7 @@ export function useMediaLibrary(
     hasPermission,
     isLoading,
     hasMore,
+    totalCount,
     requestPermission,
     loadMore,
     refresh,

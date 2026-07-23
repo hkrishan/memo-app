@@ -1,4 +1,7 @@
+import { router } from "expo-router";
 import { httpClient, tokenStorage } from "@/lib/api";
+import { queryClient } from "@/lib/api/queryClient";
+import { useAuthStore } from "../store/authStore";
 import authApi from "../api/auth.api";
 
 /**
@@ -25,5 +28,13 @@ export function setupAuth() {
       console.error("Token refresh failed:", error);
       return null;
     }
+  });
+
+  // When the refresh token itself is dead, log the user out instead of
+  // leaving them stuck on authenticated screens with endless 401s.
+  httpClient.setOnSessionExpired(() => {
+    useAuthStore.getState().reset();
+    queryClient.clear();
+    router.replace("/login");
   });
 }

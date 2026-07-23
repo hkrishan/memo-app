@@ -1,18 +1,23 @@
 /**
  * ModeToggle Component
- * Toggle slider to switch between Photo and Video modes
+ * Photo/Video capture mode switch below the capture button.
+ * Photo mode still supports hold-to-record; video mode makes a tap
+ * start/stop recording.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, View, Pressable, Text } from 'react-native';
 import Animated, {
+  useSharedValue,
   useAnimatedStyle,
   withTiming,
   Easing,
 } from 'react-native-reanimated';
 
 import { CaptureMode } from '../types';
-import { CAMERA_UI_CONFIG } from '../constants';
+
+const OPTION_WIDTH = 76;
+const OPTION_HEIGHT = 32;
 
 interface ModeToggleProps {
   mode: CaptureMode;
@@ -21,7 +26,7 @@ interface ModeToggleProps {
 }
 
 const TIMING_CONFIG = {
-  duration: 200,
+  duration: 180,
   easing: Easing.out(Easing.quad),
 };
 
@@ -30,39 +35,47 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({
   onModeChange,
   disabled,
 }) => {
-  const isVideo = mode === CaptureMode.VIDEO;
+  const indicatorX = useSharedValue(mode === CaptureMode.PHOTO ? 0 : OPTION_WIDTH);
+
+  useEffect(() => {
+    indicatorX.value = withTiming(
+      mode === CaptureMode.PHOTO ? 0 : OPTION_WIDTH,
+      TIMING_CONFIG,
+    );
+  }, [mode, indicatorX]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX: withTiming(isVideo ? 60 : 0, TIMING_CONFIG),
-      },
-    ],
+    transform: [{ translateX: indicatorX.value }],
   }));
 
   return (
     <View style={[styles.container, disabled && styles.disabled]}>
-      {/* Sliding indicator */}
       <Animated.View style={[styles.indicator, indicatorStyle]} />
-
-      {/* Photo option */}
       <Pressable
-        style={styles.option}
         onPress={() => onModeChange(CaptureMode.PHOTO)}
         disabled={disabled}
+        style={styles.option}
       >
-        <Text style={[styles.optionText, !isVideo && styles.optionTextActive]}>
+        <Text
+          style={[
+            styles.optionText,
+            mode === CaptureMode.PHOTO && styles.optionTextActive,
+          ]}
+        >
           Photo
         </Text>
       </Pressable>
-
-      {/* Video option */}
       <Pressable
-        style={styles.option}
         onPress={() => onModeChange(CaptureMode.VIDEO)}
         disabled={disabled}
+        style={styles.option}
       >
-        <Text style={[styles.optionText, isVideo && styles.optionTextActive]}>
+        <Text
+          style={[
+            styles.optionText,
+            mode === CaptureMode.VIDEO && styles.optionTextActive,
+          ]}
+        >
           Video
         </Text>
       </Pressable>
@@ -73,36 +86,35 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: (OPTION_HEIGHT + 8) / 2,
     padding: 4,
-    position: 'relative',
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.4,
   },
   indicator: {
     position: 'absolute',
     top: 4,
     left: 4,
-    width: 60,
-    height: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    borderRadius: 16,
+    width: OPTION_WIDTH,
+    height: OPTION_HEIGHT,
+    borderRadius: OPTION_HEIGHT / 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
   },
   option: {
-    width: 60,
-    height: 28,
-    justifyContent: 'center',
+    width: OPTION_WIDTH,
+    height: OPTION_HEIGHT,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   optionText: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: 'rgba(255, 255, 255, 0.85)',
     fontSize: 13,
     fontWeight: '600',
   },
   optionTextActive: {
-    color: '#fff',
+    color: '#000',
   },
 });
 

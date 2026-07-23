@@ -1,12 +1,14 @@
 /**
  * AlbumNavBar Component
- * Optimized - no blur, minimal animations
+ * Transparent over the gallery header; the white background, hairline and
+ * album title fade in as the header scrolls under the bar. Other tabs
+ * always show an opaque bar with their title.
  */
 
 import React, { memo } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
-import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   SharedValue,
@@ -20,19 +22,34 @@ interface AlbumNavBarProps {
   scrollPosition: SharedValue<number>;
   galleryScrollY: SharedValue<number>;
   onBack: () => void;
+  onSettingsPress: () => void;
+  /**
+   * Whether the album has a page yet. When it doesn't, the Page tab shows
+   * its create-page hero and the nav bar melts away there — no "Page"
+   * title, no frosted background, just the back button.
+   */
+  pageExists?: boolean;
 }
 
 export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
-  ({ title, scrollPosition, galleryScrollY, onBack }) => {
+  ({
+    title,
+    scrollPosition,
+    galleryScrollY,
+    onBack,
+    onSettingsPress,
+    pageExists = true,
+  }) => {
     const insets = useSafeAreaInsets();
 
-    // Simple background opacity
+    // White background + hairline - fades in as the gallery header slides
+    // under the bar; always opaque on other pages. With no page created,
+    // the background clears again as the Page tab comes on screen.
     const bgStyle = useAnimatedStyle(() => {
       "worklet";
-      // Show bg when scrolled on gallery OR on other pages
       const galleryBg = interpolate(
         galleryScrollY.value,
-        [0, 100],
+        [60, 130],
         [0, 1],
         Extrapolation.CLAMP,
       );
@@ -42,10 +59,14 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
         [galleryBg, 1],
         Extrapolation.CLAMP,
       );
-      return { opacity: pageBg };
+      const pagePresence = pageExists
+        ? 0
+        : 1 -
+          Math.min(Math.abs(scrollPosition.value - 1), 1);
+      return { opacity: pageBg * (1 - pagePresence) };
     });
 
-    // Gallery title (index 0) - visible when on gallery AND scrolled
+    // Gallery title (index 0) - visible once the header title scrolls away
     const galleryTitleStyle = useAnimatedStyle(() => {
       "worklet";
       const pageOpacity = interpolate(
@@ -56,14 +77,14 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
       );
       const scrollOpacity = interpolate(
         galleryScrollY.value,
-        [50, 150],
+        [60, 130],
         [0, 1],
         Extrapolation.CLAMP,
       );
       return { opacity: pageOpacity * scrollOpacity };
     });
 
-    // Page title (index 1)
+    // Page title (index 1) — suppressed entirely until a page exists
     const pageTitleStyle = useAnimatedStyle(() => {
       "worklet";
       const opacity = interpolate(
@@ -72,79 +93,19 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
         [0, 1, 0],
         Extrapolation.CLAMP,
       );
-      return { opacity };
+      return { opacity: pageExists ? opacity : 0 };
     });
 
-    // Chat title (index 2)
-    const chatTitleStyle = useAnimatedStyle(() => {
+    // Moments title (index 2)
+    const momentsTitleStyle = useAnimatedStyle(() => {
       "worklet";
       const opacity = interpolate(
         scrollPosition.value,
-        [1.5, 2, 2.5],
-        [0, 1, 0],
-        Extrapolation.CLAMP,
-      );
-      return { opacity };
-    });
-
-    // Activity title (index 3)
-    const activityTitleStyle = useAnimatedStyle(() => {
-      "worklet";
-      const opacity = interpolate(
-        scrollPosition.value,
-        [2.5, 3, 3.5],
-        [0, 1, 0],
-        Extrapolation.CLAMP,
-      );
-      return { opacity };
-    });
-
-    // Settings title (index 4)
-    const settingsTitleStyle = useAnimatedStyle(() => {
-      "worklet";
-      const opacity = interpolate(
-        scrollPosition.value,
-        [3.5, 4],
+        [1.5, 2],
         [0, 1],
         Extrapolation.CLAMP,
       );
       return { opacity };
-    });
-
-    // Icon style - white on gallery not scrolled, black otherwise
-    const isLightIcon = useAnimatedStyle(() => {
-      "worklet";
-      const scrolled = interpolate(
-        galleryScrollY.value,
-        [0, 100],
-        [0, 1],
-        Extrapolation.CLAMP,
-      );
-      const onOtherPage = interpolate(
-        scrollPosition.value,
-        [0, 0.3],
-        [0, 1],
-        Extrapolation.CLAMP,
-      );
-      const isDark = Math.max(scrolled, onOtherPage);
-      return { opacity: 1 - isDark };
-    });
-
-    const isDarkIcon = useAnimatedStyle(() => {
-      "worklet";
-      const scrolled = interpolate(
-        galleryScrollY.value,
-        [0, 100],
-        [0, 1],
-        Extrapolation.CLAMP,
-      );
-      const onOtherPage = interpolate(
-        scrollPosition.value,
-        [0, 0.3],
-        [0, 1],
-        Extrapolation.CLAMP,
-      );
-      return { opacity: Math.max(scrolled, onOtherPage) };
     });
 
     return (
@@ -152,23 +113,25 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
         style={[styles.container, { paddingTop: insets.top }]}
         pointerEvents="box-none"
       >
-        {/* Background */}
+        {/* Frosted light bar: live blur of the content scrolling beneath
+            plus a light wash — same material as the tabs' top bar. The
+            scroll-driven bgStyle fades the whole stack in/out. */}
         <Animated.View
           style={[styles.background, bgStyle]}
           pointerEvents="none"
-        />
+        >
+          <BlurView
+            style={StyleSheet.absoluteFill}
+            intensity={40}
+            tint="light"
+          />
+          <View style={styles.backgroundFrost} />
+        </Animated.View>
 
         {/* Content */}
         <View style={styles.content} pointerEvents="box-none">
           <Pressable onPress={onBack} style={styles.navButton}>
-            <View>
-              <Animated.View style={isLightIcon}>
-                <Ionicons name="chevron-back" size={26} color="#fff" />
-              </Animated.View>
-              <Animated.View style={[styles.iconAbsolute, isDarkIcon]}>
-                <Ionicons name="chevron-back" size={26} color="#000" />
-              </Animated.View>
-            </View>
+            <Ionicons name="chevron-back" size={26} color="#000" />
           </Pressable>
 
           <View style={styles.titleContainer} pointerEvents="none">
@@ -185,34 +148,20 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
               Page
             </Animated.Text>
             <Animated.Text
-              style={[styles.titleDark, styles.titleAbsolute, chatTitleStyle]}
-              numberOfLines={1}
-            >
-              Chat
-            </Animated.Text>
-            <Animated.Text
               style={[
                 styles.titleDark,
                 styles.titleAbsolute,
-                activityTitleStyle,
+                momentsTitleStyle,
               ]}
               numberOfLines={1}
             >
-              Activity
-            </Animated.Text>
-            <Animated.Text
-              style={[
-                styles.titleDark,
-                styles.titleAbsolute,
-                settingsTitleStyle,
-              ]}
-              numberOfLines={1}
-            >
-              Settings
+              Moments
             </Animated.Text>
           </View>
 
-          <View style={styles.navButton} />
+          <Pressable onPress={onSettingsPress} style={styles.navButton}>
+            <Ionicons name="settings-outline" size={24} color="#000" />
+          </Pressable>
         </View>
       </View>
     );
@@ -229,9 +178,13 @@ const styles = StyleSheet.create({
   },
   background: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#fff",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#e0e0e0",
+    borderBottomColor: "rgba(0, 0, 0, 0.08)",
+    overflow: "hidden",
+  },
+  backgroundFrost: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
   },
   content: {
     flexDirection: "row",
@@ -244,11 +197,6 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: "center",
     justifyContent: "center",
-  },
-  iconAbsolute: {
-    position: "absolute",
-    top: 0,
-    left: 0,
   },
   titleContainer: {
     flex: 1,

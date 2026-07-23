@@ -3,18 +3,21 @@
  * Export all camera-related UI components
  */
 
-export { FlashButton } from './FlashButton';
-export { CameraSwitchButton } from './CameraSwitchButton';
 export { CaptureButton } from './CaptureButton';
-export { VideoTimer } from './VideoTimer';
-export { ZoomLevelIndicator } from './ZoomLevelIndicator';
-export { MediaPreview } from './MediaPreview';
 export { ModeToggle } from './ModeToggle';
+export { VideoTimer } from './VideoTimer';
+export { MediaPreview } from './MediaPreview';
+export { PhotoSaveSheet } from './PhotoSaveSheet';
+export type { PhotoSaveStatus } from './PhotoSaveSheet';
+export { ZoomPresetSelector } from './ZoomPresetSelector';
+export { CameraToolbar } from './CameraToolbar';
+export { GridOverlay } from './GridOverlay';
+export { CountdownOverlay } from './CountdownOverlay';
+export { FocusExposureControl } from './FocusExposureControl';
+export { LastCaptureThumbnail } from './LastCaptureThumbnail';
 
 // Re-export component props types for convenience
 export type {
-  FlashButtonProps,
-  CameraSwitchButtonProps,
   CaptureButtonProps,
   VideoTimerProps,
   MediaPreviewProps,

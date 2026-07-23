@@ -50,12 +50,15 @@ const CreateAlbumScreen: React.FC = () => {
     if (!canJoin) return;
 
     try {
-      const result = await joinAlbumMutation.mutateAsync(inviteCode.toUpperCase());
+      // Joining is approval-based: this creates a pending request, it does
+      // NOT make us a member yet — so don't navigate into the album
+      await joinAlbumMutation.mutateAsync(inviteCode.toUpperCase());
 
       router.back();
-      setTimeout(() => {
-        router.push(`/album/${result.albumId}`);
-      }, 500);
+      notify.success(
+        "Request Sent",
+        "The album owner will review your request",
+      );
     } catch (error) {
       notify.error("Invalid invite code. Please check and try again.");
     }

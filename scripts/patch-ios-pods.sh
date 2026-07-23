@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PODFILE="$ROOT_DIR/ios/Podfile"
 PROPS="$ROOT_DIR/ios/Podfile.properties.json"
-APP_PROJECT="$ROOT_DIR/ios/memoapp.xcodeproj/project.pbxproj"
-APP_DELEGATE="$ROOT_DIR/ios/memoapp/AppDelegate.swift"
+APP_PROJECT="$ROOT_DIR/ios/Memo.xcodeproj/project.pbxproj"
+APP_DELEGATE="$ROOT_DIR/ios/Memo/AppDelegate.swift"
 
 if [[ ! -f "$PODFILE" ]]; then
   echo "Podfile not found at $PODFILE" >&2
@@ -25,7 +25,7 @@ if props.get("ios.deploymentTarget") != "16.0":
 PY
 fi
 
-# 1b/2/3) Normalize Podfile: platform 16.0, Galeria pod path, and post_install target tweak
+# 1b/2/3) Normalize Podfile: platform 16.0, drop stale Galeria pod, and post_install target tweak
 PODFILE_PATH="$PODFILE" python3 - <<'PY'
 from pathlib import Path
 import os
@@ -37,14 +37,9 @@ text = podfile_path.read_text()
 # Ensure platform is 16.0
 text = re.sub(r"platform :ios,.*", "platform :ios, '16.0'", text, count=1)
 
-galeria_line = "  pod 'Galeria', :path => '../node_modules/@nandorojo/galeria/ios'"
-
-# Normalize existing Galeria line
-text = re.sub(r"^\s*pod ['\"]Galeria['\"].*$", galeria_line, text, flags=re.MULTILINE)
-
-# Insert Galeria before use_react_native! if missing
-if "Galeria" not in text:
-    text = re.sub(r"\n(\s*use_react_native!)", f"\n{galeria_line}\n\\1", text, count=1)
+# Remove any Galeria pod line — the package is no longer a dependency and
+# a leftover line breaks pod install ("No podspec found for Galeria")
+text = re.sub(r"^\s*pod ['\"]Galeria['\"].*\n", "", text, flags=re.MULTILINE)
 
 # Normalize post_install block and force deployment target to 16.0
 post_install_block = """  post_install do |installer|
@@ -69,7 +64,7 @@ text = re.sub(r"post_install do \|installer\|[\s\S]*?end\s*end\s*$", post_instal
 podfile_path.write_text(text)
 PY
 
-echo "Patched Podfile and Podfile.properties.json for iOS 16.0 and Galeria."
+echo "Patched Podfile and Podfile.properties.json for iOS 16.0 (Galeria removed if present)."
 
 # 4) Bump app target deployment target in memoapp.xcodeproj to 16.0
 if [[ -f "$APP_PROJECT" ]]; then
@@ -94,20 +89,22 @@ import re
 delegate_path = Path(os.environ["APP_DELEGATE_PATH"])
 text = delegate_path.read_text()
 
-# Pattern to match the sourceURL method (uncommented)
-source_url_pattern = r'(\s*)override func sourceURL\(for bridge: RCTBridge\) -> URL\? \{\s*\n\s*// needed to return the correct URL for expo-dev-client\.\s*\n\s*bridge\.bundleURL \?\? bundleURL\(\)\s*\n\s*\}'
+# Match the whole (uncommented) sourceURL override regardless of its exact
+# body — RCTBridge is not visible to Swift with static frameworks, so the
+# override must not compile. Already-commented lines won't match.
+source_url_pattern = re.compile(
+    r'^([ \t]*)override func sourceURL\(for bridge: RCTBridge\) -> URL\? \{.*?\n[ \t]*\}[ \t]*$',
+    re.MULTILINE | re.DOTALL,
+)
 
-# Check if the method exists and is not already commented out
-if re.search(source_url_pattern, text):
-    # Comment out the method
-    def comment_out(match):
-        indent = match.group(1)
-        return f'''{indent}// override func sourceURL(for bridge: RCTBridge) -> URL? {{
-{indent}//   // needed to return the correct URL for expo-dev-client.
-{indent}//   bridge.bundleURL ?? bundleURL()
-{indent}// }}'''
-
-    text = re.sub(source_url_pattern, comment_out, text)
+match = source_url_pattern.search(text)
+if match:
+    block = match.group(0)
+    commented = "\n".join(
+        re.sub(r"^([ \t]*)", r"\1// ", line, count=1) if line.strip() else line
+        for line in block.splitlines()
+    )
+    text = text.replace(block, commented)
     delegate_path.write_text(text)
     print("Commented out sourceURL method in AppDelegate.swift")
 else:

@@ -1,10 +1,15 @@
 /**
  * CaptureButton Component
- * Capture button - tap for photo, tap to start/stop video
+ * Snapchat-style capture button.
+ * Photo mode: tap → photo, press & hold → record video.
+ * Video mode: tap → start/stop recording.
+ * Either way, dragging up/down while recording zooms (written straight
+ * to the UI thread).
  */
 
-import React, { useCallback, useEffect } from 'react';
-import { StyleSheet, View, Pressable } from 'react-native';
+import React, { useEffect } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -12,12 +17,17 @@ import Animated, {
   withRepeat,
   withSequence,
   cancelAnimation,
+  runOnJS,
   Easing,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
-import { CaptureMode, CaptureButtonProps } from '../types';
-import { CAPTURE_BUTTON_CONFIG, RECORDING_CONFIG } from '../constants';
+import { CaptureButtonProps, CaptureMode } from '../types';
+import {
+  CAPTURE_BUTTON_CONFIG,
+  CAPTURE_GESTURE_CONFIG,
+  RECORDING_CONFIG,
+} from '../constants';
 
 const { SIZE, COLORS, BORDER } = CAPTURE_BUTTON_CONFIG;
 
@@ -78,10 +88,12 @@ const RecordingProgress: React.FC<RecordingProgressProps> = ({
   );
 };
 
-export const CaptureButton: React.FC<CaptureButtonProps & {
-  recordingDuration?: number;
-  maxDuration?: number;
-}> = ({
+export const CaptureButton: React.FC<
+  CaptureButtonProps & {
+    recordingDuration?: number;
+    maxDuration?: number;
+  }
+> = ({
   mode,
   onCapture,
   onRecordStart,
@@ -91,65 +103,125 @@ export const CaptureButton: React.FC<CaptureButtonProps & {
   size = SIZE.OUTER,
   recordingDuration = 0,
   maxDuration = RECORDING_CONFIG.MAX_DURATION,
+  zoomValue,
+  minZoom,
+  maxZoom,
+  onZoomSettled,
 }) => {
   const outerScale = useSharedValue(1);
   const innerScale = useSharedValue(1);
   const innerBorderRadius = useSharedValue(SIZE.INNER / 2);
-  const innerSize = useSharedValue(SIZE.INNER);
+  const innerSize = useSharedValue<number>(SIZE.INNER);
   const pulseOpacity = useSharedValue(1);
+  const dragBaseZoom = useSharedValue(1);
+  // Whether the hold gesture actually activated (a failed quick-press
+  // still finalizes, and must not fire onRecordStop)
+  const isHolding = useSharedValue(false);
 
-  // Update inner button appearance based on mode and recording state
+  // Recording appearance: ring grows, inner shrinks to a pulsing red dot
   useEffect(() => {
     if (isRecording) {
-      // Recording state - show red square
+      outerScale.value = withTiming(1.2, TIMING_CONFIG);
       pulseOpacity.value = withRepeat(
         withSequence(
           withTiming(0.6, { duration: 500 }),
-          withTiming(1, { duration: 500 })
+          withTiming(1, { duration: 500 }),
         ),
         -1,
-        true
+        true,
       );
-      innerBorderRadius.value = withTiming(8, TIMING_CONFIG);
+      innerBorderRadius.value = withTiming(SIZE.RECORDING_INNER / 2, TIMING_CONFIG);
       innerSize.value = withTiming(SIZE.RECORDING_INNER, TIMING_CONFIG);
-    } else if (mode === CaptureMode.VIDEO) {
-      // Video mode but not recording - show red circle
-      cancelAnimation(pulseOpacity);
-      pulseOpacity.value = 1;
-      innerBorderRadius.value = withTiming(SIZE.INNER / 2, TIMING_CONFIG);
-      innerSize.value = withTiming(SIZE.INNER, TIMING_CONFIG);
     } else {
-      // Photo mode - show white circle
       cancelAnimation(pulseOpacity);
+      outerScale.value = withTiming(1, TIMING_CONFIG);
       pulseOpacity.value = 1;
       innerBorderRadius.value = withTiming(SIZE.INNER / 2, TIMING_CONFIG);
       innerSize.value = withTiming(SIZE.INNER, TIMING_CONFIG);
     }
-  }, [isRecording, mode, innerBorderRadius, innerSize, pulseOpacity]);
+  }, [isRecording, outerScale, innerBorderRadius, innerSize, pulseOpacity]);
 
-  const handlePress = useCallback(() => {
-    // Animate press
-    outerScale.value = withSequence(
-      withTiming(0.95, { duration: 50 }),
-      withTiming(1, { duration: 100 })
-    );
-    innerScale.value = withSequence(
-      withTiming(0.9, { duration: 50 }),
-      withTiming(1, { duration: 100 })
-    );
+  // Photo mode: press & hold → record; vertical drag while holding → zoom
+  const holdGesture = Gesture.Pan()
+    .enabled(!disabled && mode === CaptureMode.PHOTO && !isRecording)
+    .activateAfterLongPress(CAPTURE_GESTURE_CONFIG.HOLD_DURATION)
+    .onStart(() => {
+      isHolding.value = true;
+      dragBaseZoom.value = zoomValue.value;
+      runOnJS(onRecordStart)();
+    })
+    .onUpdate((event) => {
+      // Exponential mapping feels linear to the eye across the zoom range
+      const factor = Math.exp(
+        -event.translationY / CAPTURE_GESTURE_CONFIG.DRAG_ZOOM_SENSITIVITY,
+      );
+      const newZoom = Math.max(
+        minZoom,
+        Math.min(maxZoom, dragBaseZoom.value * factor),
+      );
+      zoomValue.value = newZoom;
+    })
+    .onFinalize(() => {
+      if (!isHolding.value) return;
+      isHolding.value = false;
+      runOnJS(onZoomSettled)(zoomValue.value);
+      runOnJS(onRecordStop)();
+    });
 
-    if (mode === CaptureMode.PHOTO) {
-      // Photo mode - take photo
-      onCapture();
-    } else {
-      // Video mode - toggle recording
-      if (isRecording) {
-        onRecordStop();
-      } else {
-        onRecordStart();
+  // Video mode while recording: drag on the button → zoom (tap stops)
+  const recordingPanGesture = Gesture.Pan()
+    .enabled(!disabled && isRecording)
+    .minDistance(12)
+    .onStart(() => {
+      dragBaseZoom.value = zoomValue.value;
+    })
+    .onUpdate((event) => {
+      const factor = Math.exp(
+        -event.translationY / CAPTURE_GESTURE_CONFIG.DRAG_ZOOM_SENSITIVITY,
+      );
+      const newZoom = Math.max(
+        minZoom,
+        Math.min(maxZoom, dragBaseZoom.value * factor),
+      );
+      zoomValue.value = newZoom;
+    })
+    .onEnd(() => {
+      runOnJS(onZoomSettled)(zoomValue.value);
+    });
+
+  // Tap: photo mode → capture; video mode → start/stop recording
+  const tapGesture = Gesture.Tap()
+    .enabled(!disabled)
+    // Must cover the hold threshold so no release window falls between
+    // "too long for a tap" and "not long enough for a hold"
+    .maxDuration(CAPTURE_GESTURE_CONFIG.HOLD_DURATION)
+    .maxDistance(30)
+    .onBegin(() => {
+      outerScale.value = withTiming(0.92, { duration: 80 });
+      innerScale.value = withTiming(0.88, { duration: 80 });
+    })
+    .onFinalize(() => {
+      outerScale.value = withTiming(1, { duration: 120 });
+      innerScale.value = withTiming(1, { duration: 120 });
+    })
+    .onEnd((_event, success) => {
+      if (!success) return;
+      if (mode === CaptureMode.VIDEO) {
+        if (isRecording) {
+          runOnJS(onRecordStop)();
+        } else {
+          runOnJS(onRecordStart)();
+        }
+      } else if (!isRecording) {
+        runOnJS(onCapture)();
       }
-    }
-  }, [mode, isRecording, onCapture, onRecordStart, onRecordStop, outerScale, innerScale]);
+    });
+
+  const captureGesture = Gesture.Exclusive(
+    holdGesture,
+    recordingPanGesture,
+    tapGesture,
+  );
 
   const outerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: outerScale.value }],
@@ -163,8 +235,10 @@ export const CaptureButton: React.FC<CaptureButtonProps & {
     opacity: pulseOpacity.value,
   }));
 
-  // Inner button color: white for photo, red for video
-  const innerColor = mode === CaptureMode.VIDEO ? COLORS.RECORDING : COLORS.INNER_PHOTO;
+  const innerColor =
+    isRecording || mode === CaptureMode.VIDEO
+      ? COLORS.RECORDING
+      : COLORS.INNER_PHOTO;
 
   return (
     <View style={styles.container}>
@@ -172,14 +246,10 @@ export const CaptureButton: React.FC<CaptureButtonProps & {
         isRecording={isRecording}
         duration={recordingDuration}
         maxDuration={maxDuration}
-        size={size + 12}
+        size={size + 24}
       />
 
-      <Pressable
-        onPress={handlePress}
-        disabled={disabled}
-        style={styles.pressable}
-      >
+      <GestureDetector gesture={captureGesture}>
         <Animated.View
           style={[
             styles.outerRing,
@@ -200,17 +270,13 @@ export const CaptureButton: React.FC<CaptureButtonProps & {
             ]}
           />
         </Animated.View>
-      </Pressable>
+      </GestureDetector>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressable: {
     alignItems: 'center',
     justifyContent: 'center',
   },

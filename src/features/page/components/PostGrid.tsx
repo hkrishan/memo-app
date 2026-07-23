@@ -1,4 +1,21 @@
-import React, { memo, useCallback, useMemo } from "react";
+/**
+ * PostGrid — two-column masonry of a page's posts, every photo at its
+ * TRUE aspect ratio (no square crops).
+ *
+ * The server sends no media dimensions, so each tile reports its image's
+ * natural size on load into a module-level cache (persists across visits
+ * — revisit layouts are stable instantly) and the tile's height updates
+ * in place. Column assignment is STICKY: decided once per post when it
+ * first appears (using the shorter column at that moment) and never
+ * changed, so late-arriving measurements can grow a column but never
+ * shuffle photos across columns. Extreme panoramas/towers are clamped to
+ * a sane shape and cover-crop only the overflow.
+ *
+ * Post indices passed to the post route stay FLAT indices — the masonry
+ * is purely presentational.
+ */
+
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -6,20 +23,38 @@ import {
   Text,
   Pressable,
   Dimensions,
-  FlatList,
+  ScrollView,
   RefreshControl,
 } from "react-native";
-import { Image } from "expo-image";
+import { Image, type ImageLoadEventData } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { AlbumPagePost } from "../types/post.types";
 import { usePagePostsQuery } from "../api/pagePost.queries";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const NUM_COLUMNS = 3;
-const GRID_SPACING = 2;
-const ITEM_SIZE =
-  (SCREEN_WIDTH - GRID_SPACING * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
+const COLUMN_COUNT = 3;
+const GAP = 6;
+const TILE_RADIUS = 12;
+const COLUMN_WIDTH =
+  (SCREEN_WIDTH - GAP * (COLUMN_COUNT + 1)) / COLUMN_COUNT;
+/** Height guess (as width/height) until the image reports its real size. */
+const DEFAULT_RATIO = 0.8;
+/** True-aspect within reason: beyond these the tile cover-crops. */
+const MIN_RATIO = 0.58;
+const MAX_RATIO = 1.85;
+
+/** mediaId -> natural width/height. Module-level: survives remounts. */
+const aspectRatioCache = new Map<string, number>();
+
+const clampRatio = (ratio: number): number =>
+  Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio));
+
+const tileHeightFor = (post: AlbumPagePost): number => {
+  const media = post.media[0];
+  const known = media ? aspectRatioCache.get(media.mediaId) : undefined;
+  return COLUMN_WIDTH / clampRatio(known ?? DEFAULT_RATIO);
+};
 
 interface PostGridProps {
   albumId: string;
@@ -28,42 +63,64 @@ interface PostGridProps {
   contentContainerStyle?: object;
 }
 
-const PostGridItem = memo<{
+const PostTile = memo<{
   post: AlbumPagePost;
   albumId: string;
   pageId: string;
-  index: number;
-}>(({ post, albumId, pageId, index }) => {
+  flatIndex: number;
+  height: number;
+  onNaturalSize: (mediaId: string, ratio: number) => void;
+}>(({ post, albumId, pageId, flatIndex, height, onNaturalSize }) => {
   const router = useRouter();
   const firstMedia = post.media[0];
   const hasMultipleMedia = post.media.length > 1;
 
   const handlePress = useCallback(() => {
     router.push(
-      `/album/${albumId}/page/${pageId}/post/${post.postId}?index=${index}`,
+      `/album/${albumId}/page/${pageId}/post/${post.postId}?index=${flatIndex}`,
     );
-  }, [router, albumId, pageId, post.postId, index]);
+  }, [router, albumId, pageId, post.postId, flatIndex]);
+
+  const handleLoad = useCallback(
+    (event: ImageLoadEventData) => {
+      const { width, height: naturalHeight } = event.source;
+      if (firstMedia && width > 0 && naturalHeight > 0) {
+        onNaturalSize(firstMedia.mediaId, width / naturalHeight);
+      }
+    },
+    [firstMedia, onNaturalSize],
+  );
 
   if (!firstMedia) {
-    return <View style={styles.gridItem} />;
+    return null;
   }
 
   return (
-    <Pressable onPress={handlePress} style={styles.gridItem}>
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [
+        styles.tile,
+        { height },
+        pressed && styles.tilePressed,
+      ]}
+      accessibilityRole="imagebutton"
+    >
       <Image
         source={{ uri: firstMedia.thumbnailUrl ?? firstMedia.url }}
-        style={styles.gridImage}
+        style={styles.tileImage}
         contentFit="cover"
-        transition={200}
+        transition={180}
+        onLoad={handleLoad}
       />
       {hasMultipleMedia && (
         <View style={styles.multipleIndicator}>
-          <Ionicons name="copy" size={16} color="#fff" />
+          <Ionicons name="copy" size={14} color="#fff" />
         </View>
       )}
     </Pressable>
   );
 });
+PostTile.displayName = "PostTile";
 
 const EmptyState = memo(() => (
   <View style={styles.emptyState}>
@@ -74,6 +131,7 @@ const EmptyState = memo(() => (
     </Text>
   </View>
 ));
+EmptyState.displayName = "EmptyState";
 
 const PostGrid = memo<PostGridProps>(
   ({ albumId, pageId, ListHeaderComponent, contentContainerStyle }) => {
@@ -85,19 +143,42 @@ const PostGrid = memo<PostGridProps>(
       return data.pages.flatMap((page) => page.posts);
     }, [data]);
 
-    const renderItem = useCallback(
-      ({ item, index }: { item: AlbumPagePost; index: number }) => (
-        <PostGridItem
-          post={item}
-          albumId={albumId}
-          pageId={pageId}
-          index={index}
-        />
-      ),
-      [albumId, pageId],
-    );
+    // Bumped (coalesced to once per batch of loads) when natural sizes
+    // arrive, so tile heights refresh in place
+    const [sizeVersion, setSizeVersion] = useState(0);
+    const bumpScheduledRef = useRef(false);
+    const handleNaturalSize = useCallback((mediaId: string, ratio: number) => {
+      if (aspectRatioCache.has(mediaId)) return;
+      aspectRatioCache.set(mediaId, ratio);
+      if (bumpScheduledRef.current) return;
+      bumpScheduledRef.current = true;
+      queueMicrotask(() => {
+        bumpScheduledRef.current = false;
+        setSizeVersion((version) => version + 1);
+      });
+    }, []);
 
-    const keyExtractor = useCallback((item: AlbumPagePost) => item.postId, []);
+    // Column assignment is a PURE function of posts + known ratios:
+    // each post drops into the currently-shortest column, in order. No
+    // sticky memory — stale assignments outlive layout changes (column
+    // count, hot reloads, reordered refetches) and leave holes. The one
+    // cost is a single settle shortly after first paint while natural
+    // sizes land (coalesced into one recompute); once the session cache
+    // is warm the layout is identical on every render.
+    const columns = useMemo(() => {
+      void sizeVersion; // heights recompute as measurements land
+      const heights = new Array(COLUMN_COUNT).fill(0);
+      const cols: { post: AlbumPagePost; flatIndex: number; height: number }[][] =
+        Array.from({ length: COLUMN_COUNT }, () => []);
+      posts.forEach((post, flatIndex) => {
+        const height = tileHeightFor(post);
+        // Shortest column (ties go left)
+        const column = heights.indexOf(Math.min(...heights));
+        cols[column].push({ post, flatIndex, height });
+        heights[column] += height + GAP;
+      });
+      return cols;
+    }, [posts, sizeVersion]);
 
     if (isLoading) {
       return (
@@ -119,28 +200,45 @@ const PostGrid = memo<PostGridProps>(
     }
 
     return (
-      <View style={styles.container}>
-        <FlatList
-          data={posts}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          numColumns={NUM_COLUMNS}
-          ListHeaderComponent={ListHeaderComponent}
-          ListEmptyComponent={<EmptyState />}
-          contentContainerStyle={[styles.gridContent, contentContainerStyle]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
-              tintColor="#000"
-            />
-          }
-        />
-      </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[styles.content, contentContainerStyle]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor="#000"
+          />
+        }
+      >
+        {ListHeaderComponent}
+        {posts.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <View style={styles.masonry}>
+            {columns.map((column, columnIndex) => (
+              <View key={`column-${columnIndex}`} style={styles.column}>
+                {column.map(({ post, flatIndex, height }) => (
+                  <PostTile
+                    key={post.postId}
+                    post={post}
+                    albumId={albumId}
+                    pageId={pageId}
+                    flatIndex={flatIndex}
+                    height={height}
+                    onNaturalSize={handleNaturalSize}
+                  />
+                ))}
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
     );
   },
 );
+PostGrid.displayName = "PostGrid";
 
 const styles = StyleSheet.create({
   container: {
@@ -153,24 +251,38 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 60,
   },
-  gridContent: {
-    paddingHorizontal: GRID_SPACING,
+  content: {
     flexGrow: 1,
+    paddingBottom: GAP,
   },
-  gridItem: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
-    margin: GRID_SPACING / 2,
+  masonry: {
+    flexDirection: "row",
+    gap: GAP,
+    paddingHorizontal: GAP,
+    paddingTop: GAP,
+    alignItems: "flex-start",
+  },
+  column: {
+    flex: 1,
+    gap: GAP,
+  },
+  tile: {
+    width: "100%",
+    borderRadius: TILE_RADIUS,
+    overflow: "hidden",
     backgroundColor: "#f0f0f0",
   },
-  gridImage: {
+  tilePressed: {
+    opacity: 0.85,
+  },
+  tileImage: {
     width: "100%",
     height: "100%",
   },
   multipleIndicator: {
     position: "absolute",
-    top: 6,
-    right: 6,
+    top: 8,
+    right: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.5,

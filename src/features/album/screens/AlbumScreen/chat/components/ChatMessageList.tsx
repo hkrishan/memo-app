@@ -1,7 +1,7 @@
 // Virtualized message list using FlashList
 
 import React, { memo, useCallback, useRef, useMemo } from "react";
-import { View, StyleSheet, Platform } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { FlashList, ListRenderItemInfo } from "@shopify/flash-list";
 import {
   MessageListItem,
@@ -39,6 +39,8 @@ interface ChatMessageListProps {
 const ESTIMATED_MESSAGE_HEIGHT = 60;
 const ESTIMATED_SEPARATOR_HEIGHT = 48;
 const SCROLL_THRESHOLD = 100;
+
+const CONTENT_CONTAINER_STYLE = { paddingBottom: 8 };
 
 const ChatMessageList = memo<ChatMessageListProps>(
   ({
@@ -108,7 +110,15 @@ const ChatMessageList = memo<ChatMessageListProps>(
           case "message":
             if (!item.message) return null;
             const isOwnMessage = item.message.senderId === currentUserId;
-            const sender = members.get(item.message.senderId);
+            // Prefer author info carried on the message itself (works even
+            // for ex-members); fall back to the album members list.
+            const sender: ChatUser | undefined = item.message.authorName
+              ? {
+                  userId: item.message.senderId,
+                  name: item.message.authorName,
+                  avatarUrl: item.message.authorAvatarUrl ?? null,
+                }
+              : members.get(item.message.senderId);
 
             return (
               <MessageBubble
@@ -131,20 +141,30 @@ const ChatMessageList = memo<ChatMessageListProps>(
       [currentUserId, members, typingUsers, onMessageLongPress, onRetryMessage],
     );
 
-    // Handle scroll to detect if near bottom
+    // Handle scroll to detect if near bottom. The list is in normal order
+    // (oldest → newest, chat bottom = content end), so "near bottom" is
+    // measured against the distance to the content's end.
     const handleScroll = useCallback(
-      (event: { nativeEvent: { contentOffset: { y: number } } }) => {
-        // In inverted list, y=0 means at bottom (newest messages)
-        const offsetY = event.nativeEvent.contentOffset.y;
-        const nearBottom = offsetY < SCROLL_THRESHOLD;
+      (event: {
+        nativeEvent: {
+          contentOffset: { y: number };
+          contentSize: { height: number };
+          layoutMeasurement: { height: number };
+        };
+      }) => {
+        const { contentOffset, contentSize, layoutMeasurement } =
+          event.nativeEvent;
+        const distanceFromBottom =
+          contentSize.height - layoutMeasurement.height - contentOffset.y;
+        const nearBottom = distanceFromBottom < SCROLL_THRESHOLD;
         isNearBottom.current = nearBottom;
         setShowScrollButton(!nearBottom);
       },
       [],
     );
 
-    // Handle reaching end (which is top in inverted list = older messages)
-    const handleEndReached = useCallback(() => {
+    // Reaching the START (top) = older messages
+    const handleStartReached = useCallback(() => {
       if (hasOlderMessages && !isLoadingOlder && !loadOlderError) {
         onLoadOlder();
       }
@@ -152,19 +172,11 @@ const ChatMessageList = memo<ChatMessageListProps>(
 
     // Scroll to bottom (newest messages)
     const scrollToBottom = useCallback(() => {
-      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      listRef.current?.scrollToEnd({ animated: true });
     }, []);
 
-    // List header (appears at bottom in inverted list)
+    // List header (top = older messages / load-more)
     const ListHeaderComponent = useMemo(
-      () => (
-        <View style={{ height: 8 }} />
-      ),
-      [],
-    );
-
-    // List footer (appears at top in inverted list = older messages)
-    const ListFooterComponent = useMemo(
       () => (
         <View style={{ paddingTop: contentTop }}>
           {(isLoadingOlder || loadOlderError) && (
@@ -179,6 +191,14 @@ const ChatMessageList = memo<ChatMessageListProps>(
       [contentTop, isLoadingOlder, loadOlderError, onRetryLoadOlder],
     );
 
+    // List footer (bottom spacer under the newest message)
+    const ListFooterComponent = useMemo(
+      () => (
+        <View style={{ height: 8 }} />
+      ),
+      [],
+    );
+
     // For empty state, we render it outside the inverted list
     if (isEmpty) {
       return (
@@ -190,14 +210,6 @@ const ChatMessageList = memo<ChatMessageListProps>(
       );
     }
 
-    // Content container style
-    const contentContainerStyle = useMemo(
-      () => ({
-        paddingBottom: 8,
-      }),
-      [],
-    );
-
     return (
       <View style={styles.container}>
         <MessageFlashList
@@ -208,20 +220,21 @@ const ChatMessageList = memo<ChatMessageListProps>(
           getItemType={getItemType}
           overrideItemLayout={overrideItemLayout}
           estimatedItemSize={ESTIMATED_MESSAGE_HEIGHT}
-          inverted
           showsVerticalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
+          onStartReached={handleStartReached}
+          onStartReachedThreshold={0.5}
           ListHeaderComponent={ListHeaderComponent}
           ListFooterComponent={ListFooterComponent}
-          contentContainerStyle={contentContainerStyle}
-          maintainVisibleContentPosition={
-            Platform.OS === "ios"
-              ? { minIndexForVisible: 0 }
-              : undefined
-          }
+          contentContainerStyle={CONTENT_CONTAINER_STYLE}
+          // FlashList v2's chat mode: first render starts at the bottom,
+          // new messages keep the view pinned while the user is near the
+          // bottom, and top-insertions (older pages) hold scroll position.
+          maintainVisibleContentPosition={{
+            startRenderingFromBottom: true,
+            autoscrollToBottomThreshold: 0.2,
+          }}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets={false}

@@ -34,6 +34,21 @@ export type NewAlbumPagePostInput = {
   }>;
 };
 
+export type PostCommentAuthor = {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+/** Wire type for a post comment — mirrors the API contract exactly. */
+export type PostComment = {
+  commentId: string;
+  postId: string;
+  content: string;
+  createdAt: string; // ISO string
+  author: PostCommentAuthor;
+};
+
 export type AlbumPagePostsResponse = {
   posts: AlbumPagePost[];
   nextCursor: string | null;

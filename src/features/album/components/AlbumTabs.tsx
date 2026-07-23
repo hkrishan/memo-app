@@ -18,7 +18,7 @@ import { BlurView } from "expo-blur";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-export type AlbumTabType = "gallery" | "page" | "chat" | "settings";
+export type AlbumTabType = "gallery" | "page" | "moments";
 
 interface Tab {
   key: AlbumTabType;
@@ -31,26 +31,20 @@ const TABS: Tab[] = [
   {
     key: "gallery",
     label: "Gallery",
-    icon: "images-outline",
-    iconFocused: "images",
+    icon: "grid-outline",
+    iconFocused: "grid",
   },
   {
     key: "page",
     label: "Page",
-    icon: "globe-outline",
-    iconFocused: "globe",
+    icon: "planet-outline",
+    iconFocused: "planet",
   },
   {
-    key: "chat",
-    label: "Chat",
-    icon: "chatbubbles-outline",
-    iconFocused: "chatbubbles",
-  },
-  {
-    key: "settings",
-    label: "Settings",
-    icon: "settings-outline",
-    iconFocused: "settings",
+    key: "moments",
+    label: "Moments",
+    icon: "flash-outline",
+    iconFocused: "flash",
   },
 ];
 
@@ -59,6 +53,8 @@ interface AlbumTabsProps {
   onTabPress: (index: number) => void;
   photoCount?: number;
   memberCount?: number;
+  /** True while this album has an open drop the user hasn't posted to */
+  momentsLive?: boolean;
 }
 
 // Single tab button - memoized
@@ -67,7 +63,8 @@ const TabButton = memo<{
   index: number;
   scrollPosition: SharedValue<number>;
   onPress: () => void;
-}>(({ tab, index, scrollPosition, onPress }) => {
+  showLiveBadge?: boolean;
+}>(({ tab, index, scrollPosition, onPress, showLiveBadge = false }) => {
   // Opacity for outline icon (shown when not active)
   const outlineStyle = useAnimatedStyle(() => {
     "worklet";
@@ -105,6 +102,9 @@ const TabButton = memo<{
           <Animated.View style={[styles.iconAbsolute, filledStyle]}>
             <Ionicons name={tab.iconFocused} size={22} color="#000" />
           </Animated.View>
+          {showLiveBadge && (
+            <View style={styles.liveDot} pointerEvents="none" />
+          )}
         </View>
         <Text style={styles.tabLabel}>{tab.label}</Text>
       </Animated.View>
@@ -139,7 +139,7 @@ const TabIndicator = memo<{ scrollPosition: SharedValue<number> }>(
 );
 
 export const AlbumTabs: React.FC<AlbumTabsProps> = memo(
-  ({ scrollPosition, onTabPress }) => {
+  ({ scrollPosition, onTabPress, momentsLive = false }) => {
     const insets = useSafeAreaInsets();
 
     return (
@@ -157,6 +157,7 @@ export const AlbumTabs: React.FC<AlbumTabsProps> = memo(
               index={index}
               scrollPosition={scrollPosition}
               onPress={() => onTabPress(index)}
+              showLiveBadge={tab.key === "moments" && momentsLive}
             />
           ))}
         </View>
@@ -202,6 +203,17 @@ const styles = StyleSheet.create({
   },
   iconAbsolute: {
     position: "absolute",
+  },
+  liveDot: {
+    position: "absolute",
+    top: -1,
+    right: -3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FF3B30",
+    borderWidth: 1.5,
+    borderColor: "#fff",
   },
   tabLabel: {
     fontSize: 10,

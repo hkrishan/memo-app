@@ -1,12 +1,15 @@
 /**
  * AlbumCover Component
- * Complete album card with cover photo/grid background, title overlay, and member avatars
+ * Square album cover: crisp cover photo (or most recent photo), member
+ * avatars over a soft bottom scrim, and a hairline edge so light photos
+ * don't dissolve into the page. The album title is NOT rendered here —
+ * cards caption themselves below the cover (see AlbumCard).
  */
 
 import React from "react";
 import { View, StyleSheet, Dimensions } from "react-native";
-import { Text } from "react-native-paper";
-import { BlurView } from "expo-blur";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { Album } from "../types/album.types";
 import AvatarListRow from "@/components/ui/AvatarListRow";
 import { CachedImage } from "@/components/ui/CachedImage";
@@ -17,78 +20,49 @@ interface AlbumCoverProps {
   album: Album;
   size?: number;
   borderRadius?: number;
-  titleSize?: number;
   showMembers?: boolean;
 }
 
 export const AlbumCover: React.FC<AlbumCoverProps> = ({
   album,
   size = (SCREEN_WIDTH - 52) / 2,
-  borderRadius = 30,
-  titleSize = 16,
+  borderRadius = 24,
   showMembers = true,
 }) => {
-  const { title, coverPhoto, recentPhotos, members } = album;
-  const hasRecentPhotos = recentPhotos && recentPhotos.length > 0;
-  const photoGridSize = size / 3;
-
-  const renderBackground = () => {
-    // If we have a dedicated cover photo, show it full size
-    if (coverPhoto?.url) {
-      return (
-        <CachedImage
-          uri={coverPhoto.url}
-          style={[styles.coverImage, { borderRadius }]}
-          showPlaceholder={false}
-        />
-      );
-    }
-
-    // If we have recent photos, show a blurred grid
-    if (hasRecentPhotos) {
-      return (
-        <>
-          <CachedImage
-            uri={recentPhotos[0].url}
-            style={[styles.coverImage, { borderRadius }]}
-            showPlaceholder={false}
-          />
-          <BlurView
-            style={[styles.blurOverlay, { borderRadius }]}
-            intensity={8}
-          />
-        </>
-      );
-    }
-
-    // Fallback placeholder background
-    return <View style={[styles.placeholderBg, { borderRadius }]} />;
-  };
+  const { coverPhoto, recentPhotos, members } = album;
+  // The dedicated cover wins; otherwise the newest photo stands in — shown
+  // crisp either way, since no text sits on top of it anymore. || (not ??)
+  // so an empty-string URL falls through to the placeholder well too.
+  const coverUri = coverPhoto?.url || recentPhotos?.[0]?.url || null;
+  const hasAvatars = showMembers && members && members.length > 0;
 
   return (
     <View
       style={[styles.container, { width: size, height: size, borderRadius }]}
     >
-      {renderBackground()}
+      {coverUri ? (
+        <CachedImage
+          uri={coverUri}
+          style={[styles.coverImage, { borderRadius }]}
+          showPlaceholder={false}
+        />
+      ) : (
+        <View style={styles.emptyWell}>
+          <Ionicons name="images-outline" size={28} color="#C7C7CC" />
+        </View>
+      )}
 
-      {/* Title overlay */}
-      <View style={styles.titleOverlay}>
-        <Text
-          style={[
-            styles.albumTitle,
-            {
-              fontSize: titleSize,
-              fontFamily: "BowlbyOneSC",
-            },
-          ]}
-          numberOfLines={1}
-        >
-          {title}
-        </Text>
-      </View>
+      {/* Avatars need to read over any photo; a scrim over the empty well
+          would just look dirty */}
+      {hasAvatars && coverUri != null && (
+        <LinearGradient
+          colors={["transparent", "rgba(0, 0, 0, 0.35)"]}
+          style={styles.avatarScrim}
+          pointerEvents="none"
+        />
+      )}
 
-      {/* Members row */}
-      {showMembers && members && members.length > 0 && (
+      {hasAvatars && (
         <View style={styles.membersRow}>
           <AvatarListRow
             avatars={members}
@@ -98,52 +72,46 @@ export const AlbumCover: React.FC<AlbumCoverProps> = ({
           />
         </View>
       )}
+
+      <View
+        style={[styles.edge, { borderRadius }]}
+        pointerEvents="none"
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#e0e0e0",
+    backgroundColor: "#F1F1F3",
     overflow: "hidden",
   },
   coverImage: {
     width: "100%",
     height: "100%",
   },
-  photoGrid: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "flex-start",
-    justifyContent: "flex-start",
-  },
-  blurOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  placeholderBg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#c0c0c0",
-  },
-  titleOverlay: {
+  emptyWell: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
   },
-  albumTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#fff",
-    textShadowColor: "rgba(0, 0, 0, 0.5)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  avatarScrim: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 64,
+  },
+  edge: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0, 0, 0, 0.08)",
   },
   membersRow: {
     position: "absolute",
-    bottom: 8,
-    left: 8,
-    right: 8,
+    bottom: 10,
+    left: 10,
+    right: 10,
   },
 });
 

@@ -4,6 +4,7 @@
  */
 
 import type { PhotoFile, VideoFile } from 'react-native-vision-camera';
+import type { SharedValue } from 'react-native-reanimated';
 
 // ============================================================================
 // Enums
@@ -31,6 +32,9 @@ export enum RecordingState {
   PAUSED = 'paused',
   STOPPING = 'stopping',
 }
+
+/** Photo self-timer: seconds of countdown before capture (0 = off) */
+export type TimerMode = 0 | 3 | 10;
 
 // ============================================================================
 // Zoom Types
@@ -114,6 +118,15 @@ export interface CaptureButtonProps {
   isRecording: boolean;
   disabled?: boolean;
   size?: number;
+  /**
+   * Display-zoom shared value; the hold-and-drag gesture writes to it
+   * directly on the UI thread for 60fps zoom while recording.
+   */
+  zoomValue: SharedValue<number>;
+  minZoom: number;
+  maxZoom: number;
+  /** Called with the final zoom when a drag-to-zoom gesture ends */
+  onZoomSettled: (zoom: number) => void;
 }
 
 // ============================================================================
@@ -237,12 +250,16 @@ export interface UseCameraZoomReturn {
   zoom: number;
   minZoom: number;
   maxZoom: number;
+  /** Native camera zoom factor that maps to 1x display zoom */
+  neutralZoom: number;
   setZoom: (zoom: number) => void;
   zoomLevels: ZoomLevel[];
   activePreset: ZoomLevel | null;
   setZoomPreset: (preset: ZoomLevel) => void;
+  /** Sync JS state after a gesture wrote to animatedZoom on the UI thread */
+  syncZoomState: (zoom: number) => void;
   pinchGestureHandler: any; // Gesture handler type
-  animatedZoom: any; // SharedValue<number>
+  animatedZoom: SharedValue<number>;
 }
 
 export interface UseVideoRecordingReturn {

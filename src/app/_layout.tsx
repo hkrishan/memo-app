@@ -9,17 +9,44 @@ import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { QueryProvider } from "@/lib/queryProvider";
 import { theme } from "@/lib/theme";
-import { NotificationProvider, NotificationManager } from "@/components/global";
+import {
+  NotificationProvider,
+  NotificationManager,
+  UploadIndicatorHost,
+  UploadProgressHost,
+} from "@/components/global";
 import { setupAuth } from "@/features/auth";
+import {
+  selectIsAuthenticated,
+  useAuthStore,
+} from "@/features/auth/store/authStore";
+import {
+  registerPushToken,
+  usePushNotificationRouting,
+} from "@/features/notifications/push";
 import { perf } from "@/lib/performance";
 
 // Keep the splash screen visible while we load fonts
 SplashScreen.preventAutoHideAsync();
 function RootContent() {
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+
+  // Route notification taps (foreground/background/cold-start) via data.url
+  usePushNotificationRouting();
+
   // Mark Time To Interactive when root content mounts
   useEffect(() => {
     perf.markTTI();
   }, []);
+
+  // Register the device push token whenever the user becomes authenticated:
+  // fires on app start with a restored session (store rehydration) and after
+  // any successful login (setUser flips isAuthenticated). Never throws.
+  useEffect(() => {
+    if (isAuthenticated) {
+      void registerPushToken();
+    }
+  }, [isAuthenticated]);
 
   return (
     <>
@@ -32,6 +59,8 @@ function RootContent() {
         }}
       />
       <NotificationManager />
+      <UploadIndicatorHost />
+      <UploadProgressHost />
     </>
   );
 }

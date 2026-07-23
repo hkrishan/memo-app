@@ -3,6 +3,7 @@ import {
   AlbumPagePost,
   AlbumPagePostsResponse,
   NewAlbumPagePostInput,
+  PostComment,
 } from "../types/post.types";
 
 export type ListPostsParams = {
@@ -74,11 +75,47 @@ const pagePostApi = () => {
     );
   };
 
+  const getComments = async (
+    albumId: string,
+    pageId: string,
+    postId: string
+  ): Promise<{ comments: PostComment[] }> => {
+    return httpClient.get<{ comments: PostComment[] }>(
+      endpoints.album.page.posts.comments(albumId, pageId, postId)
+    );
+  };
+
+  const addComment = async (
+    albumId: string,
+    pageId: string,
+    postId: string,
+    content: string
+  ): Promise<PostComment> => {
+    return httpClient.post<PostComment>(
+      endpoints.album.page.posts.comments(albumId, pageId, postId),
+      { content }
+    );
+  };
+
+  const deleteComment = async (
+    albumId: string,
+    pageId: string,
+    postId: string,
+    commentId: string
+  ): Promise<void> => {
+    return httpClient.delete(
+      endpoints.album.page.posts.comment(albumId, pageId, postId, commentId)
+    );
+  };
+
   return {
     createPost,
     listPosts,
     likePost,
     unlikePost,
+    getComments,
+    addComment,
+    deleteComment,
   };
 };
 

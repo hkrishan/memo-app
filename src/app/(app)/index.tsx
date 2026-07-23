@@ -6,21 +6,20 @@ import AlbumTabScreen from "@/features/album/screens/AlbumTabScreen";
 const tabs = [
   {
     key: "albums",
-    icon: "albums-outline" as const,
-    iconFocused: "albums" as const,
+    icon: "images-outline" as const,
+    iconFocused: "images" as const,
     component: <AlbumTabScreen />,
     topBar: { title: "My Albums" },
   },
   {
     key: "camera",
-    icon: "camera-outline" as const,
-    iconFocused: "camera" as const,
+    shutterIcon: true,
     component: <CameraScreen />,
   },
   {
     key: "feed",
-    icon: "diamond-outline" as const,
-    iconFocused: "diamond" as const,
+    icon: "sparkles-outline" as const,
+    iconFocused: "sparkles" as const,
     component: <FeedScreen />,
     topBar: { title: "Feed" },
   },

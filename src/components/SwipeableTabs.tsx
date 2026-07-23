@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useRef } from "react";
 import { View, StyleSheet, Dimensions, Pressable } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -10,6 +10,7 @@ import Animated, {
   Extrapolation,
   withTiming,
   Easing,
+  runOnJS,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -35,8 +36,10 @@ interface TopBarConfig {
 
 interface Tab {
   key: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconFocused: keyof typeof Ionicons.glyphMap;
+  icon?: keyof typeof Ionicons.glyphMap;
+  iconFocused?: keyof typeof Ionicons.glyphMap;
+  /** Render a shutter-style thick-bordered circle instead of Ionicons glyphs */
+  shutterIcon?: boolean;
   component: React.ReactNode;
   topBar?: TopBarConfig;
 }
@@ -58,8 +61,39 @@ export default function SwipeableTabs({
   const leftTab = tabs[0];
   const rightTab = tabs[2];
 
+  // The pager pan runs OUTSIDE React Native's responder system, so a swipe
+  // does not cancel presses on the cards it started over — releasing a
+  // swipe used to "tap" whatever was under the finger. While the pan is
+  // active (and until the settle animation lands), the container CAPTURES
+  // child touches (see onStart/onMoveShouldSetResponderCapture below),
+  // which cancels the in-flight press the way a native scroll view would.
+  const blockChildTouchesRef = useRef(false);
+  const unblockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setChildTouchesBlocked = useCallback((blocked: boolean) => {
+    if (unblockTimerRef.current) {
+      clearTimeout(unblockTimerRef.current);
+      unblockTimerRef.current = null;
+    }
+    blockChildTouchesRef.current = blocked;
+  }, []);
+  // Safety: an interrupted gesture may skip onEnd — never stay blocked
+  const scheduleUnblockSafety = useCallback(() => {
+    if (unblockTimerRef.current) clearTimeout(unblockTimerRef.current);
+    unblockTimerRef.current = setTimeout(() => {
+      blockChildTouchesRef.current = false;
+      unblockTimerRef.current = null;
+    }, TIMING_CONFIG.duration + 150);
+  }, []);
+  const shouldCaptureChildTouches = useCallback(
+    () => blockChildTouchesRef.current,
+    [],
+  );
+
   const panGesture = Gesture.Pan()
     .activeOffsetX([-10, 10])
+    .onStart(() => {
+      runOnJS(setChildTouchesBlocked)(true);
+    })
     .onUpdate((e) => {
       const dragProgress = -e.translationX / SCREEN_WIDTH;
       scrollPosition.value = Math.max(
@@ -83,7 +117,13 @@ export default function SwipeableTabs({
 
       targetPage = Math.max(0, Math.min(2, targetPage));
       currentPage.value = targetPage;
-      scrollPosition.value = withTiming(targetPage, TIMING_CONFIG);
+      scrollPosition.value = withTiming(targetPage, TIMING_CONFIG, () => {
+        // Taps stay blocked while the pages settle under the finger-up spot
+        runOnJS(setChildTouchesBlocked)(false);
+      });
+    })
+    .onFinalize(() => {
+      runOnJS(scheduleUnblockSafety)();
     });
 
   const navigateToPage = useCallback(
@@ -96,7 +136,12 @@ export default function SwipeableTabs({
 
   return (
     <GestureDetector gesture={panGesture}>
-      <View style={styles.container}>
+      <View
+        style={styles.container}
+        // Capture (and thereby cancel) child presses while swiping/settling
+        onStartShouldSetResponderCapture={shouldCaptureChildTouches}
+        onMoveShouldSetResponderCapture={shouldCaptureChildTouches}
+      >
         {/* Camera - fixed in background */}
         <View style={styles.centerPage}>
           <SwipeableTabsProvider
@@ -273,17 +318,14 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
       />
 
       <View style={styles.topBarContent} pointerEvents="box-none">
-        <Pressable style={styles.topBarIconLeft}>
-          <Animated.Text style={iconColorStyle}>
-            <Touchable
-              onPress={() => {
-                router.push("/user");
-              }}
-            >
-              <Avatar user={user} />
-            </Touchable>
-          </Animated.Text>
-        </Pressable>
+        <Touchable
+          style={styles.topBarIconLeft}
+          onPress={() => {
+            router.push("/user");
+          }}
+        >
+          <Avatar user={user} />
+        </Touchable>
 
         <View style={styles.topBarTitleContainer} pointerEvents="none">
           {tabs.map((tab, index) =>
@@ -314,7 +356,7 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
         <Touchable
           style={styles.topBarIconRight}
           onPress={() => {
-            router.push("/more");
+            router.push("/profile");
           }}
         >
           <Animated.Text style={iconColorStyle}>
@@ -419,6 +461,7 @@ function TabBar({
             index={index}
             icon={tab.icon}
             iconFocused={tab.iconFocused}
+            shutterIcon={tab.shutterIcon}
             scrollPosition={scrollPosition}
             onPress={() => onNavigate(index)}
           />
@@ -431,8 +474,9 @@ function TabBar({
 
 interface TabButtonProps {
   index: number;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconFocused: keyof typeof Ionicons.glyphMap;
+  icon?: keyof typeof Ionicons.glyphMap;
+  iconFocused?: keyof typeof Ionicons.glyphMap;
+  shutterIcon?: boolean;
   scrollPosition: SharedValue<number>;
   onPress: () => void;
 }
@@ -441,6 +485,7 @@ function TabButton({
   index,
   icon,
   iconFocused,
+  shutterIcon,
   scrollPosition,
   onPress,
 }: TabButtonProps) {
@@ -494,21 +539,48 @@ function TabButton({
     return { color };
   });
 
+  // Shutter-style circle: border thickens when the tab is active
+  const shutterStyle = useAnimatedStyle(() => {
+    const distance = Math.abs(scrollPosition.value - index);
+    const borderWidth = interpolate(
+      distance,
+      [0, 1],
+      [4, 3],
+      Extrapolation.CLAMP,
+    );
+    const borderColor = interpolateColor(
+      scrollPosition.value,
+      [0, 0.5, 1, 2],
+      ["#000000", "#ffffff", "#ffffff", "#ffffff"],
+    );
+    return { borderWidth, borderColor };
+  });
+
   return (
     <Pressable onPress={onPress} style={styles.tabButton}>
       <Animated.View style={[styles.iconContainer, animatedStyle]}>
-        <Animated.View style={[styles.iconWrapper, outlineIconStyle]}>
-          <Animated.Text style={iconColorStyle}>
-            <Ionicons name={icon} size={22} />
-          </Animated.Text>
-        </Animated.View>
-        <Animated.View
-          style={[styles.iconWrapper, styles.iconAbsolute, focusedIconStyle]}
-        >
-          <Animated.Text style={iconColorStyle}>
-            <Ionicons name={iconFocused} size={22} />
-          </Animated.Text>
-        </Animated.View>
+        {shutterIcon ? (
+          <Animated.View style={[styles.shutterCircle, shutterStyle]} />
+        ) : (
+          <>
+            <Animated.View style={[styles.iconWrapper, outlineIconStyle]}>
+              <Animated.Text style={iconColorStyle}>
+                <Ionicons name={icon} size={22} />
+              </Animated.Text>
+            </Animated.View>
+            <Animated.View
+              style={[
+                styles.iconWrapper,
+                styles.iconAbsolute,
+                focusedIconStyle,
+              ]}
+            >
+              <Animated.Text style={iconColorStyle}>
+                <Ionicons name={iconFocused} size={22} />
+              </Animated.Text>
+            </Animated.View>
+          </>
+        )}
       </Animated.View>
     </Pressable>
   );
@@ -589,6 +661,11 @@ const styles = StyleSheet.create({
   },
   iconAbsolute: {
     position: "absolute",
+  },
+  shutterCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
   },
   indicator: {
     position: "absolute",

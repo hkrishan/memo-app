@@ -24,6 +24,8 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 interface ChatComposerProps {
   onSend: (text: string) => void;
   onAttachmentPress: () => void;
+  /** Called with true while the user has draft text, false when cleared/blurred/sent. */
+  onTypingChange?: (typing: boolean) => void;
   disabled?: boolean;
 }
 
@@ -31,10 +33,14 @@ const MAX_INPUT_HEIGHT = 120; // ~5 lines
 const MIN_INPUT_HEIGHT = 36;
 
 const ChatComposer = memo<ChatComposerProps>(
-  ({ onSend, onAttachmentPress, disabled = false }) => {
+  ({ onSend, onAttachmentPress, onTypingChange, disabled = false }) => {
     const inputRef = useRef<TextInput>(null);
     const [text, setText] = useState("");
     const [inputHeight, setInputHeight] = useState(MIN_INPUT_HEIGHT);
+    // iOS race: a pending autocorrect can commit right AFTER send taps
+    // through, firing a late onChangeText that restuffs the cleared box.
+    // Change events inside this window are treated as that echo.
+    const clearGuardUntilRef = useRef(0);
 
     const animatedHeight = useSharedValue(MIN_INPUT_HEIGHT);
     const sendButtonScale = useSharedValue(0);
@@ -49,9 +55,24 @@ const ChatComposer = memo<ChatComposerProps>(
       });
     }, [canSend, sendButtonScale]);
 
-    const handleChangeText = useCallback((newText: string) => {
-      setText(newText);
-    }, []);
+    const handleChangeText = useCallback(
+      (newText: string) => {
+        if (newText.length > 0 && Date.now() < clearGuardUntilRef.current) {
+          // Late autocorrect commit from the message just sent — keep the
+          // field empty instead of restoring the corrected text
+          inputRef.current?.clear();
+          setText("");
+          return;
+        }
+        setText(newText);
+        onTypingChange?.(newText.trim().length > 0);
+      },
+      [onTypingChange],
+    );
+
+    const handleBlur = useCallback(() => {
+      onTypingChange?.(false);
+    }, [onTypingChange]);
 
     const handleContentSizeChange = useCallback(
       (event: { nativeEvent: { contentSize: { height: number } } }) => {
@@ -73,13 +94,18 @@ const ChatComposer = memo<ChatComposerProps>(
       if (!trimmedText || disabled) return;
 
       onSend(trimmedText);
+      onTypingChange?.(false);
       setText("");
+      // Clear the NATIVE field too, and swallow the change event a pending
+      // autocorrect fires just after the tap (it would restuff the box)
+      inputRef.current?.clear();
+      clearGuardUntilRef.current = Date.now() + 250;
       setInputHeight(MIN_INPUT_HEIGHT);
       animatedHeight.value = withTiming(MIN_INPUT_HEIGHT, { duration: 100 });
 
       // Keep focus on input after sending
       inputRef.current?.focus();
-    }, [text, disabled, onSend, animatedHeight]);
+    }, [text, disabled, onSend, onTypingChange, animatedHeight]);
 
     const handleAttachmentPress = useCallback(() => {
       Keyboard.dismiss();
@@ -129,6 +155,7 @@ const ChatComposer = memo<ChatComposerProps>(
               ]}
               value={text}
               onChangeText={handleChangeText}
+              onBlur={handleBlur}
               onContentSizeChange={handleContentSizeChange}
               placeholder="Message..."
               placeholderTextColor="#999"

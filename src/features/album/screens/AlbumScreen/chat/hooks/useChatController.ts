@@ -1,6 +1,14 @@
 // Chat controller hook - manages UI state and orchestrates chat operations
+// via the ChatTransport (Socket.IO backed).
 
-import { useCallback, useMemo, useReducer, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import {
   ChatMessage,
   ChatState,
@@ -9,10 +17,15 @@ import {
   TypingUser,
   ChatUser,
 } from "../types/chat.types";
+import { ChatTransport, getChatTransport } from "../transport/chatTransport";
+import { useBlockedUserIds } from "@/features/moderation/api/moderation.queries";
 
-// Generate unique IDs
-const generateId = () =>
-  `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+const INITIAL_PAGE_SIZE = 30;
+const OLDER_PAGE_SIZE = 30;
+
+// Generate unique client ids for optimistic messages
+const generateClientId = () =>
+  `c-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 // Check if two dates are the same day
 const isSameDay = (d1: Date, d2: Date): boolean =>
@@ -147,182 +160,264 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
-// Generate mock messages for pagination simulation
-const generateMockMessages = (
-  albumId: string,
-  currentUserId: string,
-  count: number,
-  beforeDate: Date,
-): ChatMessage[] => {
-  const messages: ChatMessage[] = [];
-  const senders = [currentUserId, "user-2", "user-3"];
-  const texts = [
-    "Hey everyone!",
-    "Great photos from the trip!",
-    "Can't wait for the next one",
-    "This is amazing",
-    "Love it!",
-    "When are we going again?",
-    "The sunset was incredible",
-    "Best vacation ever",
-    "Thanks for organizing!",
-    "See you all soon!",
-  ];
-
-  let currentDate = new Date(beforeDate);
-
-  for (let i = 0; i < count; i++) {
-    // Go back 5-30 minutes for each message
-    currentDate = new Date(
-      currentDate.getTime() - (5 + Math.random() * 25) * 60000,
-    );
-
-    messages.push({
-      id: `mock-${generateId()}`,
-      albumId,
-      senderId: senders[Math.floor(Math.random() * senders.length)],
-      text: texts[Math.floor(Math.random() * texts.length)],
-      createdAt: currentDate.toISOString(),
-      status: "sent",
-      type: "user",
-    });
-  }
-
-  return messages.reverse(); // Oldest first
-};
-
 interface UseChatControllerOptions {
   albumId: string;
   currentUser: ChatUser;
-  simulateFailure?: boolean; // For testing failed sends
+  /** Override the transport (testing/DI). Defaults to the socket transport. */
+  transport?: ChatTransport;
 }
 
 export function useChatController({
   albumId,
   currentUser,
-  simulateFailure = false,
+  transport,
 }: UseChatControllerOptions) {
   const [state, dispatch] = useReducer(chatReducer, initialState);
-  const failureToggle = useRef(simulateFailure);
-  const oldestMessageDate = useRef<Date>(new Date());
+  const [isConnected, setIsConnected] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  // Client-side block filtering: messages and typing indicators from users
+  // the current user has blocked are hidden. While the block list is
+  // loading (or errored) the set is empty — nothing is filtered.
+  const blockedUserIds = useBlockedUserIds();
+
+  const transportRef = useRef<ChatTransport>(transport ?? getChatTransport());
+
+  // Refs mirroring state/props so async callbacks never go stale
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
+  /** Pagination cursor: id of the oldest message loaded so far. */
+  const cursorRef = useRef<string | undefined>(undefined);
+  /** Whether the initial page has ever loaded successfully. */
+  const initialLoadedRef = useRef(false);
+  /** Original params of in-flight/failed optimistic sends, for retry. */
+  const pendingSendsRef = useRef(new Map<string, SendMessageParams>());
+
+  // --- initial page + live subscription ---------------------------------
+
+  const loadInitialPage = useCallback(async () => {
+    try {
+      const page = await transportRef.current.fetchPage({
+        albumId,
+        limit: INITIAL_PAGE_SIZE,
+      });
+      cursorRef.current = page.nextCursor;
+      initialLoadedRef.current = true;
+      dispatch({ type: "PREPEND_MESSAGES", messages: page.messages });
+      dispatch({ type: "SET_HAS_OLDER", hasMore: page.hasMore });
+      dispatch({ type: "SET_LOAD_OLDER_ERROR", error: false });
+    } catch {
+      // Will retry automatically when the connection (re)establishes
+      dispatch({ type: "SET_LOAD_OLDER_ERROR", error: true });
+    } finally {
+      setIsInitialLoading(false);
+    }
+  }, [albumId]);
+
+  useEffect(() => {
+    let active = true;
+    initialLoadedRef.current = false;
+    cursorRef.current = undefined;
+    setIsInitialLoading(true);
+
+    const subscription = transportRef.current.subscribe(albumId, {
+      onMessage: (message) => {
+        if (!active || message.albumId !== albumId) return;
+        dispatch({ type: "ADD_MESSAGE", message });
+      },
+      onMessageUpdated: (message) => {
+        if (!active || message.albumId !== albumId) return;
+        dispatch({ type: "UPDATE_MESSAGE", id: message.id, updates: message });
+      },
+      onTypingChanged: (users) => {
+        if (!active) return;
+        dispatch({
+          type: "SET_TYPING_USERS",
+          users: users.filter(
+            (u) => u.userId !== currentUserRef.current.userId,
+          ),
+        });
+      },
+      onError: (error) => {
+        if (__DEV__) console.warn("[Chat] transport error:", error.message);
+      },
+      onConnectionChanged: (connected) => {
+        if (!active) return;
+        setIsConnected(connected);
+        // If the first page never loaded (e.g. opened while offline),
+        // fetch it as soon as we're connected.
+        if (connected && !initialLoadedRef.current) {
+          void loadInitialPage();
+        }
+      },
+    });
+
+    void loadInitialPage();
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [albumId, loadInitialPage]);
+
+  // --- sending ----------------------------------------------------------
+
+  const deliverMessage = useCallback(
+    async (clientId: string, params: SendMessageParams) => {
+      try {
+        const sent = await transportRef.current.send(albumId, {
+          ...params,
+          clientId,
+        });
+        pendingSendsRef.current.delete(clientId);
+        dispatch({
+          type: "UPDATE_MESSAGE",
+          id: clientId,
+          updates: {
+            id: sent.id,
+            createdAt: sent.createdAt,
+            status: "sent",
+          },
+        });
+      } catch {
+        dispatch({
+          type: "UPDATE_MESSAGE",
+          id: clientId,
+          updates: { status: "failed" },
+        });
+      }
+    },
+    [albumId],
+  );
 
   // Send message optimistically
   const sendMessage = useCallback(
     (params: SendMessageParams) => {
-      const clientId = generateId();
-      const now = new Date().toISOString();
+      const clientId = params.clientId ?? generateClientId();
+      const user = currentUserRef.current;
 
       const optimisticMessage: ChatMessage = {
-        id: clientId, // Will be replaced by server ID
+        id: clientId, // Replaced by the server id on ack
         clientId,
         albumId,
-        senderId: currentUser.userId,
+        senderId: user.userId,
         text: params.text.trim(),
-        createdAt: now,
+        createdAt: new Date().toISOString(),
         status: "sending",
         type: "user",
         replyToMessageId: params.replyToMessageId,
+        authorName: user.name,
+        authorAvatarUrl: user.avatarUrl,
       };
 
       dispatch({ type: "ADD_MESSAGE", message: optimisticMessage });
+      pendingSendsRef.current.set(clientId, {
+        ...params,
+        text: optimisticMessage.text,
+      });
 
-      // Simulate send completion (local only - no actual network call)
-      // In real implementation, this would call transport.send()
-      setTimeout(() => {
-        const shouldFail = failureToggle.current && Math.random() < 0.3;
-
-        if (shouldFail) {
-          dispatch({
-            type: "UPDATE_MESSAGE",
-            id: clientId,
-            updates: { status: "failed" },
-          });
-        } else {
-          dispatch({
-            type: "UPDATE_MESSAGE",
-            id: clientId,
-            updates: {
-              status: "sent",
-              id: `server-${clientId}`, // Simulate server ID
-            },
-          });
-        }
-      }, 500);
-
+      void deliverMessage(clientId, params);
       return clientId;
     },
-    [albumId, currentUser.userId],
+    [albumId, deliverMessage],
   );
 
   // Retry failed message
-  const retryMessage = useCallback((clientId: string) => {
-    dispatch({ type: "RETRY_MESSAGE", clientId });
+  const retryMessage = useCallback(
+    (clientId: string) => {
+      const params =
+        pendingSendsRef.current.get(clientId) ??
+        (() => {
+          const message = stateRef.current.messages.find(
+            (m) => m.clientId === clientId,
+          );
+          return message
+            ? {
+                text: message.text,
+                replyToMessageId: message.replyToMessageId,
+              }
+            : null;
+        })();
 
-    // Simulate retry
-    setTimeout(() => {
-      dispatch({
-        type: "UPDATE_MESSAGE",
-        id: clientId,
-        updates: { status: "sent" },
-      });
-    }, 500);
-  }, []);
+      if (!params) return;
 
-  // Load older messages (simulated with local generation)
-  const loadOlderMessages = useCallback(() => {
-    if (state.isLoadingOlder || !state.hasOlderMessages) return;
+      dispatch({ type: "RETRY_MESSAGE", clientId });
+      void deliverMessage(clientId, params);
+    },
+    [deliverMessage],
+  );
+
+  // --- pagination -------------------------------------------------------
+
+  const loadOlderMessages = useCallback(async () => {
+    const current = stateRef.current;
+    if (current.isLoadingOlder || !current.hasOlderMessages) return;
+    if (!initialLoadedRef.current) {
+      // First page never loaded — (re)try that instead of paging older
+      await loadInitialPage();
+      return;
+    }
 
     dispatch({ type: "SET_LOADING_OLDER", loading: true });
 
-    // Simulate loading delay
-    setTimeout(() => {
-      const shouldFail = failureToggle.current && Math.random() < 0.2;
-
-      if (shouldFail) {
-        dispatch({ type: "SET_LOAD_OLDER_ERROR", error: true });
-        return;
-      }
-
-      const mockMessages = generateMockMessages(
+    try {
+      const page = await transportRef.current.fetchPage({
         albumId,
-        currentUser.userId,
-        15,
-        oldestMessageDate.current,
-      );
-
-      if (mockMessages.length > 0) {
-        oldestMessageDate.current = new Date(mockMessages[0].createdAt);
-      }
-
-      // Simulate running out of messages after a few pages
-      const hasMore = state.messages.length < 60;
-
-      dispatch({ type: "PREPEND_MESSAGES", messages: mockMessages });
-      dispatch({ type: "SET_HAS_OLDER", hasMore });
-    }, 800);
-  }, [
-    albumId,
-    currentUser.userId,
-    state.isLoadingOlder,
-    state.hasOlderMessages,
-    state.messages.length,
-  ]);
+        cursor: cursorRef.current,
+        limit: OLDER_PAGE_SIZE,
+      });
+      cursorRef.current = page.nextCursor ?? cursorRef.current;
+      dispatch({ type: "PREPEND_MESSAGES", messages: page.messages });
+      dispatch({ type: "SET_HAS_OLDER", hasMore: page.hasMore });
+    } catch {
+      dispatch({ type: "SET_LOAD_OLDER_ERROR", error: true });
+    }
+  }, [albumId, loadInitialPage]);
 
   // Retry loading older
   const retryLoadOlder = useCallback(() => {
     dispatch({ type: "SET_LOAD_OLDER_ERROR", error: false });
-    loadOlderMessages();
+    void loadOlderMessages();
   }, [loadOlderMessages]);
 
-  // Toggle failure simulation
-  const toggleFailureSimulation = useCallback((enabled: boolean) => {
-    failureToggle.current = enabled;
-  }, []);
+  // --- typing (outgoing) ------------------------------------------------
+
+  /**
+   * Report local typing state. The transport throttles `true` to ~1 emit
+   * per 2s and always forwards `false` (composer cleared/blurred/sent).
+   */
+  const setTyping = useCallback(
+    (typing: boolean) => {
+      transportRef.current.sendTypingIndicator(albumId, typing).catch(() => {});
+    },
+    [albumId],
+  );
+
+  // --- derived list -----------------------------------------------------
+
+  const visibleMessages = useMemo(
+    () =>
+      blockedUserIds.size === 0
+        ? state.messages
+        : state.messages.filter((m) => !blockedUserIds.has(m.senderId)),
+    [state.messages, blockedUserIds],
+  );
+
+  const visibleTypingUsers = useMemo(
+    () =>
+      blockedUserIds.size === 0
+        ? state.typingUsers
+        : state.typingUsers.filter((u) => !blockedUserIds.has(u.userId)),
+    [state.typingUsers, blockedUserIds],
+  );
 
   // Transform messages to list items with grouping and separators
   const listItems = useMemo((): MessageListItem[] => {
     const items: MessageListItem[] = [];
-    const messages = state.messages;
+    const messages = visibleMessages;
 
     if (messages.length === 0) {
       return [];
@@ -369,16 +464,18 @@ export function useChatController({
     }
 
     // Add typing indicator if users are typing
-    if (state.typingUsers.length > 0) {
+    if (visibleTypingUsers.length > 0) {
       items.push({
         type: "typing",
         id: "typing-indicator",
       });
     }
 
-    // Reverse for inverted list
-    return items.reverse();
-  }, [state.messages, state.typingUsers, currentUser.userId]);
+    // Normal order (oldest → newest): the list renders from the bottom via
+    // maintainVisibleContentPosition.startRenderingFromBottom, so the day
+    // separators lead their day and the typing indicator sits last (bottom)
+    return items;
+  }, [visibleMessages, visibleTypingUsers, currentUser.userId]);
 
   // Check if we should show load more
   const showLoadMore = state.hasOlderMessages && !state.isLoadingOlder;
@@ -386,21 +483,23 @@ export function useChatController({
 
   return {
     // State
-    messages: state.messages,
+    messages: visibleMessages,
     listItems,
     isLoadingOlder: state.isLoadingOlder,
     hasOlderMessages: state.hasOlderMessages,
     showLoadMore,
     showLoadMoreError,
-    typingUsers: state.typingUsers,
-    isEmpty: state.messages.length === 0,
+    typingUsers: visibleTypingUsers,
+    isEmpty: visibleMessages.length === 0,
+    isConnected,
+    isInitialLoading,
 
     // Actions
     sendMessage,
     retryMessage,
     loadOlderMessages,
     retryLoadOlder,
-    toggleFailureSimulation,
+    setTyping,
 
     // For testing
     dispatch,

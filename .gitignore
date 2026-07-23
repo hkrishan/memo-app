@@ -46,3 +46,7 @@ yarn-error.*
 
 # large media assets (exceed GitHub 100 MiB limit)
 assets/memo-background-vid.mp4
+
+# Push credentials (downloaded from Firebase console)
+google-services.json
+GoogleService-Info.plist

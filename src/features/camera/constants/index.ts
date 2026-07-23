@@ -3,7 +3,12 @@
  * Configuration values and preset definitions
  */
 
-import { FlashMode, ZoomLevel, CameraAnimationConfig } from '../types';
+import {
+  FlashMode,
+  ZoomLevel,
+  CameraAnimationConfig,
+  TimerMode,
+} from '../types';
 
 // ============================================================================
 // Zoom Constants
@@ -96,6 +101,27 @@ export const FLASH_LABELS: Record<FlashMode, string> = {
   [FlashMode.ON]: 'On',
   [FlashMode.AUTO]: 'Auto',
 };
+
+// ============================================================================
+// Timer Constants
+// ============================================================================
+
+/**
+ * Photo self-timer cycle order (seconds; 0 = off)
+ */
+export const TIMER_MODE_CYCLE: TimerMode[] = [0, 3, 10];
+
+// ============================================================================
+// Capture Gesture Constants
+// ============================================================================
+
+export const CAPTURE_GESTURE_CONFIG = {
+  // How long the button must be held before video recording starts (ms)
+  HOLD_DURATION: 350,
+
+  // px of upward drag per e-fold of zoom while recording (higher = slower)
+  DRAG_ZOOM_SENSITIVITY: 200,
+} as const;
 
 // ============================================================================
 // Recording Constants

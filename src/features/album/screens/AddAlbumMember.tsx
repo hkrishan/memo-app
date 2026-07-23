@@ -1,332 +1,396 @@
-import React, { useCallback, useRef, useState } from "react";
+/**
+ * Invite screen — the album's invite surface, centered on the QR ticket.
+ * One scroll: the QR invite card (from the album's shareable invite link),
+ * share / copy-link actions, the join code as a quiet fallback, requests
+ * waiting for approval, and the member list.
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  Dimensions,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
   ActivityIndicator,
+  Platform,
+  Pressable,
   RefreshControl,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-} from "react-native-reanimated";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { useLocalSearchParams, useRouter } from "expo-router";
+
 import {
+  useAlbumInviteLinkQuery,
   useGetAlbumMembersQuery,
   useGetAlbumPendingJoinRequestsQuery,
   useGetAlbumQuery,
   useHandleAlbumJoinRequestMutation,
+  useRevokeInviteMutation,
 } from "../api/album.queries";
-import { useLocalSearchParams } from "expo-router";
-import { AlbumJoinRequest, AlbumMember } from "../types/album.types";
+import { AlbumJoinRequest } from "../types/album.types";
+import { selectUser, useAuthStore } from "@/features/auth/store/authStore";
+import { notify } from "@/components/global";
 import Avatar from "@/components/ui/Avatar";
 import AlbumCodeBanner from "../components/AlbumCodeBanner";
+import AlbumMembers from "../components/AlbumMembers";
+import InviteQrCard from "../components/invite/InviteQrCard";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-type TabKey = "members" | "pending";
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "members", label: "Members" },
-  { key: "pending", label: "Pending" },
-];
+const PAGE_BG = "#F2F2F0";
 
 const AddAlbumMemberScreen = () => {
   const albumId = useLocalSearchParams().albumId as string;
   const insets = useSafeAreaInsets();
-  const { data: album } = useGetAlbumQuery(albumId);
-  const { data: members, isLoading } = useGetAlbumMembersQuery(albumId);
+  const router = useRouter();
+
+  const { data: album, refetch: refetchAlbum } = useGetAlbumQuery(albumId);
+  const inviteLink = useAlbumInviteLinkQuery(albumId);
   const {
-    data: pendingMembers,
-    refetch: refetchPending,
-    isRefetching: isRefetchingPending,
-  } = useGetAlbumPendingJoinRequestsQuery(albumId);
+    data: members,
+    isLoading: isLoadingMembers,
+    refetch: refetchMembers,
+  } = useGetAlbumMembersQuery(albumId);
+  const { data: pendingRequests, refetch: refetchPending } =
+    useGetAlbumPendingJoinRequestsQuery(albumId);
 
-  const [activeTab, setActiveTab] = useState<TabKey>("members");
-  const scrollViewRef = useRef<ScrollView>(null);
-  const indicatorPosition = useSharedValue(0);
+  const handleJoinRequest = useHandleAlbumJoinRequestMutation(albumId);
+  const revokeInvite = useRevokeInviteMutation(albumId);
+  const currentUser = useAuthStore(selectUser);
+  const [actingRequestId, setActingRequestId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const handleAlbumJoinRequest = useHandleAlbumJoinRequestMutation(albumId);
+  const isOwner =
+    !!album && !!currentUser && album.ownerId === currentUser.id;
 
-  const handleTabPress = useCallback(
-    (tab: TabKey, index: number) => {
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
+
+  const inviteUrl = inviteLink.data?.url ?? null;
+  const albumTitle = album?.title ?? "";
+
+  const handleShare = useCallback(async () => {
+    if (!inviteUrl) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const message = albumTitle
+      ? `Join “${albumTitle}” on Memo`
+      : "Join my album on Memo";
+    try {
+      await Share.share(
+        Platform.OS === "ios"
+          ? { message, url: inviteUrl }
+          : { message: `${message}\n${inviteUrl}` },
+      );
+    } catch {
+      // Share sheet dismissed — nothing to do
+    }
+  }, [inviteUrl, albumTitle]);
+
+  const handleCopyLink = useCallback(async () => {
+    if (!inviteUrl) return;
+    await Clipboard.setStringAsync(inviteUrl);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setLinkCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setLinkCopied(false), 2000);
+  }, [inviteUrl]);
+
+  const handleRequestDecision = useCallback(
+    (requestId: string, action: "accept" | "reject") => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setActiveTab(tab);
-      indicatorPosition.value = withTiming(index * (SCREEN_WIDTH / 2), {
-        duration: 200,
-      });
-      scrollViewRef.current?.scrollTo({
-        x: index * SCREEN_WIDTH,
-        animated: true,
-      });
+      setActingRequestId(requestId);
+      handleJoinRequest.mutate(
+        { requestId, action },
+        { onSettled: () => setActingRequestId(null) },
+      );
     },
-    [indicatorPosition],
+    [handleJoinRequest],
   );
 
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offsetX = event.nativeEvent.contentOffset.x;
-      const index = Math.round(offsetX / SCREEN_WIDTH);
-      const tab = TABS[index]?.key ?? "members";
+  const refetchInviteLink = inviteLink.refetch;
 
-      // Update indicator position smoothly during scroll
-      indicatorPosition.value = (offsetX / SCREEN_WIDTH) * (SCREEN_WIDTH / 2);
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchAlbum(),
+        refetchMembers(),
+        refetchPending(),
+        refetchInviteLink(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetchAlbum, refetchMembers, refetchPending, refetchInviteLink]);
 
-      if (tab !== activeTab) {
-        setActiveTab(tab);
-      }
-    },
-    [activeTab, indicatorPosition],
-  );
+  const inviteId = inviteLink.data?.inviteId ?? null;
 
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: indicatorPosition.value }],
-  }));
+  const handleResetLink = useCallback(() => {
+    if (!inviteId || revokeInvite.isPending) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    notify.popup({
+      type: "warning",
+      title: "Reset invite link?",
+      message:
+        "The current link and QR code will stop working. A new one is created right away.",
+      primaryAction: {
+        label: "Reset link",
+        onPress: () => {
+          revokeInvite.mutate(
+            { inviteId },
+            {
+              onSuccess: () => {
+                // Get-or-create mints a fresh link on refetch
+                refetchInviteLink();
+              },
+              onError: () => {
+                notify.error("Couldn't reset the link", "Please try again.");
+              },
+            },
+          );
+        },
+      },
+      secondaryAction: {
+        label: "Cancel",
+        onPress: () => {},
+      },
+    });
+  }, [inviteId, revokeInvite, refetchInviteLink]);
+
+  const handleClose = useCallback(() => {
+    router.back();
+  }, [router]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header with invite code */}
-      <View style={styles.header}>
-        <Text
-          style={{
-            fontSize: 18,
-            fontWeight: "600",
-            marginBottom: 4,
-          }}
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
+        <Text style={styles.headerTitle}>Invite</Text>
+        <Pressable
+          onPress={handleClose}
+          style={({ pressed }) => [
+            styles.closeButton,
+            pressed && styles.closeButtonPressed,
+          ]}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Close invite screen"
         >
-          Invite Code
-        </Text>
-        <AlbumCodeBanner code={album?.albumCode ?? "N/A"} />
+          <Ionicons name="close" size={20} color="#111" />
+        </Pressable>
       </View>
 
-      {/* Tab bar */}
-      <View style={styles.tabBar}>
-        {TABS.map((tab, index) => (
-          <Pressable
-            key={tab.key}
-            style={styles.tab}
-            onPress={() => handleTabPress(tab.key, index)}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === tab.key && styles.tabTextActive,
-              ]}
-            >
-              {tab.label}
-            </Text>
-            {tab.key === "members" && members && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>{members.length}</Text>
-              </View>
-            )}
-            {tab.key === "pending" &&
-              pendingMembers &&
-              pendingMembers.length > 0 && (
-                <View
-                  style={[styles.tabBadge, { backgroundColor: "#f59e0b20" }]}
-                >
-                  <Text style={[styles.tabBadgeText, { color: "#f59e0b" }]}>
-                    {pendingMembers.length}
-                  </Text>
-                </View>
-              )}
-          </Pressable>
-        ))}
-        {/* Animated indicator */}
-        <Animated.View style={[styles.tabIndicator, indicatorStyle]} />
-      </View>
-
-      {/* Swipeable content */}
       <ScrollView
-        ref={scrollViewRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        decelerationRate="fast"
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 32 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#111"
+          />
+        }
       >
-        {/* Members Tab */}
-        <ScrollView
-          style={styles.tabContent}
-          contentContainerStyle={styles.tabContentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.sectionTitle}>Album Members</Text>
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#111" />
-            </View>
-          ) : members && members.length > 0 ? (
-            <View style={styles.membersList}>
-              {members.map((member) => (
-                <MemberCard key={member.userId} member={member} />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No members yet</Text>
-              <Text style={styles.emptySubtext}>
-                Share the invite code to add members
-              </Text>
-            </View>
-          )}
-        </ScrollView>
+        {/* QR ticket — the invite itself */}
+        <InviteQrCard
+          albumTitle={albumTitle}
+          url={inviteUrl}
+          isLoading={inviteLink.isPending || inviteLink.isFetching}
+          isError={inviteLink.isError}
+          onRetry={inviteLink.refetch}
+        />
 
-        {/* Pending Tab */}
-        <ScrollView
-          style={styles.tabContent}
-          contentContainerStyle={styles.tabContentContainer}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetchingPending}
-              onRefresh={refetchPending}
-              tintColor="#111"
+        {/* Link actions */}
+        <View style={styles.actions}>
+          <Pressable
+            onPress={handleShare}
+            disabled={!inviteUrl}
+            style={({ pressed }) => [
+              styles.sharePill,
+              pressed && styles.sharePillPressed,
+              !inviteUrl && styles.pillDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Share invite link"
+            accessibilityState={{ disabled: !inviteUrl }}
+          >
+            <Ionicons name="arrow-redo-outline" size={18} color="#fff" />
+            <Text style={styles.sharePillText}>Share invite link</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleCopyLink}
+            disabled={!inviteUrl}
+            style={({ pressed }) => [
+              styles.copyPill,
+              pressed && styles.copyPillPressed,
+              !inviteUrl && styles.pillDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Copy invite link"
+            accessibilityState={{ disabled: !inviteUrl }}
+          >
+            <Ionicons
+              name={linkCopied ? "checkmark" : "link-outline"}
+              size={18}
+              color="#111"
             />
-          }
-        >
-          <Text style={styles.sectionTitle}>Pending Invites</Text>
-          {pendingMembers && pendingMembers.length > 0 ? (
-            <View style={styles.membersList}>
-              {pendingMembers.map((request) => (
-                <PendingMemberCard
+            <Text style={styles.copyPillText}>
+              {linkCopied ? "Link copied" : "Copy link"}
+            </Text>
+          </Pressable>
+
+          {inviteLink.data && (
+            <Text style={styles.roleCaption}>
+              Anyone with this link can join as a {inviteLink.data.role}
+            </Text>
+          )}
+
+          {/* Owner-only: turn the current link off and mint a fresh one */}
+          {isOwner && inviteId ? (
+            <Pressable
+              onPress={handleResetLink}
+              disabled={revokeInvite.isPending}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.resetLink,
+                pressed && styles.resetLinkPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Reset invite link"
+              accessibilityState={{ disabled: revokeInvite.isPending }}
+            >
+              {revokeInvite.isPending ? (
+                <ActivityIndicator size="small" color="#9C9C99" />
+              ) : (
+                <Text style={styles.resetLinkText}>Reset link</Text>
+              )}
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Join code fallback */}
+        {album?.albumCode ? (
+          <View style={styles.codeSection}>
+            <AlbumCodeBanner code={album.albumCode} />
+          </View>
+        ) : null}
+
+        {/* Requests waiting for approval */}
+        {pendingRequests && pendingRequests.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Waiting to join</Text>
+            <View style={styles.requestGroup}>
+              {pendingRequests.map((request, index) => (
+                <RequestRow
                   key={request.requestId}
                   request={request}
-                  onAccept={(requestId: string) => {
-                    handleAlbumJoinRequest.mutate({
-                      requestId,
-                      action: "accept",
-                    });
-                  }}
-                  onDecline={(requestId: string) => {
-                    handleAlbumJoinRequest.mutate({
-                      requestId,
-                      action: "reject",
-                    });
-                  }}
+                  isFirst={index === 0}
+                  isActing={actingRequestId === request.requestId}
+                  onApprove={() =>
+                    handleRequestDecision(request.requestId, "accept")
+                  }
+                  onDecline={() =>
+                    handleRequestDecision(request.requestId, "reject")
+                  }
                 />
               ))}
             </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="time-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No pending invites</Text>
-              <Text style={styles.emptySubtext}>
-                People who use your invite code will appear here until they join
-              </Text>
+          </View>
+        )}
+
+        {/* Members */}
+        <View style={styles.section}>
+          {isLoadingMembers ? (
+            <View style={styles.membersLoading}>
+              <ActivityIndicator size="small" color="#111" />
             </View>
+          ) : (
+            <AlbumMembers members={members ?? []} showInviteRow={false} />
           )}
-        </ScrollView>
+        </View>
       </ScrollView>
     </View>
   );
 };
 
-type MemberCardProps = {
-  member: AlbumMember;
-};
-
-const MemberCard = ({ member }: MemberCardProps) => {
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case "owner":
-        return { label: "Owner", color: "#6366f1" };
-      case "contributor":
-        return { label: "Contributor", color: "#22c55e" };
-      case "viewer":
-        return { label: "Viewer", color: "#888" };
-      default:
-        return { label: "Member", color: "#888" };
-    }
-  };
-
-  const roleBadge = getRoleBadge(member.role);
-
-  return (
-    <View style={styles.memberCard}>
-      <Avatar user={member} size={48} />
-      <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>{member.name}</Text>
-        <View
-          style={[
-            styles.roleBadge,
-            { backgroundColor: `${roleBadge.color}15` },
-          ]}
-        >
-          <Text style={[styles.roleBadgeText, { color: roleBadge.color }]}>
-            {roleBadge.label}
-          </Text>
-        </View>
-      </View>
-      <Pressable style={styles.moreButton}>
-        <Ionicons name="ellipsis-horizontal" size={20} color="#888" />
-      </Pressable>
-    </View>
-  );
-};
-
-type PendingMemberCardProps = {
+type RequestRowProps = {
   request: AlbumJoinRequest;
-  onAccept?: (requestId: string) => void;
-  onDecline?: (requestId: string) => void;
+  isFirst: boolean;
+  isActing: boolean;
+  onApprove: () => void;
+  onDecline: () => void;
 };
 
-const PendingMemberCard = ({
+const RequestRow = ({
   request,
-  onAccept = () => {},
-  onDecline = () => {},
-}: PendingMemberCardProps) => {
-  const requester = request.requester;
+  isFirst,
+  isActing,
+  onApprove,
+  onDecline,
+}: RequestRowProps) => {
+  const name = request.requester?.name ?? "Someone";
 
   return (
-    <View style={styles.memberCard}>
+    <View style={[styles.requestRow, !isFirst && styles.requestRowDivided]}>
       <Avatar
         user={
-          requester ?? {
+          request.requester ?? {
             userId: request.requesterId,
             name: "Unknown",
             avatarUrl: null,
           }
         }
-        size={48}
+        size={44}
       />
-      <View style={styles.memberInfo}>
-        <Text style={styles.memberName}>
-          {requester?.name ?? "Unknown User"}
+      <View style={styles.requestInfo}>
+        <Text style={styles.requestName} numberOfLines={1}>
+          {name}
         </Text>
-        <View style={[styles.roleBadge, { backgroundColor: "#f59e0b15" }]}>
-          <Text style={[styles.roleBadgeText, { color: "#f59e0b" }]}>
-            Pending
-          </Text>
-        </View>
+        <Text style={styles.requestSubtitle}>wants to join</Text>
       </View>
-      <View style={styles.pendingActions}>
+      <View style={styles.requestActions}>
         <Pressable
-          style={styles.acceptButton}
-          onPress={() => {
-            onAccept?.(request.requestId);
-          }}
+          onPress={onApprove}
+          disabled={isActing}
+          style={({ pressed }) => [
+            styles.approveButton,
+            pressed && styles.approveButtonPressed,
+            isActing && styles.requestButtonActing,
+          ]}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`Approve ${name}`}
+          accessibilityState={{ disabled: isActing }}
         >
           <Ionicons name="checkmark" size={20} color="#fff" />
         </Pressable>
         <Pressable
-          style={styles.declineButton}
-          onPress={() => {
-            onDecline?.(request.requestId);
-          }}
+          onPress={onDecline}
+          disabled={isActing}
+          style={({ pressed }) => [
+            styles.declineButton,
+            pressed && styles.declineButtonPressed,
+            isActing && styles.requestButtonActing,
+          ]}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`Decline ${name}`}
+          accessibilityState={{ disabled: isActing }}
         >
-          <Ionicons name="close" size={20} color="#fff" />
+          <Ionicons name="close" size={20} color="#111" />
         </Pressable>
       </View>
     </View>
@@ -336,149 +400,177 @@ const PendingMemberCard = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: PAGE_BG,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  tabBar: {
     flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#e5e5e5",
-    position: "relative",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
-  tab: {
-    flex: 1,
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#111",
+    letterSpacing: -0.4,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#E7E7E4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeButtonPressed: {
+    backgroundColor: "#DBDBD8",
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  actions: {
+    marginTop: 20,
+    gap: 10,
+  },
+  sharePill: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 14,
-    gap: 6,
+    gap: 8,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#000",
   },
-  tabText: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#888",
+  sharePillPressed: {
+    backgroundColor: "#2A2A2A",
   },
-  tabTextActive: {
-    color: "#111",
+  sharePillText: {
+    fontSize: 16,
     fontWeight: "600",
+    color: "#fff",
   },
-  tabBadge: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  tabBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-  },
-  tabIndicator: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    width: SCREEN_WIDTH / 2,
-    height: 2,
-    backgroundColor: "#111",
-  },
-  tabContent: {
-    width: SCREEN_WIDTH,
-  },
-  tabContentContainer: {
-    padding: 20,
-    minHeight: 300,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#111",
-    marginBottom: 20,
-  },
-  membersList: {
-    gap: 12,
-  },
-  memberCard: {
+  copyPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f8f8f8",
-    borderRadius: 14,
-    padding: 14,
-    gap: 14,
+    justifyContent: "center",
+    gap: 8,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 1.5,
+    borderColor: "#111",
   },
-  memberInfo: {
-    flex: 1,
-    gap: 4,
+  copyPillPressed: {
+    backgroundColor: "#E7E7E4",
   },
-  memberName: {
+  copyPillText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#111",
   },
-  roleBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
+  pillDisabled: {
+    opacity: 0.4,
   },
-  roleBadgeText: {
+  roleCaption: {
+    fontSize: 12,
+    color: "#9C9C99",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  resetLink: {
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 24,
+    marginTop: 4,
+    paddingHorizontal: 8,
+  },
+  resetLinkPressed: {
+    opacity: 0.5,
+  },
+  resetLinkText: {
     fontSize: 12,
     fontWeight: "600",
+    color: "#9C9C99",
+    textDecorationLine: "underline",
   },
-  moreButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
+  codeSection: {
+    marginTop: 24,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
+  section: {
+    marginTop: 28,
   },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    gap: 8,
-  },
-  emptyText: {
-    fontSize: 18,
+  sectionLabel: {
+    fontSize: 12,
     fontWeight: "600",
-    color: "#666",
+    color: "#9C9C99",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 10,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: "#999",
-    textAlign: "center",
-    paddingHorizontal: 40,
-    lineHeight: 20,
+  requestGroup: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    overflow: "hidden",
   },
-  pendingActions: {
+  requestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  requestRowDivided: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#ECECEA",
+  },
+  requestInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  requestName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111",
+  },
+  requestSubtitle: {
+    fontSize: 13,
+    color: "#9C9C99",
+  },
+  requestActions: {
     flexDirection: "row",
     gap: 8,
   },
-  acceptButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#22c55e",
+  approveButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#000",
     alignItems: "center",
     justifyContent: "center",
   },
+  approveButtonPressed: {
+    backgroundColor: "#2A2A2A",
+  },
   declineButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#ef4444",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    borderColor: "#D6D6D3",
     alignItems: "center",
     justifyContent: "center",
+  },
+  declineButtonPressed: {
+    backgroundColor: "#E7E7E4",
+  },
+  requestButtonActing: {
+    opacity: 0.4,
+  },
+  membersLoading: {
+    paddingVertical: 32,
+    alignItems: "center",
   },
 });
 

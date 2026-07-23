@@ -1,4 +1,5 @@
-// Chat transport interface - backend implementation to be added later
+// Chat transport interface — backed by the Socket.IO implementation
+// (see ./socketChatTransport.ts).
 
 import {
   ChatMessage,
@@ -7,6 +8,7 @@ import {
   SendMessageParams,
   TypingUser,
 } from "../types/chat.types";
+import { createSocketChatTransport } from "./socketChatTransport";
 
 export interface ChatTransportSubscription {
   unsubscribe: () => void;
@@ -17,24 +19,27 @@ export interface ChatTransportCallbacks {
   onMessageUpdated: (message: ChatMessage) => void;
   onTypingChanged: (typingUsers: TypingUser[]) => void;
   onError: (error: Error) => void;
+  /** Optional: real-time connection state (for "Connecting…" UI). */
+  onConnectionChanged?: (connected: boolean) => void;
 }
 
 export interface ChatTransport {
   /**
-   * Fetch a page of messages for an album
-   * @throws NotImplementedError - Backend not implemented
+   * Fetch a page of messages for an album (joins the room first if needed).
+   * `cursor` is the id of the oldest message already loaded.
    */
   fetchPage(params: FetchPageParams): Promise<FetchPageResult>;
 
   /**
-   * Send a message to an album chat
-   * @throws NotImplementedError - Backend not implemented
+   * Send a message to an album chat. Resolves with the server-confirmed
+   * message; rejects when the send is not acknowledged (offline, server
+   * error, timeout) so the UI can mark the optimistic message as failed.
    */
   send(albumId: string, params: SendMessageParams): Promise<ChatMessage>;
 
   /**
-   * Subscribe to real-time updates for an album chat
-   * @throws NotImplementedError - Backend not implemented
+   * Subscribe to real-time updates for an album chat.
+   * Joins the room on subscribe; leaving/cleanup happens on unsubscribe.
    */
   subscribe(
     albumId: string,
@@ -42,64 +47,15 @@ export interface ChatTransport {
   ): ChatTransportSubscription;
 
   /**
-   * Notify server that user is typing
-   * @throws NotImplementedError - Backend not implemented
+   * Notify server about local typing state. Defaults to `typing: true`;
+   * pass `false` when the composer is cleared/blurred.
    */
-  sendTypingIndicator(albumId: string): Promise<void>;
+  sendTypingIndicator(albumId: string, typing?: boolean): Promise<void>;
 
   /**
-   * Mark messages as read
-   * @throws NotImplementedError - Backend not implemented
+   * Mark messages as read (not supported by the socket backend yet; no-op).
    */
   markAsRead(albumId: string, messageIds: string[]): Promise<void>;
-}
-
-class NotImplementedError extends Error {
-  constructor(method: string) {
-    super(`ChatTransport.${method} is not implemented. Backend pending.`);
-    this.name = "NotImplementedError";
-  }
-}
-
-/**
- * Creates a stub chat transport.
- * All methods throw NotImplementedError - ready for backend implementation.
- */
-export function createChatTransport(): ChatTransport {
-  return {
-    fetchPage: async (_params: FetchPageParams): Promise<FetchPageResult> => {
-      throw new NotImplementedError("fetchPage");
-    },
-
-    send: async (
-      _albumId: string,
-      _params: SendMessageParams,
-    ): Promise<ChatMessage> => {
-      throw new NotImplementedError("send");
-    },
-
-    subscribe: (
-      _albumId: string,
-      _callbacks: ChatTransportCallbacks,
-    ): ChatTransportSubscription => {
-      // Return a no-op subscription for now
-      console.warn("ChatTransport.subscribe: Backend not implemented");
-      return {
-        unsubscribe: () => {},
-      };
-    },
-
-    sendTypingIndicator: async (_albumId: string): Promise<void> => {
-      throw new NotImplementedError("sendTypingIndicator");
-    },
-
-    markAsRead: async (
-      _albumId: string,
-      _messageIds: string[],
-    ): Promise<void> => {
-      throw new NotImplementedError("markAsRead");
-    },
-  };
 }
 
 // Singleton instance
@@ -107,7 +63,7 @@ let transportInstance: ChatTransport | null = null;
 
 export function getChatTransport(): ChatTransport {
   if (!transportInstance) {
-    transportInstance = createChatTransport();
+    transportInstance = createSocketChatTransport();
   }
   return transportInstance;
 }
