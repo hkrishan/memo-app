@@ -15,6 +15,8 @@ export { GridOverlay } from './GridOverlay';
 export { CountdownOverlay } from './CountdownOverlay';
 export { FocusExposureControl } from './FocusExposureControl';
 export { LastCaptureThumbnail } from './LastCaptureThumbnail';
+export { CaptureDestinationButton } from './CaptureDestinationButton';
+export { DestinationPickerSheet } from './DestinationPickerSheet';
 
 // Re-export component props types for convenience
 export type {

@@ -54,6 +54,11 @@ import {
   useUploadPhotoMutation,
   useGetAlbumsQuery,
 } from "@/features/album/api/album.queries";
+import { useDeletePhotoMutation } from "@/features/album/api/photo.queries";
+import {
+  useCaptureDestinationStore,
+  CaptureDestination,
+} from "@/features/camera/store/captureDestinationStore";
 
 // Camera system imports
 import {
@@ -78,6 +83,8 @@ import {
   CountdownOverlay,
   FocusExposureControl,
   LastCaptureThumbnail,
+  CaptureDestinationButton,
+  DestinationPickerSheet,
 } from "../components";
 
 const ReanimatedCamera = Animated.createAnimatedComponent(Camera);
@@ -160,11 +167,27 @@ export default function CameraScreen({
   const [showPreview, setShowPreview] = useState(false);
   const [isSavingMedia, setIsSavingMedia] = useState(false);
 
-  // Quick-save photo flow (auto-save + thumbnail drop + options sheet)
+  // Quick-save photo flow (auto-save + thumbnail drop + confirmation sheet)
   const [quickPhoto, setQuickPhoto] = useState<string | null>(null);
   const [quickPhotoStatus, setQuickPhotoStatus] =
     useState<PhotoSaveStatus>("saving");
+  // Where THIS capture auto-saved (drives the confirmation sheet's content)
+  const [quickPhotoDestKind, setQuickPhotoDestKind] = useState<
+    "gallery" | "album"
+  >("gallery");
+  const [quickPhotoAlbumTitle, setQuickPhotoAlbumTitle] = useState<
+    string | undefined
+  >(undefined);
   const quickPhotoAssetRef = useRef<MediaLibrary.Asset | null>(null);
+  // The album this capture was auto-uploaded to (photoId filled on success),
+  // so the sheet's remove/move/retry actions can target the uploaded photo
+  const quickAlbumRef = useRef<{
+    albumId: string;
+    title: string;
+    photoId: string | null;
+  } | null>(null);
+  // Sticky destination picker (opened from the button right of the shutter)
+  const [showDestinationPicker, setShowDestinationPicker] = useState(false);
 
   // iOS-camera-style last-capture thumbnail next to the capture button.
   // Seeded from the device library's newest photo OR video (only when
@@ -280,10 +303,14 @@ export default function CameraScreen({
       const aStd = a.photoWidth <= 4100 ? 1 : 0;
       const bStd = b.photoWidth <= 4100 ? 1 : 0;
       if (aStd !== bStd) return bStd - aStd;
-      const photoDiff =
-        b.photoWidth * b.photoHeight - a.photoWidth * a.photoHeight;
-      if (photoDiff !== 0) return photoDiff;
-      return b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight;
+      // VIDEO resolution before photo: the preview streams at the format's
+      // video size, so at equal FOV the 4K variant gives a Snapchat-crisp
+      // preview where the 1080p one looks soft on modern screens. Photo
+      // capture is 12MP-class either way (the aStd/bStd gate above).
+      const videoDiff =
+        b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight;
+      if (videoDiff !== 0) return videoDiff;
+      return b.photoWidth * b.photoHeight - a.photoWidth * a.photoHeight;
     })[0];
   }, [backDevice]);
 
@@ -311,23 +338,22 @@ export default function CameraScreen({
       if (Math.abs(aspectDistA - aspectDistB) > 0.05) {
         return aspectDistA - aspectDistB;
       }
+      // Preview streams at video size — prefer the crisper variant first
+      const videoDiff =
+        b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight;
+      if (videoDiff !== 0) return videoDiff;
       return b.photoWidth * b.photoHeight - a.photoWidth * a.photoHeight;
     })[0];
   }, [frontDevice]);
 
-  // "standard" stabilization, like the native camera app records with.
-  // "cinematic" crops the recorded video heavily (and crops Android
-  // previews), which fought the widest-FOV format selection above.
-  const backStabilization = backFormat?.videoStabilizationModes.includes(
-    "standard",
-  )
-    ? "standard"
-    : undefined;
-  const frontStabilization = frontFormat?.videoStabilizationModes.includes(
-    "standard",
-  )
-    ? "standard"
-    : undefined;
+  // Stabilization OFF, matching Snapchat / the native camera's PHOTO mode:
+  // EIS ("standard" and up) center-crops the preview ~10%, which read as
+  // "the camera is zoomed in" next to Snapchat, and its processing softens
+  // the live preview. Hardware OIS still smooths handheld shots, and video
+  // recordings trade a little shake for the honest full-width FOV — the
+  // same trade Snapchat makes.
+  const backStabilization = "off" as const;
+  const frontStabilization = "off" as const;
 
   // Runtime spec visibility: what each camera actually resolved to
   useEffect(() => {
@@ -418,14 +444,35 @@ export default function CameraScreen({
 
   // Album data and mutations
   const { data: albums } = useGetAlbumsQuery();
-  // Album-capture mode narrows the save sheet to the target album
+  // Album-capture mode narrows the sheet's album picker to the target album,
+  // preserving that flow (auto-save to gallery, add to the one album on a
+  // user action). The main tab's picker sees every album.
   const saveSheetAlbums = albumId
     ? albums?.filter((album) => album.albumId === albumId)
     : albums;
   const uploadPhotoMutation = useUploadPhotoMutation();
+  const deletePhotoMutation = useDeletePhotoMutation();
   const addAlbumAssociation = usePhotoAlbumStore(
     (state) => state.addAssociation,
   );
+
+  // Sticky auto-save destination (main-tab camera only). Album-capture mode
+  // (albumId prop) keeps its own flow and never reads this.
+  const destination = useCaptureDestinationStore((state) => state.destination);
+  const setDestination = useCaptureDestinationStore(
+    (state) => state.setDestination,
+  );
+  // Resolve at the read site: a stored album that no longer exists falls
+  // back to gallery (the store itself doesn't know the album list).
+  const resolvedDestination: CaptureDestination =
+    destination.type === "album" &&
+    !albums?.some((a) => a.albumId === destination.albumId)
+      ? { type: "gallery" }
+      : destination;
+  // Ref mirror so the memoized capture callback reads the latest value
+  // without being re-created on every destination/albums change.
+  const resolvedDestinationRef = useRef(resolvedDestination);
+  resolvedDestinationRef.current = resolvedDestination;
 
   // Animated camera props: display zoom → native zoom, plus exposure
   // bias. One set PER camera (both stay mounted for instant flips), each
@@ -664,8 +711,49 @@ export default function CameraScreen({
     [triggerGalleryRefresh],
   );
 
-  // Photo capture — saves immediately, then the frame drops into a
-  // bottom-left thumbnail with an options sheet
+  // Auto-upload a captured photo straight to an album (destination = album:
+  // the photo is NOT written to the device gallery). Mirrors the album
+  // "Adding to…" pill pattern; tracks the uploaded photoId so the sheet's
+  // remove/move/retry actions can act on it.
+  const uploadQuickPhotoToAlbum = useCallback(
+    (fileUri: string, targetAlbumId: string, title: string) => {
+      const entry = { albumId: targetAlbumId, title, photoId: null as string | null };
+      quickAlbumRef.current = entry;
+      setQuickPhotoStatus("saving");
+
+      const location = captureLocationRef.current;
+      const uploadId = `album-upload-${Date.now()}`;
+      uploadIndicator.begin(uploadId, `Adding to ${title}…`);
+      uploadPhotoMutation
+        .mutateAsync({
+          albumId: targetAlbumId,
+          fileUri,
+          fileName: `capture_${Date.now()}.jpg`,
+          mimeType: "image/jpeg",
+          latitude: location?.latitude,
+          longitude: location?.longitude,
+        })
+        .then((data) => {
+          entry.photoId = data.photoId;
+          // Only reflect status if this is still the active capture's upload
+          if (quickAlbumRef.current === entry) {
+            setQuickPhotoStatus("saved");
+          }
+          uploadIndicator.succeed(uploadId, `Added to ${title}`);
+          onPhotoUploaded?.(data);
+        })
+        .catch(() => {
+          if (quickAlbumRef.current === entry) {
+            setQuickPhotoStatus("failed");
+          }
+          uploadIndicator.fail(uploadId);
+        });
+    },
+    [uploadPhotoMutation, onPhotoUploaded],
+  );
+
+  // Photo capture — auto-saves to the current destination, then the frame
+  // drops into a bottom-left thumbnail with a confirmation sheet
   const capturePhoto = useCallback(async () => {
     const camera = getActiveCamera();
     if (!camera) return;
@@ -704,14 +792,33 @@ export default function CameraScreen({
         : `file://${photo.path}`;
 
       quickPhotoAssetRef.current = null;
-      setQuickPhotoStatus("saving");
+      quickAlbumRef.current = null;
       setQuickPhoto(fileUri);
       setLastCapture({ uri: fileUri, mediaType: "photo" });
 
-      // Save immediately in the background; the sheet reflects the status
-      saveQuickPhotoToGallery(fileUri);
-      // Fetch where this was taken while the save sheet is up
+      // Fetch where this was taken while the sheet is up (before the upload
+      // reads captureLocationRef in the album branch)
       captureCurrentLocation();
+
+      // Auto-save to the current destination. In album-capture mode
+      // (albumId prop) there is no destination button — keep gallery.
+      const dest = albumId
+        ? ({ type: "gallery" } as CaptureDestination)
+        : resolvedDestinationRef.current;
+      if (dest.type === "album") {
+        const album = albums?.find((a) => a.albumId === dest.albumId);
+        const title = album?.title ?? "Album";
+        setQuickPhotoDestKind("album");
+        setQuickPhotoAlbumTitle(title);
+        // Destination = album: upload straight to it, NOT to the gallery
+        uploadQuickPhotoToAlbum(fileUri, dest.albumId, title);
+      } else {
+        setQuickPhotoDestKind("gallery");
+        setQuickPhotoAlbumTitle(undefined);
+        setQuickPhotoStatus("saving");
+        // Save immediately in the background; the sheet reflects the status
+        saveQuickPhotoToGallery(fileUri);
+      }
     } catch (error) {
       if (__DEV__) console.error("Failed to take photo:", error);
       notify.error("Capture Failed", "Could not take photo. Please try again.");
@@ -726,14 +833,28 @@ export default function CameraScreen({
     saveQuickPhotoToGallery,
     captureCurrentLocation,
     getActiveCamera,
+    albumId,
+    albums,
+    uploadQuickPhotoToAlbum,
   ]);
 
   // Quick-save sheet handlers
+  // Remove: gallery destination → delete the device asset; album destination
+  // → delete the uploaded album photo. Then the sheet dismisses.
   const handleQuickRemove = useCallback(async () => {
     const asset = quickPhotoAssetRef.current;
+    const album = quickAlbumRef.current;
     quickPhotoAssetRef.current = null;
+    quickAlbumRef.current = null;
     setQuickPhoto(null);
-    if (asset) {
+    if (album?.photoId) {
+      deletePhotoMutation
+        .mutateAsync({ albumId: album.albumId, photoId: album.photoId })
+        .catch((error) => {
+          if (__DEV__) console.error("Failed to remove album photo:", error);
+          notify.error("Remove Failed", "Could not remove photo from album");
+        });
+    } else if (asset) {
       try {
         await MediaLibrary.deleteAssetsAsync([asset]);
         triggerGalleryRefresh();
@@ -742,57 +863,122 @@ export default function CameraScreen({
         notify.error("Remove Failed", "Could not remove photo from gallery");
       }
     }
-  }, [triggerGalleryRefresh]);
+  }, [triggerGalleryRefresh, deletePhotoMutation]);
 
+  // Save to Gallery: album destination → write the captured file to the
+  // gallery too (a side action, tracked via the pill so it doesn't overwrite
+  // the sheet's destination status); gallery destination → retry the save
+  // (shown only when permission was denied).
   const handleQuickSaveToGallery = useCallback(() => {
     if (!quickPhoto) return;
-    setQuickPhotoStatus("saving");
-    saveQuickPhotoToGallery(quickPhoto);
-  }, [quickPhoto, saveQuickPhotoToGallery]);
+    if (quickAlbumRef.current) {
+      const fileUri = quickPhoto;
+      const saveId = `gallery-save-${Date.now()}`;
+      uploadIndicator.begin(saveId, "Saving to gallery…");
+      MediaLibrary.requestPermissionsAsync()
+        .then(async ({ status }) => {
+          if (status !== "granted") {
+            uploadIndicator.fail(saveId);
+            return;
+          }
+          const asset = await MediaLibrary.createAssetAsync(fileUri);
+          quickPhotoAssetRef.current = asset;
+          triggerGalleryRefresh();
+          uploadIndicator.succeed(saveId, "Saved to gallery");
+        })
+        .catch(() => uploadIndicator.fail(saveId));
+    } else {
+      setQuickPhotoStatus("saving");
+      saveQuickPhotoToGallery(quickPhoto);
+    }
+  }, [quickPhoto, saveQuickPhotoToGallery, triggerGalleryRefresh]);
 
-  const handleQuickSaveToAlbum = useCallback(
-    (albumId: string) => {
+  // Change album (one-off — does NOT change the sticky preference):
+  // gallery destination → add to the chosen album (photo stays in gallery);
+  // album destination → MOVE (upload to the new album, then delete from the
+  // original once the new upload succeeds). Progress shows via the pill.
+  const handleQuickChangeAlbum = useCallback(
+    (targetAlbumId: string) => {
       if (!quickPhoto) return;
-
-      const album = albums?.find((a) => a.albumId === albumId);
+      const fileUri = quickPhoto;
+      const album = albums?.find((a) => a.albumId === targetAlbumId);
+      const title = album?.title ?? "Album";
+      const prev = quickAlbumRef.current;
       const asset = quickPhotoAssetRef.current;
-      if (album && asset?.uri) {
-        addAlbumAssociation(asset.uri, albumId, album.title);
+
+      // Gallery destination keeps the local asset associated with the album
+      if (!prev && album && asset?.uri) {
+        addAlbumAssociation(asset.uri, targetAlbumId, title);
       }
 
       const location = captureLocationRef.current;
       const uploadId = `album-upload-${Date.now()}`;
-      uploadIndicator.begin(uploadId, "Adding to album…");
-      // mutateAsync, not mutate-with-callbacks: react-query drops per-call
-      // callbacks when the component unmounts mid-flight, which left the
-      // pill spinning forever after closing the camera during an upload.
+      uploadIndicator.begin(uploadId, `Adding to ${title}…`);
       uploadPhotoMutation
         .mutateAsync({
-          albumId,
-          fileUri: quickPhoto,
+          albumId: targetAlbumId,
+          fileUri,
           fileName: `capture_${Date.now()}.jpg`,
           mimeType: "image/jpeg",
           latitude: location?.latitude,
           longitude: location?.longitude,
         })
         .then((data) => {
-          uploadIndicator.succeed(uploadId, "Added to album");
+          uploadIndicator.succeed(uploadId, `Added to ${title}`);
           onPhotoUploaded?.(data);
+          // Album destination: this was a MOVE — remove from the original
+          // album only after the new upload succeeded (a failed move keeps
+          // the photo safe in its original album).
+          if (prev?.photoId && prev.albumId !== targetAlbumId) {
+            deletePhotoMutation
+              .mutateAsync({ albumId: prev.albumId, photoId: prev.photoId })
+              .catch(() => {});
+          }
         })
-        .catch(() => {
-          uploadIndicator.fail(uploadId);
-        });
+        .catch(() => uploadIndicator.fail(uploadId));
 
       quickPhotoAssetRef.current = null;
+      quickAlbumRef.current = null;
       setQuickPhoto(null);
     },
-    [quickPhoto, albums, addAlbumAssociation, uploadPhotoMutation, onPhotoUploaded],
+    [
+      quickPhoto,
+      albums,
+      addAlbumAssociation,
+      uploadPhotoMutation,
+      deletePhotoMutation,
+      onPhotoUploaded,
+    ],
   );
+
+  // Retry a failed album auto-upload (offline)
+  const handleQuickRetry = useCallback(() => {
+    if (!quickPhoto) return;
+    const album = quickAlbumRef.current;
+    if (album) {
+      uploadQuickPhotoToAlbum(quickPhoto, album.albumId, album.title);
+    }
+  }, [quickPhoto, uploadQuickPhotoToAlbum]);
 
   const handleQuickDismiss = useCallback(() => {
     quickPhotoAssetRef.current = null;
+    quickAlbumRef.current = null;
     setQuickPhoto(null);
   }, []);
+
+  // Sticky destination picker (button right of the shutter)
+  const handleSelectGalleryDestination = useCallback(() => {
+    setDestination({ type: "gallery" });
+    setShowDestinationPicker(false);
+  }, [setDestination]);
+
+  const handleSelectAlbumDestination = useCallback(
+    (targetAlbumId: string) => {
+      setDestination({ type: "album", albumId: targetAlbumId });
+      setShowDestinationPicker(false);
+    },
+    [setDestination],
+  );
 
   // Self-timer countdown
   const cancelCountdown = useCallback(() => {
@@ -1264,6 +1450,21 @@ export default function CameraScreen({
             onZoomSettled={syncZoomState}
             disabled={countdown != null}
           />
+          {/* Auto-save destination chip, docked right of the shutter
+              (mirrors the thumbnail on the left). Main-tab camera only —
+              album-capture mode (albumId prop) hides it and keeps its flow. */}
+          {!isRecording && !quickPhoto && !albumId && (
+            <View
+              style={styles.destinationContainer}
+              pointerEvents="box-none"
+            >
+              <CaptureDestinationButton
+                destination={resolvedDestination}
+                albums={albums}
+                onPress={() => setShowDestinationPicker(true)}
+              />
+            </View>
+          )}
         </View>
 
         {/* Photo/Video mode toggle + hint */}
@@ -1307,16 +1508,39 @@ export default function CameraScreen({
         onCancel={cancelCountdown}
       />
 
-      {/* Quick-save photo flow: thumbnail drop + options sheet */}
+      {/* Quick-save photo flow: thumbnail drop + destination confirmation */}
       <PhotoSaveSheet
         photoUri={quickPhoto}
+        destinationKind={quickPhotoDestKind}
+        albumTitle={quickPhotoAlbumTitle}
+        currentAlbumId={quickAlbumRef.current?.albumId}
         status={quickPhotoStatus}
         albums={saveSheetAlbums}
         onRemove={handleQuickRemove}
         onSaveToGallery={handleQuickSaveToGallery}
-        onSaveToAlbum={handleQuickSaveToAlbum}
+        onChangeAlbum={handleQuickChangeAlbum}
+        onRetry={handleQuickRetry}
         onDismiss={handleQuickDismiss}
       />
+
+      {/* Sticky destination picker (main-tab camera only) */}
+      {!albumId && (
+        <DestinationPickerSheet
+          visible={showDestinationPicker}
+          albums={albums}
+          showGallery
+          title="Save captures to"
+          selectedType={resolvedDestination.type}
+          selectedAlbumId={
+            resolvedDestination.type === "album"
+              ? resolvedDestination.albumId
+              : null
+          }
+          onSelectGallery={handleSelectGalleryDestination}
+          onSelectAlbum={handleSelectAlbumDestination}
+          onClose={() => setShowDestinationPicker(false)}
+        />
+      )}
 
       {/* Media preview overlay (videos) */}
       <MediaPreview
@@ -1413,6 +1637,13 @@ const styles = StyleSheet.create({
   lastCaptureContainer: {
     position: "absolute",
     left: 26,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+  },
+  destinationContainer: {
+    position: "absolute",
+    right: 26,
     top: 0,
     bottom: 0,
     justifyContent: "center",

@@ -1,9 +1,12 @@
 /**
  * PhotoSaveSheet Component
- * Quick-save flow for captured photos: the frame shrinks into a bottom-left
- * thumbnail, then a compact sheet slides up with options to remove the
- * auto-saved photo, keep it, or add it to an album. The camera stays live
- * behind it the whole time.
+ * Post-capture confirmation for the auto-save destination. The frame shrinks
+ * into a bottom-left thumbnail, then a compact sheet slides up confirming
+ * WHERE the capture auto-saved (Gallery or an album) and offering a few
+ * follow-up actions. The camera stays live behind it the whole time.
+ *
+ * The drop/dock/expand choreography is unchanged — only the sheet CONTENT
+ * differs from the old album-picker version.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -13,7 +16,6 @@ import {
   Image,
   Pressable,
   Dimensions,
-  ScrollView,
   ActivityIndicator,
 } from 'react-native';
 import Animated, {
@@ -32,47 +34,56 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 
 import { Album } from '@/features/album/types/album.types';
+import { DestinationPickerSheet } from './DestinationPickerSheet';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const THUMB_WIDTH = 64;
 const THUMB_HEIGHT = 84;
 const THUMB_LEFT = 20;
-const SHEET_CONTENT_HEIGHT = 292;
+const SHEET_CONTENT_HEIGHT = 288;
 
-export type PhotoSaveStatus = 'saving' | 'saved' | 'unsaved';
+/**
+ * gallery: 'saving' (writing) | 'saved' | 'unsaved' (permission denied)
+ * album:   'saving' (uploading) | 'saved' | 'failed' (offline)
+ */
+export type PhotoSaveStatus = 'saving' | 'saved' | 'unsaved' | 'failed';
 
 interface PhotoSaveSheetProps {
   /** file:// uri of the captured photo; null hides the sheet */
   photoUri: string | null;
+  /** Where this capture auto-saved. */
+  destinationKind: 'gallery' | 'album';
+  /** Album title when destinationKind === 'album'. */
+  albumTitle?: string;
+  /** Album id of the auto-destination, for the picker's highlight. */
+  currentAlbumId?: string;
   status: PhotoSaveStatus;
+  /** Albums for the one-off "Change album" picker. */
   albums: Album[] | undefined;
-  /** Remove the auto-saved photo (undo) */
+  /** Remove the just-saved item (gallery asset or uploaded album photo). */
   onRemove: () => void;
-  /** Retry saving to the gallery (shown when permission was denied) */
+  /** Write the captured file to the device gallery. */
   onSaveToGallery: () => void;
-  /** Upload the photo to an album */
-  onSaveToAlbum: (albumId: string) => void;
-  /** Keep the photo and close the sheet */
+  /** One-off: add to / move to a chosen album (does not change preference). */
+  onChangeAlbum: (albumId: string) => void;
+  /** Retry a failed album upload. */
+  onRetry: () => void;
+  /** Keep the photo and close the sheet (dismiss = accept the auto-save). */
   onDismiss: () => void;
 }
 
-const STATUS_CONTENT: Record<
-  PhotoSaveStatus,
-  { title: string; subtitle: string }
-> = {
-  saving: { title: 'Saving…', subtitle: 'Adding to your gallery' },
-  saved: { title: 'Saved to Gallery', subtitle: 'Add it to an album to share' },
-  unsaved: { title: 'Not saved yet', subtitle: 'Gallery permission needed' },
-};
-
 export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
   photoUri,
+  destinationKind,
+  albumTitle,
+  currentAlbumId,
   status,
   albums,
   onRemove,
   onSaveToGallery,
-  onSaveToAlbum,
+  onChangeAlbum,
+  onRetry,
   onDismiss,
 }) => {
   const insets = useSafeAreaInsets();
@@ -86,6 +97,8 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
   // Docked = the initial shrink finished; only a docked thumb can expand
   const [docked, setDocked] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // One-off "Change album" picker
+  const [showAlbumPicker, setShowAlbumPicker] = useState(false);
 
   useEffect(() => {
     if (photoUri) {
@@ -95,6 +108,7 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
       setMounted(true);
       setDocked(false);
       setExpanded(false);
+      setShowAlbumPicker(false);
       dropProgress.value = withTiming(
         1,
         {
@@ -309,13 +323,30 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
     return null;
   }
 
-  const statusContent = STATUS_CONTENT[status];
-  const hasAlbums = !!albums && albums.length > 0;
+  const destLabel = destinationKind === 'album' ? albumTitle ?? 'Album' : 'Gallery';
+  const isFailed = status === 'failed' || status === 'unsaved';
+  const isSaving = status === 'saving';
+
+  // Confirmation line (the destination chip is the only highlighted element)
+  const confirmText = isSaving
+    ? `Saving to ${destLabel}…`
+    : isFailed
+      ? `Couldn't save to ${destLabel}`
+      : `Saved to ${destLabel}`;
 
   const handleDismiss = () => animateOut(onDismiss);
   const handleRemove = () => animateOut(onRemove);
-  const handleAlbum = (albumId: string) =>
-    animateOut(() => onSaveToAlbum(albumId));
+  const handleRetry = () => onRetry();
+  const handleSaveToGallery = () => onSaveToGallery();
+  const openAlbumPicker = () => setShowAlbumPicker(true);
+  const handlePickAlbum = (albumId: string) => {
+    setShowAlbumPicker(false);
+    animateOut(() => onChangeAlbum(albumId));
+  };
+
+  // "Save to Gallery" shows in the album case, and as the gallery-permission
+  // retry / offline fallback.
+  const showSaveToGallery = destinationKind === 'album' || isFailed;
 
   return (
     <View style={styles.container} pointerEvents="box-none">
@@ -336,89 +367,93 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
         <View style={styles.header}>
           <View style={styles.thumbSpacer} />
           <View style={styles.headerText}>
-            <View style={styles.titleRow}>
-              {status === 'saving' && (
-                <ActivityIndicator size="small" color="#fff" />
-              )}
-              {status === 'saved' && (
-                <Ionicons name="checkmark-circle" size={18} color="#30D158" />
-              )}
-              {status === 'unsaved' && (
-                <Ionicons name="alert-circle" size={18} color="#FFD60A" />
-              )}
-              <Text style={styles.title}>{statusContent.title}</Text>
-            </View>
-            <Text style={styles.subtitle}>{statusContent.subtitle}</Text>
+            <Text style={styles.headerTitle}>
+              {isFailed ? 'Not saved' : isSaving ? 'Saving…' : 'Captured'}
+            </Text>
           </View>
           <Pressable onPress={handleDismiss} style={styles.closeButton}>
             <Ionicons name="close" size={22} color="rgba(255,255,255,0.8)" />
           </Pressable>
         </View>
 
-        {/* Albums */}
-        <View style={styles.albumSection}>
-          <Text style={styles.sectionTitle}>Add to Album</Text>
-          {hasAlbums ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.albumList}
-            >
-              {albums!.map((album) => (
-                <Pressable
-                  key={album.albumId}
-                  onPress={() => handleAlbum(album.albumId)}
-                  style={styles.albumItem}
-                >
-                  <View style={styles.albumCover}>
-                    <Ionicons
-                      name="images-outline"
-                      size={22}
-                      color="rgba(255,255,255,0.7)"
-                    />
-                  </View>
-                  <Text style={styles.albumTitle} numberOfLines={1}>
-                    {album.title}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={styles.noAlbumsText}>
-              Create an album to share photos with friends
+        {/* Destination confirmation chip — the ONLY highlighted element */}
+        <View style={styles.chipRow}>
+          <View
+            style={[
+              styles.destChip,
+              isFailed ? styles.destChipFailed : styles.destChipOk,
+            ]}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : isFailed ? (
+              <Ionicons name="alert-circle" size={20} color="#FFD60A" />
+            ) : (
+              <Ionicons name="checkmark-circle" size={20} color="#30D158" />
+            )}
+            <Text style={styles.destChipText} numberOfLines={1}>
+              {confirmText}
             </Text>
-          )}
+          </View>
         </View>
 
         {/* Actions */}
-        <View style={styles.actionRow}>
-          <Pressable
-            onPress={handleRemove}
-            style={[styles.actionButton, styles.removeButton]}
-          >
-            <Ionicons name="trash-outline" size={18} color="#fff" />
-            <Text style={styles.actionText}>Remove</Text>
-          </Pressable>
+        <View style={styles.actionsArea}>
+          <View style={styles.primaryRow}>
+            {isFailed && status === 'failed' && (
+              <Pressable
+                onPress={handleRetry}
+                style={[styles.actionButton, styles.primaryButton]}
+              >
+                <Ionicons name="refresh" size={18} color="#000" />
+                <Text style={[styles.actionText, styles.primaryText]}>
+                  Retry
+                </Text>
+              </Pressable>
+            )}
 
-          {status === 'unsaved' ? (
+            {showSaveToGallery && (
+              <Pressable
+                onPress={handleSaveToGallery}
+                style={[
+                  styles.actionButton,
+                  status === 'failed' ? styles.secondaryButton : styles.primaryButton,
+                ]}
+              >
+                <Ionicons
+                  name="download-outline"
+                  size={18}
+                  color={status === 'failed' ? '#fff' : '#000'}
+                />
+                <Text
+                  style={[
+                    styles.actionText,
+                    status === 'failed' ? null : styles.primaryText,
+                  ]}
+                >
+                  Save to Gallery
+                </Text>
+              </Pressable>
+            )}
+
             <Pressable
-              onPress={onSaveToGallery}
-              style={[styles.actionButton, styles.keepButton]}
+              onPress={openAlbumPicker}
+              style={[
+                styles.actionButton,
+                status === 'failed' ? styles.hiddenButton : styles.secondaryButton,
+              ]}
+              disabled={status === 'failed'}
             >
-              <Ionicons name="download-outline" size={18} color="#000" />
-              <Text style={[styles.actionText, styles.keepText]}>
-                Save to Gallery
-              </Text>
+              <Ionicons name="albums-outline" size={18} color="#fff" />
+              <Text style={styles.actionText}>Change album</Text>
             </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleDismiss}
-              style={[styles.actionButton, styles.keepButton]}
-            >
-              <Ionicons name="checkmark" size={18} color="#000" />
-              <Text style={[styles.actionText, styles.keepText]}>Done</Text>
-            </Pressable>
-          )}
+          </View>
+
+          {/* Remove — destructive but subtle */}
+          <Pressable onPress={handleRemove} style={styles.removeButton}>
+            <Ionicons name="trash-outline" size={16} color="#FF6961" />
+            <Text style={styles.removeText}>Remove</Text>
+          </Pressable>
         </View>
       </Animated.View>
 
@@ -466,6 +501,18 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
           </Pressable>
         </Animated.View>
       )}
+
+      {/* One-off "Change album" picker (does not change the sticky preference) */}
+      <DestinationPickerSheet
+        visible={showAlbumPicker}
+        albums={albums}
+        showGallery={false}
+        title={destinationKind === 'album' ? 'Move to album' : 'Add to album'}
+        selectedType="album"
+        selectedAlbumId={currentAlbumId ?? null}
+        onSelectAlbum={handlePickAlbum}
+        onClose={() => setShowAlbumPicker(false)}
+      />
     </View>
   );
 };
@@ -502,20 +549,10 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  title: {
+  headerTitle: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  subtitle: {
-    color: 'rgba(255, 255, 255, 0.55)',
-    fontSize: 13,
-    marginTop: 3,
+    fontSize: 22,
+    fontWeight: '700',
   },
   closeButton: {
     width: 36,
@@ -526,49 +563,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'flex-start',
   },
-  albumSection: {
-    marginTop: 12,
-    height: 104,
+  chipRow: {
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 18,
   },
-  sectionTitle: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 13,
+  destChip: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+  },
+  destChipOk: {
+    backgroundColor: 'rgba(48, 209, 88, 0.16)',
+  },
+  destChipFailed: {
+    backgroundColor: 'rgba(255, 214, 10, 0.16)',
+  },
+  destChipText: {
+    color: '#fff',
+    fontSize: 15,
     fontWeight: '600',
-    marginLeft: 20,
-    marginBottom: 10,
+    flexShrink: 1,
   },
-  albumList: {
-    paddingHorizontal: 16,
+  actionsArea: {
+    paddingHorizontal: 20,
     gap: 12,
   },
-  albumItem: {
-    alignItems: 'center',
-    width: 68,
-  },
-  albumCover: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  albumTitle: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 11,
-    marginTop: 5,
-    textAlign: 'center',
-  },
-  noAlbumsText: {
-    color: 'rgba(255, 255, 255, 0.45)',
-    fontSize: 13,
-    marginLeft: 20,
-  },
-  actionRow: {
+  primaryRow: {
     flexDirection: 'row',
     gap: 12,
-    paddingHorizontal: 20,
-    marginTop: 14,
   },
   actionButton: {
     flex: 1,
@@ -579,19 +607,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  removeButton: {
-    backgroundColor: 'rgba(255, 59, 48, 0.9)',
-  },
-  keepButton: {
+  primaryButton: {
     backgroundColor: '#fff',
+  },
+  secondaryButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  hiddenButton: {
+    display: 'none',
   },
   actionText: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
   },
-  keepText: {
+  primaryText: {
     color: '#000',
+  },
+  removeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+  },
+  removeText: {
+    color: '#FF6961',
+    fontSize: 14,
+    fontWeight: '600',
   },
   photoContainer: {
     position: 'absolute',
