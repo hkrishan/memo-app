@@ -22,6 +22,7 @@ import {
 import { create } from "zustand";
 
 import { env } from "@/lib/env";
+import { captureException } from "@/lib/sentry";
 import { endpoints, queryClient, tokenStorage } from "@/lib/api";
 import { photoKeys } from "../api/photo.queries";
 import {
@@ -222,13 +223,21 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
 
     succeeded = result.status === 201;
     if (!succeeded) {
-      console.error(
-        `Photo upload failed (HTTP ${result.status})`,
-        result.body?.slice(0, 200),
-      );
+      if (__DEV__) {
+        console.error(
+          `Photo upload failed (HTTP ${result.status})`,
+          result.body?.slice(0, 200),
+        );
+      }
+      captureException(new Error(`Photo upload failed (HTTP ${result.status})`), {
+        albumId,
+        status: result.status,
+        body: result.body?.slice(0, 200),
+      });
     }
   } catch (error) {
-    console.error("Photo upload failed", error);
+    if (__DEV__) console.error("Photo upload failed", error);
+    captureException(error, { albumId, operation: "uploadOne" });
   }
 
   inFlight -= 1;

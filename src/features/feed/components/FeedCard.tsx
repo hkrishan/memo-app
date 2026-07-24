@@ -8,7 +8,7 @@
  */
 
 import React, { memo } from "react";
-import { View, StyleSheet, Dimensions } from "react-native";
+import { View, StyleSheet, Dimensions, Pressable } from "react-native";
 import { Text } from "react-native-paper";
 import { LinearGradient } from "expo-linear-gradient";
 import { CachedImage } from "@/components/ui/CachedImage";
@@ -102,24 +102,49 @@ interface FeedCardHeaderProps {
   createdAt: string;
   /** Page-identity gradient ring around the avatar (page posts) */
   ring?: boolean;
+  /** Secondary attribution appended after the time, e.g. the post's author */
+  trailing?: string;
+  /** Makes the whole header row a tap target (no visual button chrome) */
+  onPress?: () => void;
 }
 
 export const FeedCardHeader = memo<FeedCardHeaderProps>(
-  ({ avatarName, avatarUrl, title, subtitle, createdAt, ring }) => (
-    <View style={styles.header}>
-      <FeedAvatar name={avatarName} avatarUrl={avatarUrl} ring={ring} />
-      <View style={styles.headerText}>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={styles.headerSubtitle} numberOfLines={1}>
-          {subtitle}
-          <Text style={styles.headerDot}>{"  ·  "}</Text>
-          <Text style={styles.headerTime}>{formatRelativeTime(createdAt)}</Text>
-        </Text>
-      </View>
-    </View>
-  ),
+  ({ avatarName, avatarUrl, title, subtitle, createdAt, ring, trailing, onPress }) => {
+    const content = (
+      <>
+        <FeedAvatar name={avatarName} avatarUrl={avatarUrl} ring={ring} />
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {subtitle}
+            <Text style={styles.headerDot}>{"  ·  "}</Text>
+            <Text style={styles.headerTime}>
+              {formatRelativeTime(createdAt)}
+            </Text>
+            {trailing ? (
+              <Text style={styles.headerTime}>{`  ·  by ${trailing}`}</Text>
+            ) : null}
+          </Text>
+        </View>
+      </>
+    );
+
+    if (onPress) {
+      return (
+        <Pressable
+          style={styles.header}
+          onPress={onPress}
+          hitSlop={{ top: 6, bottom: 6, left: 0, right: 0 }}
+        >
+          {content}
+        </Pressable>
+      );
+    }
+
+    return <View style={styles.header}>{content}</View>;
+  },
 );
 
 export const FeedCard: React.FC<{ children: React.ReactNode }> = ({

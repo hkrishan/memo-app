@@ -8,6 +8,7 @@ import type { Camera, VideoFile } from 'react-native-vision-camera';
 
 import { RecordingState, UseVideoRecordingReturn, FlashMode } from '../types';
 import { RECORDING_CONFIG } from '../constants';
+import { captureException } from '@/lib/sentry';
 
 interface UseVideoRecordingOptions {
   maxDuration?: number;
@@ -68,7 +69,7 @@ export function useVideoRecording({
   const startRecording = useCallback(
     (camera: Camera) => {
       if (recordingState !== RecordingState.IDLE) {
-        console.warn('Already recording or stopping');
+        if (__DEV__) console.warn('Already recording or stopping');
         return;
       }
 
@@ -105,7 +106,8 @@ export function useVideoRecording({
           setDuration(0);
           pausedDurationRef.current = 0;
 
-          console.error('Recording error:', error);
+          if (__DEV__) console.error('Recording error:', error);
+          captureException(error, { operation: 'video.onRecordingError' });
           onRecordingError?.(error);
 
           // Reject promise if waiting
@@ -124,18 +126,18 @@ export function useVideoRecording({
   // Stop recording
   const stopRecording = useCallback(async (): Promise<VideoFile | null> => {
     if (recordingState === RecordingState.IDLE || recordingState === RecordingState.STOPPING) {
-      console.warn('Not recording');
+      if (__DEV__) console.warn('Not recording');
       return null;
     }
 
     if (!cameraRef.current) {
-      console.warn('No camera reference');
+      if (__DEV__) console.warn('No camera reference');
       return null;
     }
 
     // Check minimum duration
     if (duration < RECORDING_CONFIG.MIN_DURATION) {
-      console.warn('Recording too short, minimum duration not met');
+      if (__DEV__) console.warn('Recording too short, minimum duration not met');
       // Still stop but warn
     }
 
@@ -149,7 +151,8 @@ export function useVideoRecording({
       try {
         cameraRef.current?.stopRecording();
       } catch (error) {
-        console.error('Error stopping recording:', error);
+        if (__DEV__) console.error('Error stopping recording:', error);
+        captureException(error, { operation: 'video.stopRecording' });
         setRecordingState(RecordingState.IDLE);
         resolve(null);
         videoResolverRef.current = null;
@@ -160,7 +163,7 @@ export function useVideoRecording({
   // Pause recording (if supported)
   const pauseRecording = useCallback(() => {
     if (recordingState !== RecordingState.RECORDING) {
-      console.warn('Not recording');
+      if (__DEV__) console.warn('Not recording');
       return;
     }
 
@@ -174,7 +177,7 @@ export function useVideoRecording({
   // Resume recording (if supported)
   const resumeRecording = useCallback(() => {
     if (recordingState !== RecordingState.PAUSED) {
-      console.warn('Not paused');
+      if (__DEV__) console.warn('Not paused');
       return;
     }
 

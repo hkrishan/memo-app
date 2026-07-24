@@ -8,6 +8,12 @@ export interface ChatUser {
   userId: string;
   name: string;
   avatarUrl: string | null;
+  /**
+   * Per-album identity color, threaded in from the album members query
+   * (the chat wire messages don't carry it). Optional — absent for
+   * ex-members and before the members load.
+   */
+  color?: string | null;
 }
 
 export interface ChatMessage {
@@ -31,6 +37,8 @@ export interface AlbumMember {
   name: string;
   avatarUrl: string | null;
   role: "owner" | "contributor" | "viewer";
+  /** Per-album identity color (server palette hex), null until picked. */
+  color: string | null;
 }
 
 export interface ChatAlbum {

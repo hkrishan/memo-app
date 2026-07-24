@@ -85,7 +85,7 @@ const useAuth = () => {
 
       notify.success("Welcome!", "Successfully signed in with Google");
     } catch (error: any) {
-      console.error("Google login error:", error);
+      if (__DEV__) console.error("Google login error:", error);
       notify.error(
         "Login Failed",
         error.message || "Failed to sign in with Google",
@@ -117,7 +117,7 @@ const useAuth = () => {
 
       notify.success("Welcome!", "Successfully signed in with Apple");
     } catch (error: any) {
-      console.error("Apple login error:", error);
+      if (__DEV__) console.error("Apple login error:", error);
       notify.error(
         "Login Failed",
         error.message || "Failed to sign in with Apple",
@@ -145,7 +145,7 @@ const useAuth = () => {
 
       notify.success("Welcome!", "Successfully signed in with Facebook");
     } catch (error: any) {
-      console.error("Facebook login error:", error);
+      if (__DEV__) console.error("Facebook login error:", error);
       notify.error(
         "Login Failed",
         error.message || "Failed to sign in with Facebook",
@@ -169,7 +169,7 @@ const useAuth = () => {
 
         notify.success("Welcome back!");
       } catch (error: any) {
-        console.error("Email login error:", error);
+        if (__DEV__) console.error("Email login error:", error);
         notify.error(
           "Login Failed",
           error.message || "Invalid email or password",
@@ -195,7 +195,7 @@ const useAuth = () => {
 
         notify.success("Account Created", "Welcome to Memo!");
       } catch (error: any) {
-        console.error("Email register error:", error);
+        if (__DEV__) console.error("Email register error:", error);
         notify.error(
           "Registration Failed",
           error.message || "Failed to create account",
@@ -245,7 +245,7 @@ const useAuth = () => {
         const response = await authApi.testLogin(userId);
         await handleAuthSuccess(response, options);
       } catch (error: any) {
-        console.error("Test login error:", error);
+        if (__DEV__) console.error("Test login error:", error);
         notify.error("Login Failed", error.message || "Test login failed");
         throw error;
       } finally {
@@ -285,7 +285,7 @@ const useAuth = () => {
       // Navigate to auth screen
       router.replace("/login");
     } catch (error) {
-      console.error("Logout error:", error);
+      if (__DEV__) console.error("Logout error:", error);
     } finally {
       setLoading(false);
     }
@@ -308,7 +308,7 @@ const useAuth = () => {
       queryClient.clear();
       router.replace("/login");
     } catch (error: any) {
-      console.error("Delete account error:", error);
+      if (__DEV__) console.error("Delete account error:", error);
       notify.error(
         "Couldn't Delete Account",
         error.message || "Please try again.",

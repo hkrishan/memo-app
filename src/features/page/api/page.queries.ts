@@ -47,6 +47,15 @@ export const useGetPageQuery = (albumId: string) => {
   });
 };
 
+/** Standalone viewer's read-only page profile (GET .../page/:pageId/view). */
+export const usePageProfileQuery = (albumId: string, pageId: string) => {
+  return useQuery({
+    queryKey: ["page", "view", albumId, pageId],
+    queryFn: () => pageApi().getPageView(albumId, pageId),
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const useSetWebPasswordMutation = () => {
   return useMutation({
     mutationFn: ({

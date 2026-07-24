@@ -1,6 +1,9 @@
 const endpoints = {
   feed: "/feed",
   feedAlbums: "/feed/albums",
+  feedSearchPages: "/feed/search/pages",
+  pageFollow: (albumId: string, pageId: string) =>
+    `/album/${albumId}/page/${pageId}/follow`,
   auth: {
     // OAuth providers
     google: "/auth/google",
@@ -23,6 +26,8 @@ const endpoints = {
     avatar: "/user/me/avatar",
     pushToken: "/user/me/push-token",
     openDrops: "/user/me/open-drops",
+    notifications: "/user/me/notifications",
+    notificationsRead: "/user/me/notifications/read",
     blocks: "/user/me/blocks",
     block: (userId: string) => `/user/me/blocks/${userId}`,
   },
@@ -49,6 +54,7 @@ const endpoints = {
     invite: (albumId: string, inviteId: string) =>
       `/album/${albumId}/invites/${inviteId}`,
     members: (albumId: string) => `/album/${albumId}/members`,
+    myMemberColor: (albumId: string) => `/album/${albumId}/members/me/color`,
     notificationSettings: (albumId: string) =>
       `/album/${albumId}/notification-settings`,
     // Photosrr
@@ -81,6 +87,8 @@ const endpoints = {
     page: {
       create: (albumId: string) => `/album/${albumId}/page`,
       get: (albumId: string) => `/album/${albumId}/page`,
+      view: (albumId: string, pageId: string) =>
+        `/album/${albumId}/page/${pageId}/view`,
       update: (albumId: string, pageId: string) =>
         `/album/${albumId}/page/${pageId}`,
       webPassword: (albumId: string, pageId: string) =>

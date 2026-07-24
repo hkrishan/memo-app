@@ -147,6 +147,25 @@ export const useGetAlbumMembersQuery = (albumId: string) => {
   });
 };
 
+/**
+ * Set my identity color in this album. On success the album detail (whose
+ * embedded members carry the colors most surfaces read) and the members
+ * list are both refreshed. A 409 ("color already taken") is surfaced to
+ * the caller — the color picker refetches and asks again.
+ */
+export const useSetMemberColorMutation = (albumId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (color: string) => albumApi.setMyMemberColor(albumId, color),
+    onSuccess: () => {
+      // Prefix-matches the album detail AND its "members" subkey
+      queryClient.invalidateQueries({ queryKey: ["albums", albumId] });
+      queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
+    },
+  });
+};
+
 // ---- Invite links ----
 
 /**

@@ -11,6 +11,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { AlbumMember, Role } from "../types/album.types";
+import { memberColor } from "../memberColor";
 import Avatar from "@/components/ui/Avatar";
 import { selectUser, useAuthStore } from "@/features/auth/store/authStore";
 
@@ -68,7 +69,13 @@ const MemberRow = ({
     accessibilityRole={onPress ? "button" : undefined}
     accessibilityLabel={`${member.name ?? "Unknown"}, ${ROLE_LABEL[member.role] ?? "member"}`}
   >
-    <Avatar user={member} size={44} />
+    {/* Identity ring + color dot in the member's album color */}
+    <View>
+      <Avatar user={member} size={44} ringColor={memberColor(member)} />
+      <View
+        style={[styles.colorDot, { backgroundColor: memberColor(member) }]}
+      />
+    </View>
     <Text style={styles.memberName} numberOfLines={1}>
       {member.name ?? "Unknown"}
     </Text>
@@ -211,6 +218,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#111",
+  },
+  colorDot: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: "#fff",
   },
   rolePill: {
     borderRadius: 13,

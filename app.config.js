@@ -8,6 +8,10 @@ const googleServicesFile = fs.existsSync("./google-services.json")
   ? "./google-services.json"
   : undefined;
 
+// EAS project id — single source of truth for extra.eas.projectId and the
+// expo-updates URL.
+const EAS_PROJECT_ID = "9ab00b42-7d98-43e2-92ea-cb5ef9e67646";
+
 module.exports = {
   expo: {
     name: "Memo",
@@ -18,6 +22,13 @@ module.exports = {
     icon: "./assets/memoicon.png",
     userInterfaceStyle: "light",
     newArchEnabled: true,
+    // OTA updates (expo-updates): runtime version follows the app version so
+    // every store release gets its own update branch compatibility.
+    runtimeVersion: { policy: "appVersion" },
+    updates: {
+      url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
+      fallbackToCacheTimeout: 0,
+    },
     plugins: [
       [
         "expo-build-properties",
@@ -72,6 +83,11 @@ module.exports = {
           sounds: ["./assets/sounds/daily-drop.wav"],
         },
       ],
+      // Sentry native setup + source-map upload during EAS builds.
+      // org/project are intentionally not hardcoded: sentry-cli falls back to
+      // the SENTRY_ORG / SENTRY_PROJECT (and SENTRY_AUTH_TOKEN) environment
+      // variables at build time (the plugin only warns when they're absent).
+      "@sentry/react-native/expo",
     ],
     splash: {
       image: "./assets/splashmemo.png",
@@ -106,7 +122,7 @@ module.exports = {
       socketUrl: process.env.EXPO_PUBLIC_SOCKET_URL || process.env.SOCKET_URL,
       appEnv: process.env.APP_ENV || "development",
       eas: {
-        projectId: "9ab00b42-7d98-43e2-92ea-cb5ef9e67646",
+        projectId: EAS_PROJECT_ID,
       },
     },
   },

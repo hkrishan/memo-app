@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,13 +9,20 @@ import { useGetPhotosQuery } from "../../api/photo.queries";
 import { useGetAlbumQuery } from "../../api/album.queries";
 import { useGetPageQuery } from "@/features/page/api/page.queries";
 import { AlbumNavBar, AlbumTabs } from "../../components";
+import MemberColorSheet from "../../components/MemberColorSheet";
 import { photoToMediaAsset } from "../../utils/mediaAsset";
 import GalleryPage from "./GalleryPage";
 import PagePage from "./PagePage";
 import MomentsPage from "@/features/moments/screens/MomentsPage";
 import { useLiveDropAlbumIds } from "@/features/moments/hooks/useLiveDropAlbumIds";
+import { selectUser, useAuthStore } from "@/features/auth/store/authStore";
 
 const TAB_COUNT = 3;
+
+// Albums whose color picker already showed THIS app session — a "Not now"
+// (offline escape) must not re-nag on every re-navigation; a still-null
+// color re-triggers naturally on the next session.
+const colorPromptedAlbumIds = new Set<string>();
 
 const AlbumScreen = () => {
   const { albumId, initialTab } = useLocalSearchParams<{
@@ -43,6 +50,7 @@ const AlbumScreen = () => {
   // doesn't sweep the nav title / tab highlights through intermediate tabs
   const isTabJumpRef = useRef(false);
   const galleryScrollY = useSharedValue(0);
+  const pageScrollY = useSharedValue(0);
   const tabPosition = useSharedValue(initialTabIndex);
 
   const { data: album } = useGetAlbumQuery(albumId!);
@@ -66,6 +74,24 @@ const AlbumScreen = () => {
   }, [photos]);
 
   const members = useMemo(() => album?.members ?? [], [album?.members]);
+
+  // First open of an album where I have no identity color yet: present the
+  // color picker (once per album per app session).
+  const currentUserId = useAuthStore(selectUser)?.id;
+  const [colorSheetVisible, setColorSheetVisible] = useState(false);
+  useEffect(() => {
+    if (!albumId || !currentUserId || !album?.members) return;
+    if (colorPromptedAlbumIds.has(albumId)) return;
+    const me = album.members.find((m) => m.userId === currentUserId);
+    if (me && me.color == null) {
+      colorPromptedAlbumIds.add(albumId);
+      setColorSheetVisible(true);
+    }
+  }, [albumId, currentUserId, album?.members]);
+  const handleColorSheetClose = useCallback(
+    () => setColorSheetVisible(false),
+    [],
+  );
 
   const handleBack = useCallback(() => router.back(), [router]);
 
@@ -117,6 +143,7 @@ const AlbumScreen = () => {
         title={album?.title ?? "Album"}
         scrollPosition={tabPosition}
         galleryScrollY={galleryScrollY}
+        pageScrollY={pageScrollY}
         onBack={handleBack}
         onSettingsPress={handleOpenSettings}
         pageExists={pageExists}
@@ -142,7 +169,11 @@ const AlbumScreen = () => {
           contentTop={contentTop}
         />
 
-        <PagePage key="page" contentTop={contentTop} />
+        <PagePage
+          key="page"
+          contentTop={contentTop}
+          pageScrollY={pageScrollY}
+        />
 
         <MomentsPage
           key="moments"
@@ -158,6 +189,16 @@ const AlbumScreen = () => {
         memberCount={members.length}
         momentsLive={momentsLive}
       />
+
+      {albumId != null && currentUserId != null && (
+        <MemberColorSheet
+          visible={colorSheetVisible}
+          albumId={albumId}
+          members={members}
+          currentUserId={currentUserId}
+          onClose={handleColorSheetClose}
+        />
+      )}
     </View>
   );
 };

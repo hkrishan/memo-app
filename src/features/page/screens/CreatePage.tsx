@@ -59,7 +59,7 @@ const CreatePageScreen = () => {
 
       router.back();
     } catch (error) {
-      console.error("Failed to create page:", error);
+      if (__DEV__) console.error("Failed to create page:", error);
     } finally {
       setIsSubmitting(false);
     }

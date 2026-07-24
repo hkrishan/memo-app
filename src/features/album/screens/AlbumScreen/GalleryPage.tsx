@@ -35,6 +35,7 @@ import { MediaAsset } from "../../hooks";
 import { useAlbumPhotoViewerExtras } from "../../hooks/useAlbumPhotoViewerExtras";
 import { useGetPhotosQuery, useAlbumPhotoTagsQuery } from "../../api/photo.queries";
 import { PhotoWithUploader } from "../../types/album.types";
+import { memberColor } from "../../memberColor";
 import { useGetMomentsQuery } from "@/features/moments/api/moments.queries";
 import { momentTypeRegistry } from "@/features/moments/registry/momentTypes";
 import Avatar from "@/components/ui/Avatar";
@@ -155,12 +156,17 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
         leading: (
           <Ionicons name={def.icon} size={13} color={def.accentColor} />
         ),
+        // Daily drops open the drop-sectioned posts view (front+back pairs,
+        // BeReal swap) instead of a flat photo grid; other moment types keep
+        // the grid.
         onOpenAll: () =>
-          openGallery({
-            filter: "moment",
-            momentId: moment.momentId,
-            title: moment.title,
-          }),
+          moment.type === "daily_drop"
+            ? router.push(`/album/${albumId}/moment/${moment.momentId}`)
+            : openGallery({
+                filter: "moment",
+                momentId: moment.momentId,
+                title: moment.title,
+              }),
       });
     }
 
@@ -332,7 +338,13 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
 };
 
 interface PersonEntry {
-  member: { userId: string; name: string; avatarUrl: string | null };
+  member: {
+    userId: string;
+    name: string;
+    avatarUrl: string | null;
+    /** Album identity color — tints the card's avatar ring + name. */
+    color?: string | null;
+  };
   count: number;
   /** The person's latest photo — the card's image. */
   latest: MediaAsset;
@@ -397,7 +409,11 @@ const PeopleRow = memo<{
             </View>
             {/* Identity sits under the photo, Apple-Photos-People style */}
             <View style={styles.personLabel}>
-              <Avatar user={entry.member} size={16} />
+              <Avatar
+                user={entry.member}
+                size={16}
+                ringColor={memberColor(entry.member)}
+              />
               <Text style={styles.personName} numberOfLines={1}>
                 {entry.member.name}
               </Text>

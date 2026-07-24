@@ -63,6 +63,20 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="activity"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="search"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
         name="blocked-users"
         options={{
           headerShown: false,

@@ -25,6 +25,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 
 import Avatar from "@/components/ui/Avatar";
 import { useGetAlbumQuery } from "@/features/album/api/album.queries";
+import { memberColor } from "@/features/album/memberColor";
 import useUser from "@/features/user/hooks/useUser";
 import { useGetMomentsQuery } from "../api/moments.queries";
 import { dropCaptureRoute } from "../hooks/useDropTakeover";
@@ -50,22 +51,42 @@ const eventWhen = (event: MomentEvent): string | null =>
   event.firedAt ?? event.scheduledAt;
 
 /** One BeReal-style post card: photo + front-camera PiP, or a lock tile */
-const PostCard: React.FC<{ submission: MomentSubmission }> = ({
-  submission,
-}) => {
+const PostCard: React.FC<{
+  submission: MomentSubmission;
+  /** The author's album identity color (null until they picked one). */
+  authorColor?: string | null;
+}> = ({ submission, authorColor }) => {
   const photo = submission.photo;
   const front = submission.frontPhoto;
+  // BeReal swap: tapping the PiP promotes it to the big frame
+  const [swapped, setSwapped] = React.useState(false);
+  const primary = swapped && front ? front : photo;
+  const pip = photo != null && front != null ? (swapped ? photo : front) : null;
   // Video submissions must never fall back to the video URL as an image
   // source (expo-image can't render it) — poster-less videos get a dark
   // play tile instead of a broken image
-  const isVideo = photo?.mediaType === "video";
+  const isVideo = primary?.mediaType === "video";
   const mainUri =
-    photo == null ? null : isVideo ? photo.thumbnailUrl : (photo.thumbnailUrl ?? photo.url);
+    primary == null
+      ? null
+      : isVideo
+        ? primary.thumbnailUrl
+        : (primary.thumbnailUrl ?? primary.url);
+  const pipUri =
+    pip == null
+      ? null
+      : pip.mediaType === "video"
+        ? pip.thumbnailUrl
+        : (pip.thumbnailUrl ?? pip.url);
 
   return (
     <View style={styles.postCard}>
       <View style={styles.postHeader}>
-        <Avatar user={submission.user} size={32} />
+        <Avatar
+          user={submission.user}
+          size={32}
+          ringColor={memberColor({ color: authorColor })}
+        />
         <View style={styles.postHeaderText}>
           <Text style={styles.postAuthor} numberOfLines={1}>
             {submission.user.name}
@@ -116,13 +137,31 @@ const PostCard: React.FC<{ submission: MomentSubmission }> = ({
               <Ionicons name="play" size={13} color="#fff" />
             </View>
           )}
-          {front && (
-            <Image
-              source={{ uri: front.thumbnailUrl ?? front.url }}
+          {pip && (
+            <Pressable
+              onPress={() => setSwapped((s) => !s)}
               style={styles.postPip}
-              contentFit="cover"
-              transition={150}
-            />
+              accessibilityRole="button"
+              accessibilityLabel="Swap camera views"
+              hitSlop={8}
+            >
+              {pipUri == null ? (
+                <View style={[StyleSheet.absoluteFill, styles.videoFallback]}>
+                  <Ionicons
+                    name="play"
+                    size={16}
+                    color="rgba(255, 255, 255, 0.9)"
+                  />
+                </View>
+              ) : (
+                <Image
+                  source={{ uri: pipUri }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  transition={150}
+                />
+              )}
+            </Pressable>
           )}
         </View>
       )}
@@ -131,7 +170,11 @@ const PostCard: React.FC<{ submission: MomentSubmission }> = ({
 };
 
 /** Section header + the event's submissions as a vertical feed */
-const EventSection: React.FC<{ event: MomentEvent }> = ({ event }) => {
+const EventSection: React.FC<{
+  event: MomentEvent;
+  /** userId -> album identity color, from the album's members. */
+  colorByUserId: Map<string, string | null>;
+}> = ({ event, colorByUserId }) => {
   const when = eventWhen(event);
   const isLive = event.status === "open";
   return (
@@ -153,7 +196,11 @@ const EventSection: React.FC<{ event: MomentEvent }> = ({ event }) => {
         </Text>
       ) : (
         event.submissions.map((submission) => (
-          <PostCard key={submission.submissionId} submission={submission} />
+          <PostCard
+            key={submission.submissionId}
+            submission={submission}
+            authorColor={colorByUserId.get(submission.userId)}
+          />
         ))
       )}
     </View>
@@ -180,6 +227,15 @@ const DropPostsScreen = () => {
   // when the late window passes (the query itself polls every 15s then)
   const hasOpen = !!moment?.events.some((event) => event.status === "open");
   const now = useNow(30 * 1000, hasOpen);
+
+  // Author identity colors — same album, members ride on the album query
+  const colorByUserId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    (album?.members ?? []).forEach((member) => {
+      map.set(member.userId, member.color);
+    });
+    return map;
+  }, [album?.members]);
 
   // Fired drops (open or closed), newest first
   const firedEvents = useMemo(() => {
@@ -276,7 +332,11 @@ const DropPostsScreen = () => {
         showsVerticalScrollIndicator={false}
       >
         {firedEvents.map((event) => (
-          <EventSection key={event.eventId} event={event} />
+          <EventSection
+            key={event.eventId}
+            event={event}
+            colorByUserId={colorByUserId}
+          />
         ))}
       </ScrollView>
     );
@@ -493,6 +553,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
     backgroundColor: "#F1F1F3",
+    // Children are absoluteFill images — clip them to the rounded frame
+    overflow: "hidden",
   },
   postLocked: {
     backgroundColor: "#1c1c1e",

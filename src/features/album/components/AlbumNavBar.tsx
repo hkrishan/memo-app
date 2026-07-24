@@ -21,6 +21,8 @@ interface AlbumNavBarProps {
   title: string;
   scrollPosition: SharedValue<number>;
   galleryScrollY: SharedValue<number>;
+  /** Page tab's scroll offset — same fade contract as the gallery */
+  pageScrollY: SharedValue<number>;
   onBack: () => void;
   onSettingsPress: () => void;
   /**
@@ -36,15 +38,17 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
     title,
     scrollPosition,
     galleryScrollY,
+    pageScrollY,
     onBack,
     onSettingsPress,
     pageExists = true,
   }) => {
     const insets = useSafeAreaInsets();
 
-    // White background + hairline - fades in as the gallery header slides
-    // under the bar; always opaque on other pages. With no page created,
-    // the background clears again as the Page tab comes on screen.
+    // White background + hairline — on the gallery AND page tabs it fades
+    // in as that tab's content scrolls under the bar (same contract);
+    // moments keeps an always-opaque bar. With no page created, the
+    // background clears again as the Page tab comes on screen.
     const bgStyle = useAnimatedStyle(() => {
       "worklet";
       const galleryBg = interpolate(
@@ -53,12 +57,19 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
         [0, 1],
         Extrapolation.CLAMP,
       );
-      const pageBg = interpolate(
-        scrollPosition.value,
-        [0, 0.3],
-        [galleryBg, 1],
+      const pageOwnBg = interpolate(
+        pageScrollY.value,
+        [60, 130],
+        [0, 1],
         Extrapolation.CLAMP,
       );
+      // Blend between the neighboring tabs' scroll-driven opacities as the
+      // pager moves: gallery(0) → page(1) → moments(2, always opaque)
+      const pos = scrollPosition.value;
+      const pageBg =
+        pos <= 1
+          ? interpolate(pos, [0, 1], [galleryBg, pageOwnBg], Extrapolation.CLAMP)
+          : interpolate(pos, [1, 2], [pageOwnBg, 1], Extrapolation.CLAMP);
       const pagePresence = pageExists
         ? 0
         : 1 -
@@ -84,16 +95,24 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
       return { opacity: pageOpacity * scrollOpacity };
     });
 
-    // Page title (index 1) — suppressed entirely until a page exists
+    // Page title (index 1) — like the gallery title, it only appears once
+    // the page content has scrolled under the bar; suppressed entirely
+    // until a page exists
     const pageTitleStyle = useAnimatedStyle(() => {
       "worklet";
-      const opacity = interpolate(
+      const tabOpacity = interpolate(
         scrollPosition.value,
         [0.5, 1, 1.5],
         [0, 1, 0],
         Extrapolation.CLAMP,
       );
-      return { opacity: pageExists ? opacity : 0 };
+      const scrollOpacity = interpolate(
+        pageScrollY.value,
+        [60, 130],
+        [0, 1],
+        Extrapolation.CLAMP,
+      );
+      return { opacity: pageExists ? tabOpacity * scrollOpacity : 0 };
     });
 
     // Moments title (index 2)

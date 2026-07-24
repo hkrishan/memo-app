@@ -1,9 +1,18 @@
 import { endpoints, httpClient } from "@/lib/api";
-import { Page, CreatePageInput, UpdatePageInput } from "../types/page.types";
+import {
+  Page,
+  PageProfile,
+  CreatePageInput,
+  UpdatePageInput,
+} from "../types/page.types";
 
 const pageApi = () => {
   const getPage = async (albumId: string) =>
     httpClient.get<Page | null>(endpoints.album.page.get(albumId));
+
+  /** Public/follower view of a page profile — includes the viewer's status. */
+  const getPageView = async (albumId: string, pageId: string) =>
+    httpClient.get<PageProfile>(endpoints.album.page.view(albumId, pageId));
 
   const createPage = async (albumId: string, input: CreatePageInput) =>
     httpClient.post<Page>(endpoints.album.page.create(albumId), input);
@@ -26,6 +35,7 @@ const pageApi = () => {
 
   return {
     getPage,
+    getPageView,
     createPage,
     updatePage,
     setWebPassword,

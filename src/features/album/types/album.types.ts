@@ -5,6 +5,8 @@ export type AlbumMember = {
   name: string;
   avatarUrl: string | null;
   role: Role;
+  /** Per-album identity color (server palette hex), null until picked. */
+  color: string | null;
 };
 
 export type Album = {

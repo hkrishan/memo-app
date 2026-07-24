@@ -224,7 +224,7 @@ const ProfileScreen = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
+        <SafeAreaView edges={Platform.OS === "android" ? ["top", "bottom"] : ["bottom"]} style={styles.safeArea}>
           {/* Header */}
           <View style={styles.header}>
             <Pressable
@@ -461,8 +461,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontFamily: "BowlbyOneSC",
-    fontSize: 28,
+    fontSize: 22,
+    fontWeight: "700",
     color: "#000",
   },
   profileCard: {

@@ -207,7 +207,7 @@ const DropCaptureScreen: React.FC = () => {
       setPrimaryIndex(backIndex >= 0 ? backIndex : 0);
       setPhase("preview");
     } catch (error) {
-      console.error("[drop] Capture failed:", error);
+      if (__DEV__) console.error("[drop] Capture failed:", error);
       notify.error("Capture failed", "Could not take the photo — try again.");
       setPhase("capture");
     } finally {
@@ -282,7 +282,7 @@ const DropCaptureScreen: React.FC = () => {
         finishSent("Already posted");
         return;
       }
-      console.error("[drop] Send failed:", error);
+      if (__DEV__) console.error("[drop] Send failed:", error);
       notify.error("Couldn't post", "Check your connection and try again.");
       setPhase("preview");
     }

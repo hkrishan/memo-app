@@ -68,7 +68,7 @@ async function resolveAssetUri(assetId: string, uri: string): Promise<string> {
 
       return resolvedUri;
     } catch (error) {
-      console.warn("Failed to resolve asset URI:", assetId, error);
+      if (__DEV__) console.warn("Failed to resolve asset URI:", assetId, error);
       // Cache the original URI to avoid retrying failed resolutions
       resolvedUriCache.set(assetId, uri);
       return uri;

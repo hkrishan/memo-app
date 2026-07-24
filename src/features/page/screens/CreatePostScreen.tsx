@@ -180,7 +180,7 @@ const CreatePostScreen = () => {
 
       router.back();
     } catch (error) {
-      console.error("Failed to create post:", error);
+      if (__DEV__) console.error("Failed to create post:", error);
       Alert.alert("Error", "Failed to create post. Please try again.");
     } finally {
       setIsSubmitting(false);

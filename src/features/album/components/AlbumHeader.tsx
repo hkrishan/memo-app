@@ -18,6 +18,10 @@ import AvatarListRow from "@/components/ui/AvatarListRow";
 import { GlassCircleButton } from "@/components/ui/GlassCircleButton";
 import useUser from "@/features/user/hooks/useUser";
 import CoverPhotoPicker from "./CoverPhotoPicker";
+import {
+  useAlbumChatUnread,
+  UNREAD_CAP,
+} from "../screens/AlbumScreen/chat/unread/useAlbumChatUnread";
 
 const PICTURE_SIZE = 84;
 
@@ -36,6 +40,10 @@ export const AlbumHeader: React.FC<AlbumHeaderProps> = memo(
 
     const members = album?.members ?? [];
     const isOwner = !!user?.userId && user.userId === album?.ownerId;
+
+    // Unread chat messages badge on the chat button; clears when the user
+    // opens chat (the chat screen advances the last-read watermark).
+    const chatUnreadCount = useAlbumChatUnread(album?.albumId);
 
     // Chosen picture, otherwise the latest photo
     const pictureUri =
@@ -129,13 +137,24 @@ export const AlbumHeader: React.FC<AlbumHeaderProps> = memo(
             <Ionicons name="pulse-outline" size={17} color="#111" />
           </GlassCircleButton>
 
-          <GlassCircleButton onPress={handleOpenChat} label="Album chat">
-            <Ionicons
-              name="chatbubble-ellipses-outline"
-              size={17}
-              color="#111"
-            />
-          </GlassCircleButton>
+          <View>
+            <GlassCircleButton onPress={handleOpenChat} label="Album chat">
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={17}
+                color="#111"
+              />
+            </GlassCircleButton>
+            {chatUnreadCount > 0 && (
+              <View style={styles.unreadBadge} pointerEvents="none">
+                <Text style={styles.unreadBadgeText}>
+                  {chatUnreadCount >= UNREAD_CAP
+                    ? `${UNREAD_CAP}+`
+                    : chatUnreadCount}
+                </Text>
+              </View>
+            )}
+          </View>
 
           <GlassCircleButton onPress={handleOpenMap} label="Album map">
             <Ionicons name="map-outline" size={17} color="#111" />
@@ -274,6 +293,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     fontWeight: "500",
+  },
+  // Same visual language as the AlbumTabs live dot, but sized for a count
+  unreadBadge: {
+    position: "absolute",
+    top: -5,
+    right: -6,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    paddingHorizontal: 4,
+    backgroundColor: "#FF3B30",
+    borderWidth: 1.5,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  unreadBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#fff",
+    lineHeight: 12,
   },
   addMemberButton: {
     width: 30,

@@ -12,6 +12,7 @@ import {
   StatusBar,
   StyleSheet,
   View,
+  Platform,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
@@ -64,7 +65,7 @@ const BlockedUsersScreen = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
+        <SafeAreaView edges={Platform.OS === "android" ? ["top", "bottom"] : ["bottom"]} style={styles.safeArea}>
           {/* Header */}
           <View style={styles.header}>
             <Pressable
@@ -179,8 +180,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontFamily: "BowlbyOneSC",
-    fontSize: 28,
+    fontSize: 22,
+    fontWeight: "700",
     color: "#000",
   },
   helperText: {

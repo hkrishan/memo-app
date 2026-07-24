@@ -6,7 +6,14 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { View, StyleSheet, FlatList, Pressable } from "react-native";
+import {
+  View,
+  StyleSheet,
+  FlatList,
+  Pressable,
+  Dimensions,
+} from "react-native";
+import { router } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { Text } from "react-native-paper";
@@ -35,6 +42,14 @@ const MIN_RATIO = 0.68;
 const MAX_RATIO = 1.91;
 const clampRatio = (ratio: number) =>
   Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO);
+
+/** Hard ceiling scaled to the phone: a post's media never exceeds 55% of
+ *  the window height, so even tall portraits leave the header + actions of
+ *  neighboring posts visible while scrolling (the photo letterboxes onto
+ *  the blurred backdrop via contain). */
+const MAX_MEDIA_HEIGHT = Math.round(
+  Dimensions.get("window").height * 0.55,
+);
 
 /** Videos render via their poster frame; photos via the image itself. */
 const displayUriFor = (media: PostMedia): string =>
@@ -133,7 +148,10 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   const handleFirstAspect = useCallback((ratio: number) => {
     setFirstRatio((prev) => prev ?? ratio);
   }, []);
-  const mediaHeight = Math.round(MEDIA_WIDTH / clampRatio(firstRatio ?? 1));
+  const mediaHeight = Math.min(
+    Math.round(MEDIA_WIDTH / clampRatio(firstRatio ?? 1)),
+    MAX_MEDIA_HEIGHT,
+  );
 
   // Like state comes straight from the feed cache — the toggle mutation
   // patches it (and the page-posts cache) optimistically, so both surfaces
@@ -150,6 +168,10 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
     Haptics.selectionAsync();
     likeMutation.mutate({ like: !liked });
   }, [liked, likeMutation]);
+
+  const openPage = useCallback(() => {
+    router.push(`/page/${page.albumId}/${page.pageId}`);
+  }, [page.albumId, page.pageId]);
 
   const openComments = useCallback(() => {
     setSheetPostId(post.postId);
@@ -340,11 +362,13 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   return (
     <FeedCard>
       <FeedCardHeader
-        avatarName={author.name}
+        avatarName={page.pageTitle || page.pageHandle}
         avatarUrl={author.avatarUrl}
-        title={author.name}
-        subtitle={page.pageTitle}
+        title={page.pageTitle || `@${page.pageHandle}`}
+        subtitle={`@${page.pageHandle}`}
         createdAt={post.createdAt}
+        trailing={author.name}
+        onPress={openPage}
         ring
       />
 

@@ -18,6 +18,7 @@ import * as Haptics from "expo-haptics";
 import Animated, {
   Easing,
   runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -38,9 +39,11 @@ const PREVIEW_RADIUS = PREVIEW_SIZE * (COVER_RADIUS / COVER_SIZE);
 
 interface PagePageProps {
   contentTop: number;
+  /** Mirrors the post grid's scroll offset — drives the nav bar's fade */
+  pageScrollY?: SharedValue<number>;
 }
 
-const PagePage: React.FC<PagePageProps> = ({ contentTop }) => {
+const PagePage: React.FC<PagePageProps> = ({ contentTop, pageScrollY }) => {
   const { albumId }: { albumId: string } = useLocalSearchParams();
   const { data: page } = useGetPageQuery(albumId);
 
@@ -54,6 +57,7 @@ const PagePage: React.FC<PagePageProps> = ({ contentTop }) => {
       pageId={page.pageId}
       page={page}
       contentTop={contentTop}
+      pageScrollY={pageScrollY}
     />
   );
 };
@@ -63,11 +67,13 @@ const PageContent = ({
   albumId,
   pageId,
   page,
+  pageScrollY,
 }: {
   contentTop: number;
   albumId: string;
   pageId: string;
   page: Page;
+  pageScrollY?: SharedValue<number>;
 }) => {
   const handleCreatePost = useCallback(() => {
     router.push(`/album/${albumId}/page/${pageId}/create-post`);
@@ -126,6 +132,7 @@ const PageContent = ({
         pageId={pageId}
         ListHeaderComponent={headerComponent}
         contentContainerStyle={{ paddingBottom: 100 }}
+        scrollY={pageScrollY}
       />
 
       {/* FAB for creating posts */}

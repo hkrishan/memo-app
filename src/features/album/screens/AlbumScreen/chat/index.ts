@@ -13,5 +13,11 @@ export { default as LoadMoreRow } from "./components/LoadMoreRow";
 export { useChatController } from "./hooks/useChatController";
 export type { ChatController } from "./hooks/useChatController";
 
+export {
+  useAlbumChatUnread,
+  UNREAD_CAP,
+} from "./unread/useAlbumChatUnread";
+export { getLastRead, setLastRead, subscribeToLastRead } from "./unread/lastRead";
+
 export * from "./types/chat.types";
 export * from "./transport/chatTransport";

@@ -1,3 +1,5 @@
+export { AppErrorBoundary } from "./AppErrorBoundary";
+
 export {
   NotificationProvider,
   NotificationManager,

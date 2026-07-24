@@ -39,6 +39,15 @@ const albumApi = {
   getAlbumMembers: async (albumId: string) =>
     httpClient.get<AlbumMember[]>(endpoints.album.members(albumId)),
 
+  /**
+   * Set the caller's identity color in this album. 400 invalid hex,
+   * 409 when the color is already taken (while free colors remain).
+   */
+  setMyMemberColor: async (albumId: string, color: string) =>
+    httpClient.put<{ color: string }>(endpoints.album.myMemberColor(albumId), {
+      color,
+    }),
+
   createAlbum: async (name: string) =>
     httpClient.post<Album>(endpoints.album.create, { title: name }),
 

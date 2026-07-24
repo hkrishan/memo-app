@@ -1,3 +1,5 @@
+// Initialize Sentry as early as possible (no-op without a DSN)
+import { Sentry, isSentryEnabled } from "@/lib/sentry";
 import { useEffect, useCallback } from "react";
 import { Stack } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -10,6 +12,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { QueryProvider } from "@/lib/queryProvider";
 import { theme } from "@/lib/theme";
 import {
+  AppErrorBoundary,
   NotificationProvider,
   NotificationManager,
   UploadIndicatorHost,
@@ -65,7 +68,7 @@ function RootContent() {
   );
 }
 
-export default function Layout() {
+function Layout() {
   const [fontsLoaded] = useFonts({
     BowlbyOneSC: require("../../assets/fonts/BowlbyOneSC-Regular.ttf"),
   });
@@ -90,7 +93,9 @@ export default function Layout() {
         <SafeAreaProvider>
           <NotificationProvider>
             <QueryProvider>
-              <RootContent />
+              <AppErrorBoundary>
+                <RootContent />
+              </AppErrorBoundary>
             </QueryProvider>
           </NotificationProvider>
         </SafeAreaProvider>
@@ -98,6 +103,10 @@ export default function Layout() {
     </GestureHandlerRootView>
   );
 }
+
+// Sentry.wrap adds touch-event breadcrumbs and the root profiler; only
+// applied when Sentry is configured (it is also a safe no-op without init).
+export default isSentryEnabled ? Sentry.wrap(Layout) : Layout;
 
 const styles = StyleSheet.create({
   container: {

@@ -105,7 +105,7 @@ export function useGoogleAuth() {
 
       return null;
     } catch (error) {
-      console.error("Google sign in error:", error);
+      if (__DEV__) console.error("Google sign in error:", error);
       throw error;
     }
   };
@@ -149,7 +149,7 @@ export function useFacebookAuth() {
 
       return null;
     } catch (error) {
-      console.error("Facebook sign in error:", error);
+      if (__DEV__) console.error("Facebook sign in error:", error);
       throw error;
     }
   };
@@ -203,7 +203,7 @@ export async function signInWithApple(): Promise<AppleAuthResult | null> {
       // User cancelled
       return null;
     }
-    console.error("Apple sign in error:", error);
+    if (__DEV__) console.error("Apple sign in error:", error);
     throw error;
   }
 }

@@ -59,7 +59,7 @@ const PhoneNameScreen = () => {
         if (user) setUser({ ...user, name: trimmed });
       } catch (err) {
         // The session exists — never trap the user behind a failed save
-        console.error("Saving name failed (continuing):", err);
+        if (__DEV__) console.error("Saving name failed (continuing):", err);
       } finally {
         setPending(false);
         enterApp();

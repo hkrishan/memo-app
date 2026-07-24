@@ -7,6 +7,7 @@ export { AlbumNavBar } from "./AlbumNavBar";
 export { AlbumTabs, TAB_KEYS } from "./AlbumTabs";
 export type { AlbumTabType } from "./AlbumTabs";
 export { AlbumMembers } from "./AlbumMembers";
+export { MemberColorSheet } from "./MemberColorSheet";
 export { GalleryFabs } from "./GalleryFabs";
 export { GallerySectionRow } from "./GallerySectionRow";
 export { AlbumMap } from "./AlbumMap";

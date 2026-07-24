@@ -29,6 +29,10 @@ import {
 import { Image, type ImageLoadEventData } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import Animated, {
+  type SharedValue,
+  useAnimatedScrollHandler,
+} from "react-native-reanimated";
 import { AlbumPagePost } from "../types/post.types";
 import { usePagePostsQuery } from "../api/pagePost.queries";
 
@@ -61,6 +65,8 @@ interface PostGridProps {
   pageId: string;
   ListHeaderComponent?: React.ReactElement;
   contentContainerStyle?: object;
+  /** Mirrors the grid's scroll offset (drives the album nav bar's fade) */
+  scrollY?: SharedValue<number>;
 }
 
 const PostTile = memo<{
@@ -134,7 +140,12 @@ const EmptyState = memo(() => (
 EmptyState.displayName = "EmptyState";
 
 const PostGrid = memo<PostGridProps>(
-  ({ albumId, pageId, ListHeaderComponent, contentContainerStyle }) => {
+  ({ albumId, pageId, ListHeaderComponent, contentContainerStyle, scrollY }) => {
+    const scrollHandler = useAnimatedScrollHandler({
+      onScroll: (event) => {
+        if (scrollY) scrollY.value = event.contentOffset.y;
+      },
+    });
     const { data, isLoading, isError, refetch, isRefetching } =
       usePagePostsQuery(albumId, pageId);
 
@@ -200,10 +211,12 @@ const PostGrid = memo<PostGridProps>(
     }
 
     return (
-      <ScrollView
+      <Animated.ScrollView
         style={styles.container}
         contentContainerStyle={[styles.content, contentContainerStyle]}
         showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
@@ -234,7 +247,7 @@ const PostGrid = memo<PostGridProps>(
             ))}
           </View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
     );
   },
 );

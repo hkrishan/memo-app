@@ -25,7 +25,7 @@ export function setupAuth() {
         expiresAt: newTokens.expiresAt,
       };
     } catch (error) {
-      console.error("Token refresh failed:", error);
+      if (__DEV__) console.error("Token refresh failed:", error);
       return null;
     }
   });

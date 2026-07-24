@@ -149,28 +149,28 @@ export function setNotificationRef(ref: NotificationContextValue | null) {
 export const notify = {
   toast: (options: ShowToastOptions) => {
     if (!notificationRef) {
-      console.warn("NotificationProvider not mounted");
+      if (__DEV__) console.warn("NotificationProvider not mounted");
       return "";
     }
     return notificationRef.showToast(options);
   },
   popup: (options: ShowPopupOptions) => {
     if (!notificationRef) {
-      console.warn("NotificationProvider not mounted");
+      if (__DEV__) console.warn("NotificationProvider not mounted");
       return "";
     }
     return notificationRef.showPopup(options);
   },
   error: (title: string, message?: string) => {
     if (!notificationRef) {
-      console.warn("NotificationProvider not mounted");
+      if (__DEV__) console.warn("NotificationProvider not mounted");
       return "";
     }
     return notificationRef.showError(title, message);
   },
   success: (title: string, message?: string) => {
     if (!notificationRef) {
-      console.warn("NotificationProvider not mounted");
+      if (__DEV__) console.warn("NotificationProvider not mounted");
       return "";
     }
     return notificationRef.showSuccess(title, message);

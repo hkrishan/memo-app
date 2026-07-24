@@ -15,6 +15,14 @@ export type Page = {
   webUrl?: string;
 };
 
+/** Viewer's relationship to a page in the standalone page view. */
+export type PageViewerStatus = "member" | "accepted" | "pending" | "none";
+
+/** Page profile from the viewer endpoint — includes the viewer's follow status. */
+export type PageProfile = Page & {
+  myStatus: PageViewerStatus;
+};
+
 export type CreatePageInput = {
   pageHandle: string;
   title: string;

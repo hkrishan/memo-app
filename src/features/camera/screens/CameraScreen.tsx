@@ -232,6 +232,11 @@ export default function CameraScreen({
   const flipShade = useSharedValue(0);
   const flipShadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Black shade masking camera (re)activation: opaque while the session is
+  // spinning up (first mount, or swiping back to this tab), fading out once
+  // the preview actually streams — no startup flicker reaches the eye.
+  const activationShade = useSharedValue(1);
+
   // Devices: multi-cam back device so 0.5x engages the ultra-wide lens
   const backDevice = useCameraDevice("back", {
     physicalDevices: [
@@ -389,9 +394,17 @@ export default function CameraScreen({
 
   // Track camera visibility for battery optimization
   const [isCameraVisible, setIsCameraVisible] = useState(true);
-  const updateCameraVisibility = useCallback((visible: boolean) => {
-    setIsCameraVisible(visible);
-  }, []);
+  const updateCameraVisibility = useCallback(
+    (visible: boolean) => {
+      setIsCameraVisible(visible);
+      // Leaving the tab: snap the shade opaque so the NEXT activation
+      // starts black instead of flashing the stale/starting preview
+      if (!visible) {
+        activationShade.value = 1;
+      }
+    },
+    [activationShade],
+  );
 
   useAnimatedReaction(
     () => Math.abs(scrollPosition.value - pageIndex) < 0.5,
@@ -491,6 +504,10 @@ export default function CameraScreen({
     opacity: flipShade.value,
   }));
 
+  const activationShadeStyle = useAnimatedStyle(() => ({
+    opacity: activationShade.value,
+  }));
+
   const endFlipShade = useCallback(() => {
     if (flipShadeTimerRef.current) {
       clearTimeout(flipShadeTimerRef.current);
@@ -503,7 +520,9 @@ export default function CameraScreen({
   // initial session start, where the shade is already down — harmless.)
   const handlePreviewStarted = useCallback(() => {
     endFlipShade();
-  }, [endFlipShade]);
+    // Session is streaming — reveal the live preview with a smooth fade
+    activationShade.value = withTiming(0, { duration: 300 });
+  }, [endFlipShade, activationShade]);
 
   // The shade timer must never outlive the screen
   useEffect(
@@ -638,7 +657,7 @@ export default function CameraScreen({
         setQuickPhotoStatus("saved");
         triggerGalleryRefresh();
       } catch (error) {
-        console.error("Failed to auto-save photo:", error);
+        if (__DEV__) console.error("Failed to auto-save photo:", error);
         setQuickPhotoStatus("unsaved");
       }
     },
@@ -694,7 +713,7 @@ export default function CameraScreen({
       // Fetch where this was taken while the save sheet is up
       captureCurrentLocation();
     } catch (error) {
-      console.error("Failed to take photo:", error);
+      if (__DEV__) console.error("Failed to take photo:", error);
       notify.error("Capture Failed", "Could not take photo. Please try again.");
     } finally {
       setScreenFlashOn(false);
@@ -719,7 +738,7 @@ export default function CameraScreen({
         await MediaLibrary.deleteAssetsAsync([asset]);
         triggerGalleryRefresh();
       } catch (error) {
-        console.error("Failed to remove photo:", error);
+        if (__DEV__) console.error("Failed to remove photo:", error);
         notify.error("Remove Failed", "Could not remove photo from gallery");
       }
     }
@@ -971,7 +990,7 @@ export default function CameraScreen({
         // Close preview immediately
         handleClosePreview();
       } catch (error) {
-        console.error("Failed to save media:", error);
+        if (__DEV__) console.error("Failed to save media:", error);
         notify.error("Save Failed", "Could not save media to gallery");
       } finally {
         setIsSavingMedia(false);
@@ -1106,6 +1125,15 @@ export default function CameraScreen({
           )}
         </View>
       </GestureDetector>
+
+      {/* Black activation shade: opaque until the (re)activated session
+          actually streams, then fades out — masks the startup flicker when
+          swiping back to the camera tab. Sits above the preview, below the
+          controls so the UI stays visible on the black. */}
+      <Animated.View
+        style={[styles.activationShade, activationShadeStyle]}
+        pointerEvents="none"
+      />
 
       {/* Blur hiding the preview while a flip reconfigures the session.
           iOS blurs the stale/incoming preview live beneath; Android's
@@ -1414,6 +1442,10 @@ const styles = StyleSheet.create({
   },
   flipShade: {
     ...StyleSheet.absoluteFillObject,
+  },
+  activationShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000",
   },
   cameraHidden: {
     opacity: 0,

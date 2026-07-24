@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import { captureException } from "@/lib/sentry";
 import { AuthTokens } from "./types";
 
 const ACCESS_TOKEN_KEY = "memo_access_token";
@@ -33,7 +34,8 @@ class TokenStorage {
       // Update memory cache
       this.memoryCache = tokens;
     } catch (error) {
-      console.error("Failed to store tokens:", error);
+      if (__DEV__) console.error("Failed to store tokens:", error);
+      captureException(error, { operation: "tokenStorage.setTokens" });
       throw new Error("Failed to store authentication tokens");
     }
   }
@@ -71,7 +73,8 @@ class TokenStorage {
 
       return tokens;
     } catch (error) {
-      console.error("Failed to retrieve tokens:", error);
+      if (__DEV__) console.error("Failed to retrieve tokens:", error);
+      captureException(error, { operation: "tokenStorage.getTokens" });
       return null;
     }
   }
@@ -104,7 +107,8 @@ class TokenStorage {
 
       this.memoryCache = null;
     } catch (error) {
-      console.error("Failed to clear tokens:", error);
+      if (__DEV__) console.error("Failed to clear tokens:", error);
+      captureException(error, { operation: "tokenStorage.clearTokens" });
       // Still clear memory cache even if secure store fails
       this.memoryCache = null;
     }

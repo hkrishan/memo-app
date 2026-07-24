@@ -21,6 +21,7 @@ import { User } from "@/features/user/types/user.types";
 import Touchable from "./touchable";
 import { useRouter } from "expo-router";
 import useUser from "@/features/user/hooks/useUser";
+import ActivityBell from "@/features/notifications/activity/ActivityBell";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const TIMING_CONFIG = {
@@ -352,6 +353,8 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
             </Animated.Text>
           </Touchable>
         </Animated.View>
+
+        <ActivityBell iconColorStyle={iconColorStyle} />
 
         <Touchable
           style={styles.topBarIconRight}

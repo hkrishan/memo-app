@@ -19,6 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { ChatMessage, ChatUser, MessageAction } from "../types/chat.types";
+import { memberColor } from "@/features/album/memberColor";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -116,18 +117,27 @@ const MessageBubble = memo<MessageBubbleProps>(
           !isLastInGroup && styles.containerGrouped,
         ]}
       >
-        {/* Avatar placeholder for alignment */}
+        {/* Avatar placeholder for alignment — ringed in the sender's
+            album identity color */}
         {!isOwnMessage && (
           <View style={styles.avatarContainer}>
             {showAvatar && sender?.avatarUrl ? (
               <Image
                 source={{ uri: sender.avatarUrl }}
-                style={styles.avatar}
+                style={[
+                  styles.avatar,
+                  { borderWidth: 2, borderColor: memberColor(sender) },
+                ]}
                 contentFit="cover"
                 cachePolicy="memory-disk"
               />
             ) : showAvatar ? (
-              <View style={styles.avatarPlaceholder}>
+              <View
+                style={[
+                  styles.avatarPlaceholder,
+                  { borderWidth: 2, borderColor: memberColor(sender) },
+                ]}
+              >
                 <Text style={styles.avatarInitial}>
                   {sender?.name?.charAt(0).toUpperCase() || "?"}
                 </Text>
@@ -144,7 +154,8 @@ const MessageBubble = memo<MessageBubbleProps>(
             isOwnMessage ? styles.contentOwn : styles.contentOther,
           ]}
         >
-          {/* Sender name for first in group (others only) */}
+          {/* Sender name for first in group (others only) — identity color
+              lives on the avatar ring only, never on text */}
           {!isOwnMessage && isFirstInGroup && sender && (
             <Text style={styles.senderName}>{sender.name}</Text>
           )}
@@ -233,7 +244,10 @@ const MessageBubble = memo<MessageBubbleProps>(
     prev.isFirstInGroup === next.isFirstInGroup &&
     prev.isLastInGroup === next.isLastInGroup &&
     prev.showAvatar === next.showAvatar &&
-    prev.showTimestamp === next.showTimestamp,
+    prev.showTimestamp === next.showTimestamp &&
+    // Identity colors arrive with the (async) members query — re-render
+    // when the sender's color lands or changes
+    prev.sender?.color === next.sender?.color,
 );
 
 const styles = StyleSheet.create({

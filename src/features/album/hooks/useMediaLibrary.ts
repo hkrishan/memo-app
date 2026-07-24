@@ -141,7 +141,7 @@ export function useMediaLibrary(
       setHasMore(result.hasNextPage);
       setTotalCount(result.totalCount);
     } catch (error) {
-      console.error("Error loading media assets:", error);
+      if (__DEV__) console.error("Error loading media assets:", error);
     } finally {
       // Only the load that owns the current generation may clear the loading
       // flags — a discarded stale load must not stomp the fresh load's state

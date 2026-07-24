@@ -11,9 +11,11 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
 import {
@@ -116,6 +118,8 @@ const PagesFeedList = memo(() => {
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const contentFadeStyle = usePageFadeStyle();
+  const router = useRouter();
+  const handleOpenSearch = useCallback(() => router.push("/search"), [router]);
 
   const mode = useFeedModeStore((s) => s.mode);
   const setMode = useFeedModeStore((s) => s.setMode);
@@ -149,11 +153,23 @@ export default function FeedScreen() {
     >
       <Animated.View style={[contentFadeStyle, styles.content]}>
         <View style={styles.switchRow}>
+          <View style={styles.switchSpacer} />
           <FeedModeSwitch
             mode={mode}
             onChange={setMode}
             progress={modeProgress}
           />
+          <View style={styles.switchSpacer}>
+            <Pressable
+              onPress={handleOpenSearch}
+              hitSlop={8}
+              style={styles.searchButton}
+              accessibilityRole="button"
+              accessibilityLabel="Search pages"
+            >
+              <Ionicons name="search" size={20} color="#e6e6ea" />
+            </Pressable>
+          </View>
         </View>
 
         {/* Both views stay mounted: queries keep their cache and each list
@@ -186,8 +202,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 4,
+  },
+  switchSpacer: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  searchButton: {
+    alignSelf: "flex-end",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#262628",
   },
   views: {
     flex: 1,

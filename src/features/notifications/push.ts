@@ -6,6 +6,7 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { httpClient, endpoints } from "@/lib/api";
+import { captureException } from "@/lib/sentry";
 import { dropCaptureRoute } from "@/features/moments/hooks/useDropTakeover";
 
 /**
@@ -100,9 +101,11 @@ export async function registerPushToken(): Promise<void> {
 
     const projectId = easProjectId();
     if (!projectId) {
-      console.log(
-        "[push] No EAS projectId in app config (extra.eas.projectId) — skipping push registration",
-      );
+      if (__DEV__) {
+        console.log(
+          "[push] No EAS projectId in app config (extra.eas.projectId) — skipping push registration",
+        );
+      }
       return;
     }
 
@@ -119,7 +122,8 @@ export async function registerPushToken(): Promise<void> {
     // Best-effort persistence for cross-session logout cleanup
     AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token).catch(() => {});
   } catch (error) {
-    console.log("[push] Failed to register push token:", error);
+    if (__DEV__) console.error("[push] Failed to register push token:", error);
+    captureException(error, { operation: "registerPushToken" });
   }
 }
 
@@ -142,12 +146,35 @@ export async function unregisterPushToken(): Promise<void> {
     lastRegisteredToken = null;
     AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY).catch(() => {});
   } catch (error) {
-    console.log("[push] Failed to unregister push token:", error);
+    if (__DEV__) {
+      console.warn("[push] Failed to unregister push token:", error);
+    }
   }
 }
 
 // Guard so a re-mount of the routing hook doesn't re-route the cold-start tap.
 let handledInitialResponse = false;
+
+/**
+ * Resolve an in-app route from a notification's `data` payload:
+ * an explicit `data.url`, or one derived from typed payloads such as
+ * `{type: "moment", albumId}`. Shared with the activity feed, whose rows
+ * carry the same payloads.
+ */
+export function extractUrlFromNotificationData(
+  data: Record<string, unknown> | null | undefined,
+): string | null {
+  const url = data?.url;
+  if (typeof url === "string") {
+    return url;
+  }
+  // Typed payloads without an explicit url. "moment" (a drop fired / a
+  // challenge started) lands on the album's Moments tab (index 2).
+  if (data?.type === "moment" && typeof data.albumId === "string") {
+    return `/album/${data.albumId}?initialTab=2`;
+  }
+  return null;
+}
 
 function extractUrl(
   response: Notifications.NotificationResponse,
@@ -170,16 +197,7 @@ function extractUrl(
         typeof data.deadlineAt === "string" ? data.deadlineAt : undefined,
     });
   }
-  const url = data?.url;
-  if (typeof url === "string") {
-    return url;
-  }
-  // Typed payloads without an explicit url. "moment" (a drop fired / a
-  // challenge started) lands on the album's Moments tab (index 2).
-  if (data?.type === "moment" && typeof data.albumId === "string") {
-    return `/album/${data.albumId}?initialTab=2`;
-  }
-  return null;
+  return extractUrlFromNotificationData(data);
 }
 
 /**
@@ -222,7 +240,9 @@ export function usePushNotificationRouting(): void {
           }
         })
         .catch((error) => {
-          console.log("[push] Failed to read launch notification:", error);
+          if (__DEV__) {
+            console.warn("[push] Failed to read launch notification:", error);
+          }
         });
     }
 

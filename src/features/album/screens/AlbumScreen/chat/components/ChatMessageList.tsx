@@ -111,14 +111,18 @@ const ChatMessageList = memo<ChatMessageListProps>(
             if (!item.message) return null;
             const isOwnMessage = item.message.senderId === currentUserId;
             // Prefer author info carried on the message itself (works even
-            // for ex-members); fall back to the album members list.
+            // for ex-members); fall back to the album members list. The
+            // identity color only lives on the members list, so it is
+            // merged in either way.
+            const memberEntry = members.get(item.message.senderId);
             const sender: ChatUser | undefined = item.message.authorName
               ? {
                   userId: item.message.senderId,
                   name: item.message.authorName,
                   avatarUrl: item.message.authorAvatarUrl ?? null,
+                  color: memberEntry?.color ?? null,
                 }
-              : members.get(item.message.senderId);
+              : memberEntry;
 
             return (
               <MessageBubble

@@ -1,6 +1,6 @@
 // Album Chat Screen - main chat container
 
-import React, { memo, useCallback, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "expo-router";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useAuthStore, selectUser } from "@/features/auth";
 import { useGetAlbumQuery } from "@/features/album/api/album.queries";
@@ -24,6 +25,7 @@ import {
   useBlockUser,
 } from "@/features/moderation";
 import { useChatController } from "./hooks/useChatController";
+import { setLastRead } from "./unread/lastRead";
 import { ChatMessage, ChatUser, MessageAction } from "./types/chat.types";
 import ChatMessageList from "./components/ChatMessageList";
 import ChatComposer from "./components/ChatComposer";
@@ -62,6 +64,7 @@ const AlbumChatScreen = memo<AlbumChatScreenProps>(
 
     // Initialize chat controller
     const {
+      messages,
       listItems,
       isEmpty,
       isLoadingOlder,
@@ -80,6 +83,23 @@ const AlbumChatScreen = memo<AlbumChatScreenProps>(
       currentUser,
     });
 
+    // --- unread tracking: mark the chat read while it is actually open ---
+    // Focus-gated so a backgrounded/covered chat screen doesn't mark reads.
+    const [chatFocused, setChatFocused] = useState(false);
+    useFocusEffect(
+      useCallback(() => {
+        setChatFocused(true);
+        return () => setChatFocused(false);
+      }, []),
+    );
+
+    // Advance the last-read watermark once messages have loaded, and again
+    // for every message that arrives while the screen is open and focused.
+    useEffect(() => {
+      if (!chatFocused || isInitialLoading) return;
+      setLastRead(albumId, Date.now());
+    }, [chatFocused, isInitialLoading, messages.length, albumId]);
+
     // Create member lookup map for efficient access
     const membersMap = useMemo(() => {
       const map = new Map<string, ChatUser>();
@@ -88,6 +108,7 @@ const AlbumChatScreen = memo<AlbumChatScreenProps>(
           userId: member.userId,
           name: member.name,
           avatarUrl: member.avatarUrl,
+          color: member.color,
         });
       });
       // Ensure the current user always resolves

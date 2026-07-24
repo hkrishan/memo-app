@@ -41,6 +41,7 @@ import dayjs from "dayjs";
 
 import { MediaAsset } from "../../hooks";
 import { PhotoWithUploader } from "../../types/album.types";
+import { memberColor } from "../../memberColor";
 import { useGetAlbumQuery } from "../../api/album.queries";
 import {
   useDeletePhotoMutation,
@@ -361,6 +362,12 @@ export const AlbumPhotoSocialOverlay = forwardRef<
 
   if (!photo) return null;
 
+  // The uploader's album identity color (members ride on the album query)
+  const uploaderMember = album?.members?.find(
+    (m) => m.userId === photo.uploader?.userId,
+  );
+  const uploaderRing = memberColor(uploaderMember);
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {burstVisible && (
@@ -389,7 +396,10 @@ export const AlbumPhotoSocialOverlay = forwardRef<
             {photo.uploader.avatarUrl ? (
               <Image
                 source={{ uri: photo.uploader.avatarUrl }}
-                style={styles.attributionAvatar}
+                style={[
+                  styles.attributionAvatar,
+                  { borderWidth: 2, borderColor: uploaderRing },
+                ]}
                 contentFit="cover"
               />
             ) : (
@@ -397,6 +407,7 @@ export const AlbumPhotoSocialOverlay = forwardRef<
                 style={[
                   styles.attributionAvatar,
                   styles.attributionAvatarFallback,
+                  { borderWidth: 2, borderColor: uploaderRing },
                 ]}
               >
                 <Ionicons name="person" size={11} color="#ccc" />
@@ -485,10 +496,12 @@ const styles = StyleSheet.create({
     height: 28,
     maxWidth: 260,
   },
+  // Slightly bigger than pre-ring (18) so the 2px identity ring doesn't
+  // swallow the photo
   attributionAvatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
   attributionAvatarFallback: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
