@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, InteractionManager } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PagerView from "react-native-pager-view";
@@ -83,10 +83,18 @@ const AlbumScreen = () => {
     if (!albumId || !currentUserId || !album?.members) return;
     if (colorPromptedAlbumIds.has(albumId)) return;
     const me = album.members.find((m) => m.userId === currentUserId);
-    if (me && me.color == null) {
-      colorPromptedAlbumIds.add(albumId);
+    if (!me || me.color != null) return;
+
+    // Mark synchronously so a members-refetch can't schedule a second sheet.
+    colorPromptedAlbumIds.add(albumId);
+    // Present only AFTER the screen's push transition has settled: an RN
+    // Modal shown mid-transition silently fails to appear on iOS (which is
+    // why a blocking alert in this effect made it "work" — the alert stalls
+    // the JS thread past the animation).
+    const handle = InteractionManager.runAfterInteractions(() => {
       setColorSheetVisible(true);
-    }
+    });
+    return () => handle.cancel();
   }, [albumId, currentUserId, album?.members]);
   const handleColorSheetClose = useCallback(
     () => setColorSheetVisible(false),
