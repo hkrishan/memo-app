@@ -5,14 +5,22 @@
  * All Photos page, and dismissing flies the photo back into the strip.
  */
 
-import React, { useCallback, useRef, useState, memo } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  memo,
+} from "react";
+import { View, StyleSheet, Pressable, Image as RNImage } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { FlashList, ListRenderItemInfo } from "@shopify/flash-list";
 import { MediaAsset } from "../hooks";
 import { usePhotoAlbumStore } from "../store/photoAlbumStore";
 import { PhotoViewer, Frame } from "@/features/photos/components";
+import { stableCacheKey } from "@/lib/imageCache";
 
 const ITEM_SIZE = 80;
 const ITEM_HEIGHT = ITEM_SIZE * 1.4;
@@ -74,7 +82,7 @@ const CarouselItem = memo<CarouselItemProps>(
       >
         <View ref={innerRef} collapsable={false} style={styles.imageContent}>
           <Image
-            source={{ uri: thumb }}
+            source={{ uri: thumb, cacheKey: stableCacheKey(thumb) }}
             style={styles.image}
             contentFit="cover"
             recyclingKey={asset.id}
@@ -117,6 +125,82 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
   );
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
 
+  // Natural-size enrichment: library photos arrive with width/height 0, and
+  // the viewer only performs the zoom flight (and full-size fit) when it
+  // knows an asset's aspect ratio. Sizes are resolved with RNImage.getSize —
+  // the SAME source the main-tab camera's library viewer uses — so an
+  // EXIF-rotated capture reports its true DISPLAY orientation (an expo-image
+  // onLoad can report un-oriented dims, which fits the photo into a sideways
+  // box and renders it shrunk). We merge resolved sizes into the assets
+  // handed to the viewer.
+  const sizeCacheRef = useRef<Map<string, { width: number; height: number }>>(
+    new Map(),
+  );
+  const bumpScheduledRef = useRef(false);
+  const [sizeVersion, setSizeVersion] = useState(0);
+  const handleNaturalSize = useCallback(
+    (assetId: string, width: number, height: number) => {
+      if (!(width > 0 && height > 0)) return;
+      const cache = sizeCacheRef.current;
+      if (cache.has(assetId)) return;
+      cache.set(assetId, { width, height });
+      // Coalesce a burst of resolutions into one re-render
+      if (bumpScheduledRef.current) return;
+      bumpScheduledRef.current = true;
+      queueMicrotask(() => {
+        bumpScheduledRef.current = false;
+        setSizeVersion((v) => v + 1);
+      });
+    },
+    [],
+  );
+  // Thumbnail onLoad only enriches cells the user has scrolled past. The
+  // viewer, though, needs the TAPPED photo's aspect ratio the instant it
+  // opens — otherwise it drops into its unknown-dimension path (no zoom
+  // flight, and the photo renders shrunk in the chrome-fitted box). So we
+  // also resolve sizes directly with RNImage.getSize, exactly like the
+  // main-tab camera's library viewer, for any asset that arrives without
+  // dimensions (a fresh local capture whose measurement hasn't landed yet).
+  const resolveAssetSize = useCallback(
+    (asset: MediaAsset | undefined): Promise<void> =>
+      new Promise((resolve) => {
+        if (
+          !asset ||
+          (asset.width > 0 && asset.height > 0) ||
+          sizeCacheRef.current.has(asset.id)
+        ) {
+          resolve();
+          return;
+        }
+        RNImage.getSize(
+          asset.thumbnailUrl || asset.uri,
+          (width, height) => {
+            handleNaturalSize(asset.id, width, height);
+            resolve();
+          },
+          () => resolve(),
+        );
+      }),
+    [handleNaturalSize],
+  );
+
+  // Proactively resolve every missing size once the strip mounts/changes, so
+  // by the time a thumbnail is tapped its dimensions are already cached (and
+  // swiping to neighbours in the viewer fits + return-flies correctly too).
+  useEffect(() => {
+    for (const asset of assets) void resolveAssetSize(asset);
+  }, [assets, resolveAssetSize]);
+
+  const enrichedAssets = useMemo(() => {
+    void sizeVersion; // recompute as sizes arrive
+    const cache = sizeCacheRef.current;
+    return assets.map((asset) => {
+      if (asset.width > 0 && asset.height > 0) return asset;
+      const size = cache.get(asset.id);
+      return size ? { ...asset, width: size.width, height: size.height } : asset;
+    });
+  }, [assets, sizeVersion]);
+
   const hasAlbumAssociation = useCallback(
     (uri: string): boolean => {
       const normalizedUri = uri.replace(/^file:\/\//, "");
@@ -125,15 +209,41 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
     [associations],
   );
 
+  // Dimming the pressed cell is deferred until the viewer's open transition
+  // actually starts — dimming at press time exposes a gray cell for the
+  // frames the flight overlay hasn't painted yet (a visible flicker with
+  // server thumbnails, which decode slower than device-library ones).
+  const pendingViewedIndexRef = useRef<number | null>(null);
+
   const handlePressItem = useCallback(
     (index: number, originFrame: Frame | null) => {
+      // Make sure the tapped photo's dimensions are known before the viewer
+      // mounts — if they aren't cached yet, resolve them first so it opens
+      // with the zoom flight and full-size fit instead of the shrunk fade.
+      const asset = assets[index];
+      if (asset && !(asset.width > 0 && asset.height > 0) &&
+          !sizeCacheRef.current.has(asset.id)) {
+        void resolveAssetSize(asset).then(() => {
+          setViewerSession({ index, originFrame });
+          pendingViewedIndexRef.current = index;
+        });
+        return;
+      }
       setViewerSession({ index, originFrame });
-      setViewedIndex(index);
+      pendingViewedIndexRef.current = index;
     },
-    [],
+    [assets, resolveAssetSize],
   );
 
+  const handleOpenTransitionStart = useCallback(() => {
+    if (pendingViewedIndexRef.current != null) {
+      setViewedIndex(pendingViewedIndexRef.current);
+      pendingViewedIndexRef.current = null;
+    }
+  }, []);
+
   const handleCloseViewer = useCallback(() => {
+    pendingViewedIndexRef.current = null;
     setViewerSession(null);
     setViewedIndex(null);
   }, []);
@@ -267,11 +377,12 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
       </View>
       <PhotoViewer
         visible={viewerSession !== null}
-        assets={assets}
+        assets={enrichedAssets}
         initialIndex={viewerSession?.index ?? 0}
         originFrame={viewerSession?.originFrame ?? null}
         getReturnFrame={getReturnFrame}
         onClose={handleCloseViewer}
+        onOpenTransitionStart={handleOpenTransitionStart}
         onActiveIndexChange={handleViewerIndexChange}
         gridCornerRadius={ITEM_RADIUS}
       />

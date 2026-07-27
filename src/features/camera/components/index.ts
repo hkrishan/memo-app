@@ -17,6 +17,7 @@ export { FocusExposureControl } from './FocusExposureControl';
 export { LastCaptureThumbnail } from './LastCaptureThumbnail';
 export { CaptureDestinationButton } from './CaptureDestinationButton';
 export { DestinationPickerSheet } from './DestinationPickerSheet';
+export { CaptureExtrasSheet } from './CaptureExtrasSheet';
 
 // Re-export component props types for convenience
 export type {

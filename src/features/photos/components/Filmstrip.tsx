@@ -32,6 +32,7 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 import { MediaAsset } from "@/features/album/hooks";
+import { stableCacheKey } from "@/lib/imageCache";
 
 /** Collapsed thumb width. */
 const THUMB_WIDTH = 24;
@@ -119,7 +120,7 @@ const ThumbCell = memo<ThumbCellProps>(
         >
           {!posterlessVideo && (
             <Image
-              source={{ uri: thumbUri }}
+              source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
               style={styles.thumbImage}
               contentFit="cover"
               recyclingKey={`${asset.id}-strip`}

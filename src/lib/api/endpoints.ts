@@ -30,6 +30,9 @@ const endpoints = {
     notificationsRead: "/user/me/notifications/read",
     blocks: "/user/me/blocks",
     block: (userId: string) => `/user/me/blocks/${userId}`,
+    // The server-side "Memo library" (My Photos archive) — every capture lands here
+    photos: "/user/me/photos",
+    photo: (photoId: string) => `/user/me/photos/${photoId}`,
   },
   moderation: {
     report: "/moderation/report",
@@ -48,6 +51,8 @@ const endpoints = {
     update: (albumId: string) => `/album/${albumId}`,
     delete: (albumId: string) => `/album/${albumId}`,
     leave: (albumId: string) => `/album/${albumId}/leave`,
+    // Marks the album seen for the caller → clears its "NEW +n" badge
+    markViewed: (albumId: string) => `/album/${albumId}/viewed`,
     activities: (albumId: string) => `/album/${albumId}/activity`,
     // Invite links
     invites: (albumId: string) => `/album/${albumId}/invites`,
@@ -60,6 +65,9 @@ const endpoints = {
     // Photosrr
     photos: (albumId: string) => `/album/${albumId}/photos`,
     uploadPhoto: (albumId: string) => `/album/${albumId}/photos`,
+    // Copy an existing library photo into an album (server-side R2 copy)
+    photosFromLibrary: (albumId: string) =>
+      `/album/${albumId}/photos/from-library`,
     deletePhoto: (albumId: string, photoId: string) =>
       `/album/${albumId}/photos/${photoId}`,
     photoLike: (albumId: string, photoId: string) =>

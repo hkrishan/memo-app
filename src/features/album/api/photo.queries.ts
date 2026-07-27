@@ -97,12 +97,24 @@ export const useDeletePhotoMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ albumId, photoId }: { albumId: string; photoId: string }) =>
-      photoApi.deletePhoto(albumId, photoId),
+    mutationFn: ({
+      albumId,
+      photoId,
+      alsoLibrary,
+    }: {
+      albumId: string;
+      photoId: string;
+      /** Delete everywhere — the linked Memo-library copy goes too. */
+      alsoLibrary?: boolean;
+    }) => photoApi.deletePhoto(albumId, photoId, alsoLibrary ?? false),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: photoKeys.byAlbum(variables.albumId),
       });
+      if (variables.alsoLibrary) {
+        // My Photos lost one too
+        queryClient.invalidateQueries({ queryKey: ["library"] });
+      }
     },
   });
 };

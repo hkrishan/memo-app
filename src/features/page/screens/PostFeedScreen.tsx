@@ -49,6 +49,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 
 import { GlassCircleButton } from "@/components/ui/GlassCircleButton";
+import { stableCacheKey } from "@/lib/imageCache";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { AlbumPagePost, AlbumPagePostMedia } from "../types/post.types";
 import {
@@ -128,11 +129,12 @@ const FullScreenMedia = memo<{
   return (
     <View style={[styles.mediaPage, { width, height }]}>
       <Image
-        source={{ uri: backdropUri }}
+        source={{ uri: backdropUri, cacheKey: stableCacheKey(backdropUri) }}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
         blurRadius={45}
         transition={200}
+        cachePolicy="memory-disk"
       />
       <View style={styles.backdropDim} pointerEvents="none" />
 
@@ -167,10 +169,11 @@ const FullScreenMedia = memo<{
           ]}
         >
           <Image
-            source={{ uri: media.url }}
+            source={{ uri: media.url, cacheKey: stableCacheKey(media.url) }}
             style={styles.mediaFill}
             contentFit={ratio ? "cover" : "contain"}
             transition={200}
+            cachePolicy="memory-disk"
             onLoad={(event) =>
               rememberRatio(event.source.width, event.source.height)
             }

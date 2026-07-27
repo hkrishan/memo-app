@@ -39,6 +39,7 @@ import { memberColor } from "../../memberColor";
 import { useGetMomentsQuery } from "@/features/moments/api/moments.queries";
 import { momentTypeRegistry } from "@/features/moments/registry/momentTypes";
 import Avatar from "@/components/ui/Avatar";
+import { stableCacheKey } from "@/lib/imageCache";
 
 const LIST_BOTTOM_PADDING = 100;
 /** Moment sections shown (newest first). */
@@ -396,11 +397,12 @@ const PeopleRow = memo<{
                 </View>
               ) : (
                 <Image
-                  source={{ uri: thumbUri }}
+                  source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
                   style={styles.personImage}
                   contentFit="cover"
                   recyclingKey={`person-${entry.member.userId}`}
                   transition={100}
+                  cachePolicy="memory-disk"
                 />
               )}
               <View style={styles.personCountBadge} pointerEvents="none">

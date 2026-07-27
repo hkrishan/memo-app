@@ -15,6 +15,8 @@ import {
   Linking,
   TouchableOpacity,
   Dimensions,
+  Pressable,
+  Image as RNImage,
 } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import * as Haptics from "expo-haptics";
@@ -54,11 +56,15 @@ import {
   useUploadPhotoMutation,
   useGetAlbumsQuery,
 } from "@/features/album/api/album.queries";
-import { useDeletePhotoMutation } from "@/features/album/api/photo.queries";
 import {
-  useCaptureDestinationStore,
-  CaptureDestination,
+  useCaptureExtrasStore,
+  CaptureExtras,
 } from "@/features/camera/store/captureDestinationStore";
+import { enqueueCapture } from "@/features/photos/store/libraryUploadQueue";
+import { useMergedLibrary } from "@/features/photos/api/library.queries";
+import { libraryPhotoToAsset } from "@/features/photos/utils/libraryAsset";
+import { useLibraryPhotoViewerExtras } from "@/features/photos/hooks/useLibraryPhotoViewerExtras";
+import { PhotoViewer } from "@/features/photos/components";
 
 // Camera system imports
 import {
@@ -84,7 +90,7 @@ import {
   FocusExposureControl,
   LastCaptureThumbnail,
   CaptureDestinationButton,
-  DestinationPickerSheet,
+  CaptureExtrasSheet,
 } from "../components";
 
 const ReanimatedCamera = Animated.createAnimatedComponent(Camera);
@@ -171,23 +177,12 @@ export default function CameraScreen({
   const [quickPhoto, setQuickPhoto] = useState<string | null>(null);
   const [quickPhotoStatus, setQuickPhotoStatus] =
     useState<PhotoSaveStatus>("saving");
-  // Where THIS capture auto-saved (drives the confirmation sheet's content)
-  const [quickPhotoDestKind, setQuickPhotoDestKind] = useState<
-    "gallery" | "album"
-  >("gallery");
-  const [quickPhotoAlbumTitle, setQuickPhotoAlbumTitle] = useState<
-    string | undefined
-  >(undefined);
+  // Device camera-roll asset saved for this capture (for remove / dedupe)
   const quickPhotoAssetRef = useRef<MediaLibrary.Asset | null>(null);
-  // The album this capture was auto-uploaded to (photoId filled on success),
-  // so the sheet's remove/move/retry actions can target the uploaded photo
-  const quickAlbumRef = useRef<{
-    albumId: string;
-    title: string;
-    photoId: string | null;
-  } | null>(null);
-  // Sticky destination picker (opened from the button right of the shutter)
-  const [showDestinationPicker, setShowDestinationPicker] = useState(false);
+  // Main-tab Memo-library viewer (opened from the last-capture thumbnail)
+  const [showLibraryViewer, setShowLibraryViewer] = useState(false);
+  // Sticky capture-extras preferences sheet (button right of the shutter)
+  const [showExtrasSheet, setShowExtrasSheet] = useState(false);
 
   // iOS-camera-style last-capture thumbnail next to the capture button.
   // Seeded from the device library's newest photo OR video (only when
@@ -198,6 +193,9 @@ export default function CameraScreen({
     mediaType: "photo" | "video";
   } | null>(null);
   useEffect(() => {
+    // Main-tab thumbnail comes from the Memo library (below), not the device
+    // roll — only album-capture mode seeds from the device library.
+    if (!albumId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -228,7 +226,7 @@ export default function CameraScreen({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [albumId]);
 
   // Self-timer countdown state
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -451,28 +449,164 @@ export default function CameraScreen({
     ? albums?.filter((album) => album.albumId === albumId)
     : albums;
   const uploadPhotoMutation = useUploadPhotoMutation();
-  const deletePhotoMutation = useDeletePhotoMutation();
   const addAlbumAssociation = usePhotoAlbumStore(
     (state) => state.addAssociation,
   );
 
-  // Sticky auto-save destination (main-tab camera only). Album-capture mode
-  // (albumId prop) keeps its own flow and never reads this.
-  const destination = useCaptureDestinationStore((state) => state.destination);
-  const setDestination = useCaptureDestinationStore(
-    (state) => state.setDestination,
+  // Main-tab camera only: every capture ALWAYS uploads to the Memo library
+  // (the base action). These are the sticky OPTIONAL extras. Album-capture
+  // mode (albumId prop) keeps its own gallery-base flow and ignores these.
+  const alsoDeviceGallery = useCaptureExtrasStore((s) => s.alsoDeviceGallery);
+  const alsoAlbumId = useCaptureExtrasStore((s) => s.alsoAlbumId);
+  const setAlsoDeviceGallery = useCaptureExtrasStore(
+    (s) => s.setAlsoDeviceGallery,
   );
-  // Resolve at the read site: a stored album that no longer exists falls
-  // back to gallery (the store itself doesn't know the album list).
-  const resolvedDestination: CaptureDestination =
-    destination.type === "album" &&
-    !albums?.some((a) => a.albumId === destination.albumId)
-      ? { type: "gallery" }
-      : destination;
+  const setAlsoAlbumId = useCaptureExtrasStore((s) => s.setAlsoAlbumId);
+  // Resolve at the read site: a stored album that no longer exists is ignored
+  // (the store itself doesn't know the album list).
+  const resolvedExtras: CaptureExtras = {
+    alsoDeviceGallery,
+    alsoAlbumId:
+      alsoAlbumId && albums?.some((a) => a.albumId === alsoAlbumId)
+        ? alsoAlbumId
+        : null,
+  };
   // Ref mirror so the memoized capture callback reads the latest value
-  // without being re-created on every destination/albums change.
-  const resolvedDestinationRef = useRef(resolvedDestination);
-  resolvedDestinationRef.current = resolvedDestination;
+  // without being re-created on every extras/albums change.
+  const resolvedExtrasRef = useRef(resolvedExtras);
+  resolvedExtrasRef.current = resolvedExtras;
+
+  // Memo-library viewer data (main tab): the merged library — fresh
+  // captures render local-first at the front — plus the standard
+  // delete / add-to-album overlay used by My Photos.
+  const {
+    photos: libraryPhotos,
+    fetchNextPage: fetchMoreLibrary,
+    hasNextPage: hasMoreLibrary,
+  } = useMergedLibrary();
+  // Natural sizes for the viewer's zoom flight: PhotoViewer only flies
+  // when the asset's dimensions are known (unknown sizes fall back to a
+  // fade). The grid enriches from its tiles; here we resolve sizes on
+  // demand — the tapped (first) asset before opening, then each page as
+  // it becomes active so the dismiss flight works from anywhere.
+  const librarySizeCacheRef = useRef(
+    new Map<string, { width: number; height: number }>(),
+  );
+  const [libSizeVersion, setLibSizeVersion] = useState(0);
+  const ensureLibraryAssetSize = useCallback(
+    (
+      asset:
+        | {
+            id: string;
+            uri: string;
+            thumbnailUrl?: string | null;
+            width?: number;
+            height?: number;
+          }
+        | undefined,
+    ) =>
+      new Promise<void>((resolve) => {
+        // Photos now carry real dimensions (server-stored, or measured for
+        // local captures) — only fall back to a network getSize for legacy
+        // photos that predate dimension storage.
+        if (
+          !asset ||
+          (asset.width && asset.height && asset.width > 0 && asset.height > 0) ||
+          librarySizeCacheRef.current.has(asset.id)
+        ) {
+          resolve();
+          return;
+        }
+        RNImage.getSize(
+          asset.thumbnailUrl || asset.uri,
+          (width, height) => {
+            if (width > 0 && height > 0) {
+              librarySizeCacheRef.current.set(asset.id, { width, height });
+              setLibSizeVersion((v) => v + 1);
+            }
+            resolve();
+          },
+          () => resolve(),
+        );
+      }),
+    [],
+  );
+  const libraryViewerAssets = useMemo(() => {
+    // libSizeVersion invalidates this memo when a size resolves
+    void libSizeVersion;
+    return libraryPhotos.map((photo) => {
+      const asset = libraryPhotoToAsset(photo);
+      const size = librarySizeCacheRef.current.get(asset.id);
+      return size ? { ...asset, ...size } : asset;
+    });
+  }, [libraryPhotos, libSizeVersion]);
+  const libraryViewerAssetsRef = useRef(libraryViewerAssets);
+  libraryViewerAssetsRef.current = libraryViewerAssets;
+  // Main-tab thumbnail = the NEWEST Memo photo (pending captures sit at the
+  // front of the merged library, so a fresh shot shows here instantly).
+  const libraryThumb = useMemo<{
+    uri: string;
+    mediaType: "photo" | "video";
+  } | null>(() => {
+    const newest = libraryPhotos[0];
+    if (!newest) return null;
+    return {
+      uri: newest.thumbnailUrl ?? newest.url,
+      mediaType: newest.mediaType === "video" ? "video" : "photo",
+    };
+  }, [libraryPhotos]);
+  const { renderSocialOverlay: renderLibraryOverlay } =
+    useLibraryPhotoViewerExtras(libraryViewerAssets);
+  // Zoom-flight anchor: the thumbnail's window frame, measured at tap.
+  // The thumb is fixed-position, so the same frame serves the dismiss
+  // flight from any page — iOS-camera style.
+  const libraryViewerOriginRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const handleOpenLibraryViewer = useCallback(
+    (originFrame: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null) => {
+      libraryViewerOriginRef.current = originFrame;
+      // The flight needs the first asset's natural size — resolve it first
+      // (local files resolve instantly; a 250ms cap keeps the tap snappy
+      // if a network thumb dawdles, degrading to the fade open)
+      let opened = false;
+      const open = () => {
+        if (!opened) {
+          opened = true;
+          setShowLibraryViewer(true);
+        }
+      };
+      void ensureLibraryAssetSize(libraryViewerAssetsRef.current[0]).then(open);
+      setTimeout(open, 250);
+    },
+    [ensureLibraryAssetSize],
+  );
+  const handleLibraryActiveIndexChange = useCallback(
+    (index: number) => {
+      // Pre-resolve the active page's size so a dismiss from it can fly
+      void ensureLibraryAssetSize(libraryViewerAssetsRef.current[index]);
+    },
+    [ensureLibraryAssetSize],
+  );
+  const getLibraryReturnFrame = useCallback(
+    async () => libraryViewerOriginRef.current,
+    [],
+  );
+  const handleCloseLibraryViewer = useCallback(
+    () => setShowLibraryViewer(false),
+    [],
+  );
+  const handleLibraryViewerEndReached = useCallback(() => {
+    if (hasMoreLibrary) fetchMoreLibrary();
+  }, [hasMoreLibrary, fetchMoreLibrary]);
 
   // Animated camera props: display zoom → native zoom, plus exposure
   // bias. One set PER camera (both stay mounted for instant flips), each
@@ -690,13 +824,14 @@ export default function CameraScreen({
     }
   }, []);
 
-  // Auto-save a captured photo to the device gallery
+  // Album-capture mode base: auto-save the captured photo to the device
+  // gallery (the sheet then lets the user add it to the target album).
   const saveQuickPhotoToGallery = useCallback(
     async (fileUri: string) => {
       try {
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status !== "granted") {
-          setQuickPhotoStatus("unsaved");
+          setQuickPhotoStatus("failed");
           return;
         }
         const asset = await MediaLibrary.createAssetAsync(fileUri);
@@ -705,55 +840,33 @@ export default function CameraScreen({
         triggerGalleryRefresh();
       } catch (error) {
         if (__DEV__) console.error("Failed to auto-save photo:", error);
-        setQuickPhotoStatus("unsaved");
+        setQuickPhotoStatus("failed");
       }
     },
     [triggerGalleryRefresh],
   );
 
-  // Auto-upload a captured photo straight to an album (destination = album:
-  // the photo is NOT written to the device gallery). Mirrors the album
-  // "Adding to…" pill pattern; tracks the uploaded photoId so the sheet's
-  // remove/move/retry actions can act on it.
-  const uploadQuickPhotoToAlbum = useCallback(
-    (fileUri: string, targetAlbumId: string, title: string) => {
-      const entry = { albumId: targetAlbumId, title, photoId: null as string | null };
-      quickAlbumRef.current = entry;
-      setQuickPhotoStatus("saving");
-
-      const location = captureLocationRef.current;
-      const uploadId = `album-upload-${Date.now()}`;
-      uploadIndicator.begin(uploadId, `Adding to ${title}…`);
-      uploadPhotoMutation
-        .mutateAsync({
-          albumId: targetAlbumId,
-          fileUri,
-          fileName: `capture_${Date.now()}.jpg`,
-          mimeType: "image/jpeg",
-          latitude: location?.latitude,
-          longitude: location?.longitude,
-        })
-        .then((data) => {
-          entry.photoId = data.photoId;
-          // Only reflect status if this is still the active capture's upload
-          if (quickAlbumRef.current === entry) {
-            setQuickPhotoStatus("saved");
-          }
-          uploadIndicator.succeed(uploadId, `Added to ${title}`);
-          onPhotoUploaded?.(data);
-        })
-        .catch(() => {
-          if (quickAlbumRef.current === entry) {
-            setQuickPhotoStatus("failed");
-          }
-          uploadIndicator.fail(uploadId);
-        });
+  // Save a captured file to the device camera roll (silent — the banner's
+  // icon flipping to a checkmark is the feedback).
+  const saveToCameraRoll = useCallback(
+    async (fileUri: string): Promise<boolean> => {
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") return false;
+        await MediaLibrary.createAssetAsync(fileUri);
+        triggerGalleryRefresh();
+        return true;
+      } catch (error) {
+        if (__DEV__) console.error("Failed to save to camera roll:", error);
+        return false;
+      }
     },
-    [uploadPhotoMutation, onPhotoUploaded],
+    [triggerGalleryRefresh],
   );
 
-  // Photo capture — auto-saves to the current destination, then the frame
-  // drops into a bottom-left thumbnail with a confirmation sheet
+  // Photo capture. Main tab: INSTANT — enqueue for background library upload
+  // (local-first; no loader) and flash the top banner. Album-capture mode:
+  // unchanged gallery-save + confirmation sheet.
   const capturePhoto = useCallback(async () => {
     const camera = getActiveCamera();
     if (!camera) return;
@@ -791,34 +904,37 @@ export default function CameraScreen({
         ? photo.path
         : `file://${photo.path}`;
 
-      quickPhotoAssetRef.current = null;
-      quickAlbumRef.current = null;
-      setQuickPhoto(fileUri);
-      setLastCapture({ uri: fileUri, mediaType: "photo" });
-
-      // Fetch where this was taken while the sheet is up (before the upload
-      // reads captureLocationRef in the album branch)
+      // Fetch where this was taken (best-effort; the enqueue below reads
+      // the last-known position)
       captureCurrentLocation();
 
-      // Auto-save to the current destination. In album-capture mode
-      // (albumId prop) there is no destination button — keep gallery.
-      const dest = albumId
-        ? ({ type: "gallery" } as CaptureDestination)
-        : resolvedDestinationRef.current;
-      if (dest.type === "album") {
-        const album = albums?.find((a) => a.albumId === dest.albumId);
-        const title = album?.title ?? "Album";
-        setQuickPhotoDestKind("album");
-        setQuickPhotoAlbumTitle(title);
-        // Destination = album: upload straight to it, NOT to the gallery
-        uploadQuickPhotoToAlbum(fileUri, dest.albumId, title);
-      } else {
-        setQuickPhotoDestKind("gallery");
-        setQuickPhotoAlbumTitle(undefined);
-        setQuickPhotoStatus("saving");
-        // Save immediately in the background; the sheet reflects the status
-        saveQuickPhotoToGallery(fileUri);
+      // Instant local-first save — identical for the main tab and the
+      // album camera. The only difference: the album camera FORCES this
+      // album as the target; the main tab uses the sticky extras. Every
+      // capture always lands in the Memo library; the album (if any) gets
+      // a copy in the background.
+      const extras = resolvedExtrasRef.current;
+      const targetAlbumId = albumId ?? extras.alsoAlbumId ?? null;
+      const targetAlbum = targetAlbumId
+        ? albums?.find((a) => a.albumId === targetAlbumId)
+        : undefined;
+      // Camera-roll extra only applies on the main tab (album mode has no
+      // sticky prefs UI)
+      const alsoRoll = albumId ? false : extras.alsoDeviceGallery;
+      const location = captureLocationRef.current;
+      if (alsoRoll) {
+        void saveToCameraRoll(fileUri);
       }
+      void enqueueCapture({
+        tempFileUri: fileUri,
+        ...(location && {
+          latitude: location.latitude,
+          longitude: location.longitude,
+        }),
+        albumId: targetAlbumId,
+        albumTitle: targetAlbum?.title ?? (albumId ? "Album" : null),
+        cameraRollSaved: alsoRoll,
+      });
     } catch (error) {
       if (__DEV__) console.error("Failed to take photo:", error);
       notify.error("Capture Failed", "Could not take photo. Please try again.");
@@ -831,86 +947,43 @@ export default function CameraScreen({
     device?.hasFlash,
     shutterBlink,
     saveQuickPhotoToGallery,
+    saveToCameraRoll,
     captureCurrentLocation,
     getActiveCamera,
     albumId,
     albums,
-    uploadQuickPhotoToAlbum,
   ]);
 
-  // Quick-save sheet handlers
-  // Remove: gallery destination → delete the device asset; album destination
-  // → delete the uploaded album photo. Then the sheet dismisses.
+  // Quick-save sheet handlers — ALBUM-CAPTURE MODE ONLY (the main tab uses
+  // the queue + banner instead).
+  // Remove: delete the just-saved device camera-roll asset, dismiss.
   const handleQuickRemove = useCallback(async () => {
     const asset = quickPhotoAssetRef.current;
-    const album = quickAlbumRef.current;
     quickPhotoAssetRef.current = null;
-    quickAlbumRef.current = null;
     setQuickPhoto(null);
-    if (album?.photoId) {
-      deletePhotoMutation
-        .mutateAsync({ albumId: album.albumId, photoId: album.photoId })
-        .catch((error) => {
-          if (__DEV__) console.error("Failed to remove album photo:", error);
-          notify.error("Remove Failed", "Could not remove photo from album");
-        });
-    } else if (asset) {
+
+    if (asset) {
       try {
         await MediaLibrary.deleteAssetsAsync([asset]);
         triggerGalleryRefresh();
       } catch (error) {
-        if (__DEV__) console.error("Failed to remove photo:", error);
-        notify.error("Remove Failed", "Could not remove photo from gallery");
+        if (__DEV__) console.error("Failed to remove asset:", error);
       }
     }
-  }, [triggerGalleryRefresh, deletePhotoMutation]);
+  }, [triggerGalleryRefresh]);
 
-  // Save to Gallery: album destination → write the captured file to the
-  // gallery too (a side action, tracked via the pill so it doesn't overwrite
-  // the sheet's destination status); gallery destination → retry the save
-  // (shown only when permission was denied).
-  const handleQuickSaveToGallery = useCallback(() => {
-    if (!quickPhoto) return;
-    if (quickAlbumRef.current) {
-      const fileUri = quickPhoto;
-      const saveId = `gallery-save-${Date.now()}`;
-      uploadIndicator.begin(saveId, "Saving to gallery…");
-      MediaLibrary.requestPermissionsAsync()
-        .then(async ({ status }) => {
-          if (status !== "granted") {
-            uploadIndicator.fail(saveId);
-            return;
-          }
-          const asset = await MediaLibrary.createAssetAsync(fileUri);
-          quickPhotoAssetRef.current = asset;
-          triggerGalleryRefresh();
-          uploadIndicator.succeed(saveId, "Saved to gallery");
-        })
-        .catch(() => uploadIndicator.fail(saveId));
-    } else {
-      setQuickPhotoStatus("saving");
-      saveQuickPhotoToGallery(quickPhoto);
-    }
-  }, [quickPhoto, saveQuickPhotoToGallery, triggerGalleryRefresh]);
-
-  // Change album (one-off — does NOT change the sticky preference):
-  // gallery destination → add to the chosen album (photo stays in gallery);
-  // album destination → MOVE (upload to the new album, then delete from the
-  // original once the new upload succeeds). Progress shows via the pill.
-  const handleQuickChangeAlbum = useCallback(
+  // Add to the target album: multipart upload (photo also stays in gallery)
+  const handleQuickAddToAlbum = useCallback(
     (targetAlbumId: string) => {
       if (!quickPhoto) return;
-      const fileUri = quickPhoto;
       const album = albums?.find((a) => a.albumId === targetAlbumId);
       const title = album?.title ?? "Album";
-      const prev = quickAlbumRef.current;
-      const asset = quickPhotoAssetRef.current;
 
-      // Gallery destination keeps the local asset associated with the album
-      if (!prev && album && asset?.uri) {
+      const fileUri = quickPhoto;
+      const asset = quickPhotoAssetRef.current;
+      if (album && asset?.uri) {
         addAlbumAssociation(asset.uri, targetAlbumId, title);
       }
-
       const location = captureLocationRef.current;
       const uploadId = `album-upload-${Date.now()}`;
       uploadIndicator.begin(uploadId, `Adding to ${title}…`);
@@ -926,19 +999,9 @@ export default function CameraScreen({
         .then((data) => {
           uploadIndicator.succeed(uploadId, `Added to ${title}`);
           onPhotoUploaded?.(data);
-          // Album destination: this was a MOVE — remove from the original
-          // album only after the new upload succeeded (a failed move keeps
-          // the photo safe in its original album).
-          if (prev?.photoId && prev.albumId !== targetAlbumId) {
-            deletePhotoMutation
-              .mutateAsync({ albumId: prev.albumId, photoId: prev.photoId })
-              .catch(() => {});
-          }
         })
         .catch(() => uploadIndicator.fail(uploadId));
-
       quickPhotoAssetRef.current = null;
-      quickAlbumRef.current = null;
       setQuickPhoto(null);
     },
     [
@@ -946,38 +1009,28 @@ export default function CameraScreen({
       albums,
       addAlbumAssociation,
       uploadPhotoMutation,
-      deletePhotoMutation,
       onPhotoUploaded,
     ],
   );
 
-  // Retry a failed album auto-upload (offline)
+  // Retry the failed gallery auto-save
   const handleQuickRetry = useCallback(() => {
     if (!quickPhoto) return;
-    const album = quickAlbumRef.current;
-    if (album) {
-      uploadQuickPhotoToAlbum(quickPhoto, album.albumId, album.title);
-    }
-  }, [quickPhoto, uploadQuickPhotoToAlbum]);
+    setQuickPhotoStatus("saving");
+    saveQuickPhotoToGallery(quickPhoto);
+  }, [quickPhoto, saveQuickPhotoToGallery]);
 
   const handleQuickDismiss = useCallback(() => {
     quickPhotoAssetRef.current = null;
-    quickAlbumRef.current = null;
     setQuickPhoto(null);
   }, []);
 
-  // Sticky destination picker (button right of the shutter)
-  const handleSelectGalleryDestination = useCallback(() => {
-    setDestination({ type: "gallery" });
-    setShowDestinationPicker(false);
-  }, [setDestination]);
-
-  const handleSelectAlbumDestination = useCallback(
+  // Sticky capture-extras preferences (button right of the shutter)
+  const handleToggleAlbumExtra = useCallback(
     (targetAlbumId: string) => {
-      setDestination({ type: "album", albumId: targetAlbumId });
-      setShowDestinationPicker(false);
+      setAlsoAlbumId(alsoAlbumId === targetAlbumId ? null : targetAlbumId);
     },
-    [setDestination],
+    [alsoAlbumId, setAlsoAlbumId],
   );
 
   // Self-timer countdown
@@ -1415,6 +1468,37 @@ export default function CameraScreen({
           controlsFadeStyle,
         ]}
       >
+        {/* Sticky destination album, spelled out above the zoom presets so
+            it's always obvious where captures are going. Tap = change it.
+            Main-tab only, and only when an album is actually targeted. */}
+        {/* Album camera: fixed "→ this album" indicator (not changeable). */}
+        {albumId && !isRecording && (
+          <View style={styles.destinationAlbumPill}>
+            <Ionicons name="albums" size={12} color="#fff" />
+            <Text style={styles.destinationAlbumText} numberOfLines={1}>
+              {albums?.find((a) => a.albumId === albumId)?.title ?? "Album"}
+            </Text>
+          </View>
+        )}
+        {!albumId && !isRecording && resolvedExtras.alsoAlbumId != null && (
+          <Pressable
+            onPress={() => setShowExtrasSheet(true)}
+            style={styles.destinationAlbumPill}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Saving to ${
+              albums?.find((a) => a.albumId === resolvedExtras.alsoAlbumId)
+                ?.title ?? "album"
+            }. Tap to change.`}
+          >
+            <Ionicons name="albums" size={12} color="#fff" />
+            <Text style={styles.destinationAlbumText} numberOfLines={1}>
+              {albums?.find((a) => a.albumId === resolvedExtras.alsoAlbumId)
+                ?.title ?? "Album"}
+            </Text>
+          </Pressable>
+        )}
+
         {/* Zoom presets (0.5x / 1x / 2x / 3x) */}
         <View style={styles.zoomPresetContainer}>
           <ZoomPresetSelector
@@ -1433,7 +1517,10 @@ export default function CameraScreen({
               docked thumb occupies the bottom-left corner. */}
           {!isRecording && !quickPhoto && (
             <View style={styles.lastCaptureContainer} pointerEvents="box-none">
-              <LastCaptureThumbnail capture={lastCapture} />
+              <LastCaptureThumbnail
+                capture={libraryThumb}
+                onPress={handleOpenLibraryViewer}
+              />
             </View>
           )}
           <CaptureButton
@@ -1459,9 +1546,9 @@ export default function CameraScreen({
               pointerEvents="box-none"
             >
               <CaptureDestinationButton
-                destination={resolvedDestination}
+                extras={resolvedExtras}
                 albums={albums}
-                onPress={() => setShowDestinationPicker(true)}
+                onPress={() => setShowExtrasSheet(true)}
               />
             </View>
           )}
@@ -1508,37 +1595,31 @@ export default function CameraScreen({
         onCancel={cancelCountdown}
       />
 
-      {/* Quick-save photo flow: thumbnail drop + destination confirmation */}
-      <PhotoSaveSheet
-        photoUri={quickPhoto}
-        destinationKind={quickPhotoDestKind}
-        albumTitle={quickPhotoAlbumTitle}
-        currentAlbumId={quickAlbumRef.current?.albumId}
-        status={quickPhotoStatus}
-        albums={saveSheetAlbums}
-        onRemove={handleQuickRemove}
-        onSaveToGallery={handleQuickSaveToGallery}
-        onChangeAlbum={handleQuickChangeAlbum}
-        onRetry={handleQuickRetry}
-        onDismiss={handleQuickDismiss}
+      {/* Memo-library viewer — same for the main tab AND the album camera:
+          the last-capture thumbnail opens the standard carousel + filmstrip
+          over the merged library (fresh captures first), with the usual
+          delete / add-to-album actions and the zoom-from-thumbnail flight. */}
+      <PhotoViewer
+        visible={showLibraryViewer}
+        assets={libraryViewerAssets}
+        initialIndex={0}
+        originFrame={libraryViewerOriginRef.current}
+        getReturnFrame={getLibraryReturnFrame}
+        onClose={handleCloseLibraryViewer}
+        onEndReached={handleLibraryViewerEndReached}
+        onActiveIndexChange={handleLibraryActiveIndexChange}
+        renderSocialOverlay={renderLibraryOverlay}
       />
 
-      {/* Sticky destination picker (main-tab camera only) */}
+      {/* Sticky capture-extras preferences (main-tab camera only) */}
       {!albumId && (
-        <DestinationPickerSheet
-          visible={showDestinationPicker}
+        <CaptureExtrasSheet
+          visible={showExtrasSheet}
           albums={albums}
-          showGallery
-          title="Save captures to"
-          selectedType={resolvedDestination.type}
-          selectedAlbumId={
-            resolvedDestination.type === "album"
-              ? resolvedDestination.albumId
-              : null
-          }
-          onSelectGallery={handleSelectGalleryDestination}
-          onSelectAlbum={handleSelectAlbumDestination}
-          onClose={() => setShowDestinationPicker(false)}
+          extras={resolvedExtras}
+          onToggleDeviceGallery={setAlsoDeviceGallery}
+          onToggleAlbum={handleToggleAlbumExtra}
+          onClose={() => setShowExtrasSheet(false)}
         />
       )}
 
@@ -1624,6 +1705,23 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
     paddingTop: 20,
+  },
+  destinationAlbumPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    gap: 5,
+    maxWidth: 220,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    marginBottom: 10,
+  },
+  destinationAlbumText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   zoomPresetContainer: {
     marginBottom: 18,

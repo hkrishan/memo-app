@@ -1,12 +1,13 @@
 /**
  * PhotoSaveSheet Component
- * Post-capture confirmation for the auto-save destination. The frame shrinks
- * into a bottom-left thumbnail, then a compact sheet slides up confirming
- * WHERE the capture auto-saved (Gallery or an album) and offering a few
- * follow-up actions. The camera stays live behind it the whole time.
+ * Post-capture confirmation. The frame shrinks into a bottom-left thumbnail,
+ * then a compact sheet slides up confirming the capture was saved to its base
+ * destination (highlighted) plus small secondary lines for any extras that
+ * were actually performed. Offers a few follow-up actions. The camera stays
+ * live behind it the whole time.
  *
  * The drop/dock/expand choreography is unchanged — only the sheet CONTENT
- * differs from the old album-picker version.
+ * and props differ.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -41,48 +42,48 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const THUMB_WIDTH = 64;
 const THUMB_HEIGHT = 84;
 const THUMB_LEFT = 20;
-const SHEET_CONTENT_HEIGHT = 288;
+const SHEET_CONTENT_HEIGHT = 300;
 
-/**
- * gallery: 'saving' (writing) | 'saved' | 'unsaved' (permission denied)
- * album:   'saving' (uploading) | 'saved' | 'failed' (offline)
- */
-export type PhotoSaveStatus = 'saving' | 'saved' | 'unsaved' | 'failed';
+/** base action: 'saving' (in flight) | 'saved' | 'failed' (offline/denied) */
+export type PhotoSaveStatus = 'saving' | 'saved' | 'failed';
 
 interface PhotoSaveSheetProps {
   /** file:// uri of the captured photo; null hides the sheet */
   photoUri: string | null;
-  /** Where this capture auto-saved. */
-  destinationKind: 'gallery' | 'album';
-  /** Album title when destinationKind === 'album'. */
-  albumTitle?: string;
-  /** Album id of the auto-destination, for the picker's highlight. */
-  currentAlbumId?: string;
   status: PhotoSaveStatus;
-  /** Albums for the one-off "Change album" picker. */
+  /** Highlighted base destination name, e.g. "Memo" or "Gallery". */
+  baseName: string;
+  /** Secondary lines for extras actually performed, e.g. "Camera roll". */
+  extraLines: string[];
+  /** Albums for the one-off "Add to album" picker. */
   albums: Album[] | undefined;
-  /** Remove the just-saved item (gallery asset or uploaded album photo). */
+  /** Show the "Save to camera roll" action. */
+  canSaveToCameraRoll: boolean;
+  /** Title for the one-off album picker. */
+  albumPickerTitle: string;
+  /** Remove the just-saved item (base + any extras, best-effort). */
   onRemove: () => void;
-  /** Write the captured file to the device gallery. */
-  onSaveToGallery: () => void;
-  /** One-off: add to / move to a chosen album (does not change preference). */
-  onChangeAlbum: (albumId: string) => void;
-  /** Retry a failed album upload. */
+  /** Write the captured file to the device camera roll. */
+  onSaveToCameraRoll: () => void;
+  /** One-off: copy into a chosen album. */
+  onAddToAlbum: (albumId: string) => void;
+  /** Retry a failed base save. */
   onRetry: () => void;
-  /** Keep the photo and close the sheet (dismiss = accept the auto-save). */
+  /** Keep the photo and close the sheet (dismiss = accept). */
   onDismiss: () => void;
 }
 
 export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
   photoUri,
-  destinationKind,
-  albumTitle,
-  currentAlbumId,
   status,
+  baseName,
+  extraLines,
   albums,
+  canSaveToCameraRoll,
+  albumPickerTitle,
   onRemove,
-  onSaveToGallery,
-  onChangeAlbum,
+  onSaveToCameraRoll,
+  onAddToAlbum,
   onRetry,
   onDismiss,
 }) => {
@@ -97,7 +98,7 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
   // Docked = the initial shrink finished; only a docked thumb can expand
   const [docked, setDocked] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  // One-off "Change album" picker
+  // One-off "Add to album" picker
   const [showAlbumPicker, setShowAlbumPicker] = useState(false);
 
   useEffect(() => {
@@ -323,30 +324,25 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
     return null;
   }
 
-  const destLabel = destinationKind === 'album' ? albumTitle ?? 'Album' : 'Gallery';
-  const isFailed = status === 'failed' || status === 'unsaved';
+  const isFailed = status === 'failed';
   const isSaving = status === 'saving';
 
   // Confirmation line (the destination chip is the only highlighted element)
   const confirmText = isSaving
-    ? `Saving to ${destLabel}…`
+    ? `Saving to ${baseName}…`
     : isFailed
-      ? `Couldn't save to ${destLabel}`
-      : `Saved to ${destLabel}`;
+      ? `Couldn't save to ${baseName}`
+      : `Saved to ${baseName}`;
 
   const handleDismiss = () => animateOut(onDismiss);
   const handleRemove = () => animateOut(onRemove);
   const handleRetry = () => onRetry();
-  const handleSaveToGallery = () => onSaveToGallery();
+  const handleSaveToCameraRoll = () => onSaveToCameraRoll();
   const openAlbumPicker = () => setShowAlbumPicker(true);
   const handlePickAlbum = (albumId: string) => {
     setShowAlbumPicker(false);
-    animateOut(() => onChangeAlbum(albumId));
+    onAddToAlbum(albumId);
   };
-
-  // "Save to Gallery" shows in the album case, and as the gallery-permission
-  // retry / offline fallback.
-  const showSaveToGallery = destinationKind === 'album' || isFailed;
 
   return (
     <View style={styles.container} pointerEvents="box-none">
@@ -368,7 +364,7 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
           <View style={styles.thumbSpacer} />
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>
-              {isFailed ? 'Not saved' : isSaving ? 'Saving…' : 'Captured'}
+              {isFailed ? 'Not saved' : isSaving ? 'Saving…' : 'Saved'}
             </Text>
           </View>
           <Pressable onPress={handleDismiss} style={styles.closeButton}>
@@ -395,12 +391,26 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
               {confirmText}
             </Text>
           </View>
+          {/* Small secondary lines for any extras performed */}
+          {!isFailed &&
+            extraLines.map((line) => (
+              <View key={line} style={styles.extraLine}>
+                <Ionicons
+                  name="checkmark"
+                  size={14}
+                  color="rgba(255,255,255,0.5)"
+                />
+                <Text style={styles.extraLineText} numberOfLines={1}>
+                  {line}
+                </Text>
+              </View>
+            ))}
         </View>
 
         {/* Actions */}
         <View style={styles.actionsArea}>
           <View style={styles.primaryRow}>
-            {isFailed && status === 'failed' && (
+            {isFailed && (
               <Pressable
                 onPress={handleRetry}
                 style={[styles.actionButton, styles.primaryButton]}
@@ -412,41 +422,39 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
               </Pressable>
             )}
 
-            {showSaveToGallery && (
+            {canSaveToCameraRoll && (
               <Pressable
-                onPress={handleSaveToGallery}
+                onPress={handleSaveToCameraRoll}
                 style={[
                   styles.actionButton,
-                  status === 'failed' ? styles.secondaryButton : styles.primaryButton,
+                  isFailed ? styles.secondaryButton : styles.primaryButton,
                 ]}
               >
                 <Ionicons
                   name="download-outline"
                   size={18}
-                  color={status === 'failed' ? '#fff' : '#000'}
+                  color={isFailed ? '#fff' : '#000'}
                 />
                 <Text
                   style={[
                     styles.actionText,
-                    status === 'failed' ? null : styles.primaryText,
+                    isFailed ? null : styles.primaryText,
                   ]}
                 >
-                  Save to Gallery
+                  Camera roll
                 </Text>
               </Pressable>
             )}
 
-            <Pressable
-              onPress={openAlbumPicker}
-              style={[
-                styles.actionButton,
-                status === 'failed' ? styles.hiddenButton : styles.secondaryButton,
-              ]}
-              disabled={status === 'failed'}
-            >
-              <Ionicons name="albums-outline" size={18} color="#fff" />
-              <Text style={styles.actionText}>Change album</Text>
-            </Pressable>
+            {!isFailed && (
+              <Pressable
+                onPress={openAlbumPicker}
+                style={[styles.actionButton, styles.secondaryButton]}
+              >
+                <Ionicons name="albums-outline" size={18} color="#fff" />
+                <Text style={styles.actionText}>Add to album</Text>
+              </Pressable>
+            )}
           </View>
 
           {/* Remove — destructive but subtle */}
@@ -502,14 +510,14 @@ export const PhotoSaveSheet: React.FC<PhotoSaveSheetProps> = ({
         </Animated.View>
       )}
 
-      {/* One-off "Change album" picker (does not change the sticky preference) */}
+      {/* One-off "Add to album" picker */}
       <DestinationPickerSheet
         visible={showAlbumPicker}
         albums={albums}
         showGallery={false}
-        title={destinationKind === 'album' ? 'Move to album' : 'Add to album'}
+        title={albumPickerTitle}
         selectedType="album"
-        selectedAlbumId={currentAlbumId ?? null}
+        selectedAlbumId={null}
         onSelectAlbum={handlePickAlbum}
         onClose={() => setShowAlbumPicker(false)}
       />
@@ -567,6 +575,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginTop: 4,
     marginBottom: 18,
+    gap: 6,
   },
   destChip: {
     alignSelf: 'flex-start',
@@ -588,6 +597,18 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
+    flexShrink: 1,
+  },
+  extraLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingLeft: 4,
+  },
+  extraLineText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
+    fontWeight: '500',
     flexShrink: 1,
   },
   actionsArea: {
@@ -612,9 +633,6 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  hiddenButton: {
-    display: 'none',
   },
   actionText: {
     color: '#fff',

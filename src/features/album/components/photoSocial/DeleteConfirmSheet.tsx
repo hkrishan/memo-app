@@ -1,8 +1,12 @@
 /**
  * DeleteConfirmSheet
- * Destructive confirmation for deleting an album photo, rendered INSIDE
- * the fullscreen viewer's modal (a root-level popup would stack beneath
- * it). Same sheet chrome as the comments/tags sheets, sized to content.
+ * Destructive options for an album photo, rendered INSIDE the fullscreen
+ * viewer's modal (a root-level popup would stack beneath it):
+ *   - "Remove from album" — the photo leaves this album only; the
+ *     uploader's Memo-library copy stays.
+ *   - "Delete photo" (uploader only) — delete everywhere: album copy AND
+ *     the uploader's Memo-library copy.
+ * Same sheet chrome as the comments/tags sheets, sized to content.
  */
 
 import React, { useCallback } from "react";
@@ -17,7 +21,9 @@ export type DeleteConfirmSheetProps = {
   visible: boolean;
   onClose: () => void;
   /** Confirmed — the sheet closes itself first, then this fires. */
-  onConfirm: () => void;
+  onConfirm: (alsoLibrary: boolean) => void;
+  /** Uploader sees the extra "delete everywhere" option. */
+  isUploader?: boolean;
   busy?: boolean;
 };
 
@@ -25,31 +31,39 @@ export const DeleteConfirmSheet: React.FC<DeleteConfirmSheetProps> = ({
   visible,
   onClose,
   onConfirm,
+  isUploader = false,
   busy = false,
 }) => {
-  const handleConfirm = useCallback(() => {
+  const handleRemove = useCallback(() => {
     if (busy) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    onConfirm();
+    onConfirm(false);
+  }, [busy, onConfirm]);
+
+  const handleDeleteEverywhere = useCallback(() => {
+    if (busy) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    onConfirm(true);
   }, [busy, onConfirm]);
 
   return (
     <SocialBottomSheet
       visible={visible}
       onClose={onClose}
-      title="Delete photo?"
-      heightFraction={0.34}
+      title="Remove photo?"
+      heightFraction={isUploader ? 0.42 : 0.34}
     >
       <View style={styles.body}>
         <View style={styles.iconWell}>
           <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
         </View>
         <Text style={styles.message}>
-          It will be removed from the album for everyone. This can't be
-          undone.
+          {isUploader
+            ? "Remove it from this album only, or delete it everywhere — including your Memo photos."
+            : "It will be removed from the album for everyone. This can't be undone."}
         </Text>
         <Pressable
-          onPress={handleConfirm}
+          onPress={handleRemove}
           disabled={busy}
           style={({ pressed }) => [
             styles.deleteButton,
@@ -57,14 +71,31 @@ export const DeleteConfirmSheet: React.FC<DeleteConfirmSheetProps> = ({
             busy && styles.deleteButtonBusy,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Delete photo"
+          accessibilityLabel="Remove from album"
         >
           {busy ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={styles.deleteLabel}>Delete photo</Text>
+            <Text style={styles.deleteLabel}>Remove from album</Text>
           )}
         </Pressable>
+        {isUploader && (
+          <Pressable
+            onPress={handleDeleteEverywhere}
+            disabled={busy}
+            style={({ pressed }) => [
+              styles.everywhereButton,
+              pressed && styles.deleteButtonPressed,
+              busy && styles.deleteButtonBusy,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Delete photo everywhere"
+          >
+            <Text style={styles.everywhereLabel}>
+              Delete photo (also from My Photos)
+            </Text>
+          </Pressable>
+        )}
         <Pressable
           onPress={onClose}
           disabled={busy}
@@ -112,6 +143,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5484D",
     alignItems: "center",
     justifyContent: "center",
+  },
+  everywhereButton: {
+    alignSelf: "stretch",
+    height: 48,
+    borderRadius: 24,
+    marginTop: 10,
+    borderWidth: 1.5,
+    borderColor: "#E5484D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  everywhereLabel: {
+    color: "#E5484D",
+    fontSize: 15,
+    fontWeight: "700",
   },
   deleteButtonPressed: {
     backgroundColor: "#C93A3F",

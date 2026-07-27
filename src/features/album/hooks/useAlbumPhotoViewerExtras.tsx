@@ -14,6 +14,7 @@ import { SharedValue } from "react-native-reanimated";
 
 import { AlbumPhotoSocialOverlay } from "../components/photoSocial";
 import type { AlbumPhotoSocialOverlayHandle } from "../components/photoSocial/AlbumPhotoSocialOverlay";
+import { isPendingAssetId } from "./useAlbumPendingAssets";
 import { MediaAsset } from "./useMediaLibrary";
 
 export interface SocialOverlayInfo {
@@ -54,7 +55,10 @@ export const useAlbumPhotoViewerExtras = (
 
   const renderSocialOverlay = useCallback(
     (info: SocialOverlayInfo) =>
-      albumId ? (
+      // A capture still uploading has no album photoId yet — liking,
+      // commenting or deleting it would address a photo the server
+      // doesn't have. The overlay reappears when the upload lands.
+      albumId && !isPendingAssetId(info.asset.id) ? (
         <AlbumPhotoSocialOverlay
           ref={socialOverlayRef}
           albumId={albumId}
@@ -75,6 +79,7 @@ export const useAlbumPhotoViewerExtras = (
   // burst). Pass the asset the VIEWER resolved from its live scroll
   // position — the overlay's own prop can be a page behind mid-settle
   const onDoubleTapAsset = useCallback((asset: MediaAsset) => {
+    if (isPendingAssetId(asset.id)) return;
     socialOverlayRef.current?.doubleTapLike(asset.id);
   }, []);
 

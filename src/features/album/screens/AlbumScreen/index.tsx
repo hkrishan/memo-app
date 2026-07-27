@@ -6,11 +6,15 @@ import PagerView from "react-native-pager-view";
 import { useSharedValue } from "react-native-reanimated";
 
 import { useGetPhotosQuery } from "../../api/photo.queries";
-import { useGetAlbumQuery } from "../../api/album.queries";
+import {
+  useGetAlbumQuery,
+  useMarkAlbumViewedMutation,
+} from "../../api/album.queries";
 import { useGetPageQuery } from "@/features/page/api/page.queries";
 import { AlbumNavBar, AlbumTabs } from "../../components";
 import MemberColorSheet from "../../components/MemberColorSheet";
 import { photoToMediaAsset } from "../../utils/mediaAsset";
+import { useAlbumPendingAssets } from "../../hooks/useAlbumPendingAssets";
 import GalleryPage from "./GalleryPage";
 import PagePage from "./PagePage";
 import MomentsPage from "@/features/moments/screens/MomentsPage";
@@ -54,6 +58,16 @@ const AlbumScreen = () => {
   const tabPosition = useSharedValue(initialTabIndex);
 
   const { data: album } = useGetAlbumQuery(albumId!);
+
+  // Opening the album counts as "seen": clear its "NEW +n" badge on the list.
+  // Fires once per albumId (mutate is stable) — NOT on scroll-past, only here
+  // where the album is actually open.
+  const { mutate: markAlbumViewed } = useMarkAlbumViewedMutation();
+  useEffect(() => {
+    if (!albumId) return;
+    markAlbumViewed(albumId);
+  }, [albumId, markAlbumViewed]);
+
   // The nav bar suppresses its "Page" tab title/background while the
   // album has no page (the create-page hero shows there instead). While
   // still loading, assume a page exists so the title never flashes away.
@@ -66,12 +80,17 @@ const AlbumScreen = () => {
   const liveDropAlbumIds = useLiveDropAlbumIds();
   const momentsLive = albumId ? liveDropAlbumIds.has(albumId) : false;
 
+  // Captures still uploading to THIS album render from their local file, so
+  // walking into the album straight after the shutter shows the photo (with
+  // its uploading badge) instead of a gallery that's missing it
+  const pendingAssets = useAlbumPendingAssets(albumId, photos);
+
   const assets = useMemo(() => {
-    if (!photos) return [];
-    return photos
-      .map(photoToMediaAsset)
-      .sort((a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0));
-  }, [photos]);
+    if (!photos && pendingAssets.length === 0) return [];
+    return [...pendingAssets, ...(photos ?? []).map(photoToMediaAsset)].sort(
+      (a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0),
+    );
+  }, [photos, pendingAssets]);
 
   const members = useMemo(() => album?.members ?? [], [album?.members]);
 

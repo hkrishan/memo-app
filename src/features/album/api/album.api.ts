@@ -62,6 +62,10 @@ const albumApi = {
   leaveAlbum: async (albumId: string) =>
     httpClient.post<void>(endpoints.album.leave(albumId)),
 
+  /** Mark the album seen (clears its "NEW +n" badge). Responds 204. */
+  markAlbumViewed: async (albumId: string) =>
+    httpClient.post<void>(endpoints.album.markViewed(albumId)),
+
   joinAlbum: async (inviteCode: string) =>
     httpClient.post<Album>(endpoints.album.join, { code: inviteCode }),
 

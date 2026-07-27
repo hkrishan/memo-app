@@ -76,6 +76,8 @@ import Animated, {
 } from "react-native-reanimated";
 import dayjs from "dayjs";
 import { MediaAsset } from "@/features/album/hooks";
+import UploadingBadge from "@/components/ui/UploadingBadge";
+import { stableCacheKey } from "@/lib/imageCache";
 import { GridScrubber, type MonthRange } from "./GridScrubber";
 import { Frame } from "./types";
 
@@ -568,7 +570,7 @@ const GridCell = memo<GridCellProps>(
               </View>
             ) : (
               <Image
-                source={{ uri: thumbUri }}
+                source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
                 style={styles.cellImage}
                 contentFit="cover"
                 recyclingKey={asset.id}
@@ -599,6 +601,10 @@ const GridCell = memo<GridCellProps>(
                 <Ionicons name="heart" size={9} color="#fff" />
                 <Text style={styles.likeBadgeText}>{asset.likeCount}</Text>
               </View>
+            )}
+            {/* Local-first tile whose upload is still in flight */}
+            {(asset.pending || asset.uploadFailed) && (
+              <UploadingBadge failed={asset.uploadFailed} />
             )}
             {dimmed && <View style={styles.dimmedOverlay} />}
           </Animated.View>

@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { stableCacheKey } from "@/lib/imageCache";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -108,7 +109,7 @@ export const CarouselImageViewer: React.FC<CarouselImageViewerProps> = ({
             {safeUrls.map((uri, idx) => (
               <View key={`${uri}-${idx}`} style={styles.page}>
                 <Image
-                  source={{ uri }}
+                  source={{ uri, cacheKey: stableCacheKey(uri) }}
                   style={styles.image}
                   contentFit="contain"
                   cachePolicy="memory-disk"

@@ -20,6 +20,7 @@ import {
   InteractionManager,
 } from "react-native";
 import { Image } from "expo-image";
+import { stableCacheKey } from "@/lib/imageCache";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -292,7 +293,7 @@ const MediaPage = React.memo<MediaPageProps>(
           <Animated.View style={[StyleSheet.absoluteFill, zoomStyle]}>
             {isNearby && (
               <Image
-                source={{ uri: imageUri }}
+                source={{ uri: imageUri, cacheKey: stableCacheKey(imageUri) }}
                 style={styles.mediaFill}
                 contentFit="contain"
                 transition={0}
@@ -558,7 +559,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
       {initialAsset && (
         <Animated.View style={frameStyle} pointerEvents="none">
           <Image
-            source={{ uri: initialAsset.uri }}
+            source={{ uri: initialAsset.uri, cacheKey: stableCacheKey(initialAsset.uri) }}
             style={styles.mediaFill}
             contentFit="contain"
             transition={0}

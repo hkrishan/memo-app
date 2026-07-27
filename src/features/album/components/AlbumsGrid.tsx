@@ -9,9 +9,21 @@ import { View, StyleSheet, Pressable, Dimensions } from "react-native";
 import { Text, ActivityIndicator } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import Animated, {
+  ZoomIn,
+  FadeIn,
+  LinearTransition,
+} from "react-native-reanimated";
 import { useLiveDropAlbumIds } from "@/features/moments/hooks/useLiveDropAlbumIds";
 import { Album } from "../types/album.types";
 import { AlbumCover } from "./AlbumCover";
+
+/** Cards glide to new positions when the sort order changes. */
+const CARD_LAYOUT = LinearTransition.springify().damping(18).stiffness(160);
+
+/** "NEW +5", capped at 99+ so the pill stays compact over any cover. */
+const newBadgeLabel = (count: number): string =>
+  `NEW +${count > 99 ? "99+" : count}`;
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_GAP = 12;
@@ -46,6 +58,8 @@ export const AlbumCard: React.FC<AlbumCardProps> = memo(
       onPress?.(album);
     }, [onPress, album]);
 
+    const newCount = album.newPhotoCount ?? 0;
+
     return (
       <Pressable
         style={({ pressed }) => [
@@ -55,9 +69,23 @@ export const AlbumCard: React.FC<AlbumCardProps> = memo(
         ]}
         onPress={onPress ? handlePress : undefined}
         accessibilityRole={onPress ? "button" : undefined}
-        accessibilityLabel={album.title}
+        accessibilityLabel={
+          newCount > 0
+            ? `${album.title}, ${newCount} new photos`
+            : album.title
+        }
       >
         <AlbumCover album={album} size={size} borderRadius={24} />
+        {newCount > 0 && (
+          <Animated.View
+            key={newCount}
+            entering={ZoomIn.springify().damping(12).stiffness(200)}
+            style={styles.newBadge}
+            pointerEvents="none"
+          >
+            <Text style={styles.newBadgeLabel}>{newBadgeLabel(newCount)}</Text>
+          </Animated.View>
+        )}
         {hasLiveDrop && (
           <View style={styles.liveBadge} pointerEvents="none">
             <Ionicons name="flash" size={11} color="#fff" />
@@ -133,12 +161,18 @@ export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
   return (
     <View style={styles.grid}>
       {albums.map((album) => (
-        <AlbumCard
+        <Animated.View
           key={album.albumId}
-          album={album}
-          onPress={handleAlbumPress}
-          hasLiveDrop={liveDropAlbumIds.has(album.albumId)}
-        />
+          layout={CARD_LAYOUT}
+          entering={FadeIn.duration(220)}
+          style={styles.cardSlot}
+        >
+          <AlbumCard
+            album={album}
+            onPress={handleAlbumPress}
+            hasLiveDrop={liveDropAlbumIds.has(album.albumId)}
+          />
+        </Animated.View>
       ))}
     </View>
   );
@@ -152,12 +186,35 @@ const styles = StyleSheet.create({
     columnGap: GRID_GAP,
     rowGap: GRID_ROW_GAP,
   },
+  cardSlot: {
+    width: ALBUM_CARD_SIZE,
+  },
   albumCard: {
     width: ALBUM_CARD_SIZE,
   },
   albumCardPressed: {
     opacity: 0.85,
     transform: [{ scale: 0.97 }],
+  },
+  newBadge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "#FF3B30",
+    borderRadius: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  newBadgeLabel: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.4,
   },
   liveBadge: {
     position: "absolute",

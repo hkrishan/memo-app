@@ -1,13 +1,14 @@
 /**
  * AllPhotosScreen
- * Camera-roll page: performant 3-column grid of the device library with a
- * fullscreen iPhone-Photos-style viewer.
+ * The full "My Photos" library: a paginated 3-column grid of the user's
+ * server-side Memo library with the shared fullscreen viewer. Each photo
+ * offers Delete (removes it from the library) and Add to album (copies it
+ * into an album). Infinite scroll + pull to refresh.
  */
 
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -17,27 +18,38 @@ import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMediaLibrary } from "@/features/album/hooks";
+
 import { PhotoBrowser } from "../components";
+import { useMergedLibrary } from "../api/library.queries";
+import { libraryPhotoToAsset } from "../utils/libraryAsset";
+import { useLibraryPhotoViewerExtras } from "../hooks/useLibraryPhotoViewerExtras";
 
 const AllPhotosScreen = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
   const {
-    assets,
-    hasPermission,
+    photos,
     isLoading,
-    hasMore,
-    totalCount,
-    requestPermission,
-    loadMore,
-    refresh,
-  } = useMediaLibrary({ first: 100 });
+    isRefetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    refetch,
+  } = useMergedLibrary();
 
   const [refreshing, setRefreshing] = useState(false);
-  // Set when an in-app permission request comes back denied — the OS won't
-  // prompt again, so the only way forward is the system settings screen
-  const [permissionDenied, setPermissionDenied] = useState(false);
+
+  // Local-first: mid-upload captures render from their on-device files at
+  // the front of the grid; they swap to the server copy when the upload
+  // settles (the queue refetches the library before dropping the entry)
+  const assets = useMemo(
+    () => photos.map(libraryPhotoToAsset),
+    [photos],
+  );
+
+  const { renderSocialOverlay, poppingIds } =
+    useLibraryPhotoViewerExtras(assets);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -46,24 +58,18 @@ const AllPhotosScreen = () => {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refresh();
+      await refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [refresh]);
+  }, [refetch]);
 
-  const handleRequestPermission = useCallback(async () => {
-    const granted = await requestPermission();
-    if (!granted) {
-      setPermissionDenied(true);
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
     }
-  }, [requestPermission]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const handleOpenSettings = useCallback(() => {
-    Linking.openSettings();
-  }, []);
-
-  // Sticky header: fixed above the grid, not part of the scroll content
   const Header = useMemo(
     () => (
       <View style={[styles.header, { paddingTop: insets.top }]}>
@@ -77,79 +83,12 @@ const AllPhotosScreen = () => {
           >
             <Ionicons name="chevron-back" size={28} color="#000" />
           </Pressable>
-          <Text style={styles.title}>All Photos</Text>
-          {totalCount != null && (
-            <Text style={styles.countText}>
-              {totalCount.toLocaleString()}{" "}
-              {totalCount === 1 ? "item" : "items"}
-            </Text>
-          )}
+          <Text style={styles.title}>My Photos</Text>
         </View>
       </View>
     ),
-    [handleBack, totalCount, insets.top],
+    [handleBack, insets.top],
   );
-
-  // Permission still resolving
-  if (hasPermission === null) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.centered}>
-          <ActivityIndicator size="small" color="#999" />
-        </View>
-      </View>
-    );
-  }
-
-  // Permission denied
-  if (hasPermission === false) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={handleBack}
-            style={styles.backButton}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Ionicons name="chevron-back" size={28} color="#000" />
-          </Pressable>
-          <Text style={styles.title}>All Photos</Text>
-        </View>
-        <View style={styles.centered}>
-          <Ionicons name="images-outline" size={48} color="#999" />
-          <Text style={styles.emptyTitle}>Allow photo access</Text>
-          <Text style={styles.emptyText}>
-            Memo needs access to your photo library to show your camera roll.
-          </Text>
-          {permissionDenied ? (
-            <Pressable
-              onPress={handleOpenSettings}
-              style={({ pressed }) => [
-                styles.allowButton,
-                pressed && styles.allowButtonPressed,
-              ]}
-            >
-              <Text style={styles.allowButtonText}>Open Settings</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleRequestPermission}
-              style={({ pressed }) => [
-                styles.allowButton,
-                pressed && styles.allowButtonPressed,
-              ]}
-            >
-              <Text style={styles.allowButtonText}>Allow Access</Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -164,7 +103,7 @@ const AllPhotosScreen = () => {
               <Ionicons name="images-outline" size={48} color="#ccc" />
               <Text style={styles.emptyTitle}>No photos yet</Text>
               <Text style={styles.emptyText}>
-                Photos and videos you take will show up here.
+                Photos you capture in Memo will show up here.
               </Text>
             </>
           )}
@@ -173,12 +112,14 @@ const AllPhotosScreen = () => {
         <PhotoBrowser
           assets={assets}
           sectioned
-          onEndReached={loadMore}
-          refreshing={refreshing}
+          onEndReached={handleEndReached}
+          refreshing={refreshing || isRefetching}
           onRefresh={handleRefresh}
-          isLoadingMore={isLoading && assets.length > 0}
-          hasMore={hasMore}
-          totalCount={totalCount}
+          isLoadingMore={isFetchingNextPage}
+          hasMore={hasNextPage}
+          totalCount={hasNextPage ? null : assets.length}
+          renderSocialOverlay={renderSocialOverlay}
+          poppingIds={poppingIds}
         />
       )}
     </View>
@@ -217,11 +158,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#000",
   },
-  countText: {
-    fontSize: 13,
-    color: "#999",
-    marginRight: 12,
-  },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -241,20 +177,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 6,
     lineHeight: 20,
-  },
-  allowButton: {
-    backgroundColor: "#000",
-    borderRadius: 24,
-    paddingHorizontal: 28,
-    paddingVertical: 13,
-    marginTop: 20,
-  },
-  allowButtonPressed: {
-    opacity: 0.7,
-  },
-  allowButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
   },
 });

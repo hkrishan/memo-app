@@ -278,9 +278,12 @@ function settleBatch(): void {
   // invalidation is what brings the new photos into the grid)
   for (const id of albumIdsToInvalidate) {
     queryClient.invalidateQueries({ queryKey: photoKeys.byAlbum(id) });
-    queryClient.invalidateQueries({ queryKey: ["albums", id] });
   }
   albumIdsToInvalidate.clear();
+  // Also refresh the albums LIST (["albums"]) + every album detail
+  // (["albums", id]) by prefix — the My Albums tab derives each card's
+  // cover from the list's recentPhotos, which a per-id invalidation misses.
+  queryClient.invalidateQueries({ queryKey: ["albums"] });
 
   const batch = useUploadManagerStore.getState().batch;
   if (!batch) return;

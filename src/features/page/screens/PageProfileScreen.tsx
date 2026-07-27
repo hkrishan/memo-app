@@ -25,6 +25,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassCircleButton } from "@/components/ui/GlassCircleButton";
 import { ApiError } from "@/lib/api";
+import { stableCacheKey } from "@/lib/imageCache";
 import {
   useFollowPageMutation,
   useUnfollowPageMutation,
@@ -188,11 +189,12 @@ const PageProfileContent = ({
         {coverUri != null && (
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
             <ExpoImage
-              source={{ uri: coverUri }}
+              source={{ uri: coverUri, cacheKey: stableCacheKey(coverUri) }}
               style={styles.headerBackdropImage}
               contentFit="cover"
               blurRadius={45}
               transition={200}
+              cachePolicy="memory-disk"
             />
             <View style={styles.headerBackdropFrost} />
           </View>
@@ -318,10 +320,11 @@ const PageCoverPhoto = ({ page }: { page: Page }) => {
     <View style={styles.coverPhotoFrame}>
       {thumbUri ? (
         <ExpoImage
-          source={{ uri: thumbUri }}
+          source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
           style={styles.coverPhotoImage}
           contentFit="cover"
           transition={150}
+          cachePolicy="memory-disk"
         />
       ) : (
         <View style={styles.coverPhotoFallback}>

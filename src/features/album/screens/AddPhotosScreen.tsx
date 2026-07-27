@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
+  InteractionManager,
   Pressable,
   FlatList,
   StatusBar,
@@ -68,11 +69,10 @@ const AddPhotosScreen: React.FC = () => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
-        // Compress before upload — full-res phone photos are several MB each
-        quality: 0.8,
-        // 0 = no selection cap — uploads run through the background manager
+        // No client re-encode (quality) — it transcodes every image before
+        // the picker resolves, freezing "Done" for seconds on big batches.
+        // Originals are handed off; the server downsizes for thumbnails.
         selectionLimit: 0,
-        // The re-encode strips file metadata — GPS must come from here
         exif: true,
       });
 
@@ -99,18 +99,27 @@ const AddPhotosScreen: React.FC = () => {
     [addPendingAssets, setPendingAssets],
   );
 
-  // autoPick entry: launch the system picker as soon as we're on screen
+  // autoPick entry: launch the system picker once we're on screen. This
+  // runs AFTER the modal's present transition settles — launching the
+  // system picker mid-transition makes iOS silently drop it and leaves its
+  // promise hanging (the screen then sits on "Preparing photos" forever).
   const autoPickStartedRef = useRef(false);
   useEffect(() => {
     if (autoPick !== "1" || autoPickStartedRef.current) return;
     autoPickStartedRef.current = true;
-    void (async () => {
-      try {
-        await openImagePicker(true);
-      } finally {
-        setIsPicking(false);
-      }
-    })();
+    const handle = InteractionManager.runAfterInteractions(() => {
+      void (async () => {
+        try {
+          await openImagePicker(true);
+        } catch {
+          // Picker failed to launch — fall through to the empty state,
+          // which navigates back rather than hanging
+        } finally {
+          setIsPicking(false);
+        }
+      })();
+    });
+    return () => handle.cancel();
   }, [autoPick, openImagePicker]);
 
   // Go back when there's nothing to show: picker canceled/denied, or no

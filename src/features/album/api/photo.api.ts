@@ -38,8 +38,13 @@ const photoApi = {
     return httpClient.upload<Photo>(endpoints.album.uploadPhoto(albumId), formData);
   },
 
-  deletePhoto: async (albumId: string, photoId: string) =>
-    httpClient.delete<void>(endpoints.album.deletePhoto(albumId, photoId)),
+  /** alsoLibrary → "delete everywhere": the server also removes the
+   *  uploader's linked Memo-library copy (uploader only). */
+  deletePhoto: async (albumId: string, photoId: string, alsoLibrary = false) =>
+    httpClient.delete<void>(
+      endpoints.album.deletePhoto(albumId, photoId) +
+        (alsoLibrary ? "?alsoLibrary=true" : ""),
+    ),
 
   likePhoto: async (albumId: string, photoId: string) =>
     httpClient.post<{ likeCount: number; likedByMe: boolean }>(

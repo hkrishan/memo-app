@@ -26,6 +26,7 @@ import Animated, {
 import { useGetPageQuery } from "@/features/page/api/page.queries";
 import { Page } from "@/features/page/types/page.types";
 import PostGrid from "@/features/page/components/PostGrid";
+import { stableCacheKey } from "@/lib/imageCache";
 
 /** Cover frame geometry — the preview scales this exact shape up. */
 const COVER_SIZE = 72;
@@ -96,11 +97,12 @@ const PageContent = ({
             {/* The page's own cover, blown up and heavily blurred, as the
                 header's hero backdrop; a light frost keeps text legible */}
             <ExpoImage
-              source={{ uri: coverUri }}
+              source={{ uri: coverUri, cacheKey: stableCacheKey(coverUri) }}
               style={styles.headerBackdropImage}
               contentFit="cover"
               blurRadius={45}
               transition={200}
+              cachePolicy="memory-disk"
             />
             <View style={styles.headerBackdropFrost} />
           </View>
@@ -241,10 +243,11 @@ const PageCoverPhoto = ({ page }: { page: Page }) => {
       >
         {thumbUri ? (
           <ExpoImage
-            source={{ uri: thumbUri }}
+            source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
             style={styles.coverPhotoImage}
             contentFit="cover"
             transition={150}
+            cachePolicy="memory-disk"
           />
         ) : (
           <View style={styles.coverPhotoFallback}>
@@ -342,11 +345,12 @@ const CoverPreviewModal = ({
       <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss}>
         <Animated.View style={[styles.previewCard, cardStyle]}>
           <ExpoImage
-            source={{ uri }}
+            source={{ uri, cacheKey: stableCacheKey(uri) }}
             placeholder={thumbUri ? { uri: thumbUri } : undefined}
             style={styles.coverPhotoImage}
             contentFit="cover"
             transition={0}
+            cachePolicy="memory-disk"
           />
         </Animated.View>
       </Pressable>

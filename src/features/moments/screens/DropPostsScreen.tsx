@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import Avatar from "@/components/ui/Avatar";
+import { stableCacheKey } from "@/lib/imageCache";
 import { useGetAlbumQuery } from "@/features/album/api/album.queries";
 import { memberColor } from "@/features/album/memberColor";
 import useUser from "@/features/user/hooks/useUser";
@@ -125,10 +126,11 @@ const PostCard: React.FC<{
             </View>
           ) : (
             <Image
-              source={{ uri: mainUri }}
+              source={{ uri: mainUri, cacheKey: stableCacheKey(mainUri) }}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               transition={150}
+              cachePolicy="memory-disk"
               accessibilityLabel={`${submission.user.name}'s photo`}
             />
           )}
@@ -155,10 +157,11 @@ const PostCard: React.FC<{
                 </View>
               ) : (
                 <Image
-                  source={{ uri: pipUri }}
+                  source={{ uri: pipUri, cacheKey: stableCacheKey(pipUri) }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   transition={150}
+                  cachePolicy="memory-disk"
                 />
               )}
             </Pressable>

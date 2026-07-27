@@ -22,6 +22,10 @@ export type Album = {
   recentPhotos?: AlbumPhoto[];
   albumCode: string;
   coverPhoto?: AlbumPhoto | null;
+  /** Photos added by OTHER members since you last opened the album. */
+  newPhotoCount?: number;
+  /** Newest photo's ISO timestamp (for "latest added" sort); null when empty. */
+  lastActivityAt?: string | null;
 };
 
 export type Photo = {

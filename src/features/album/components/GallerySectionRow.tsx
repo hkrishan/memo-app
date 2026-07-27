@@ -41,6 +41,8 @@ import { MediaAsset } from "../hooks";
 import type { SocialOverlayInfo } from "../hooks/useAlbumPhotoViewerExtras";
 import { PhotoViewer } from "@/features/photos/components";
 import type { Frame } from "@/features/photos/components";
+import UploadingBadge from "@/components/ui/UploadingBadge";
+import { stableCacheKey } from "@/lib/imageCache";
 
 export const TILE_SIZE = 108;
 const TILE_RADIUS = 12;
@@ -128,7 +130,7 @@ const SectionTile = memo<SectionTileProps>(
               </View>
             ) : (
               <Image
-                source={{ uri: thumbUri }}
+                source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
                 style={styles.tileImage}
                 contentFit="cover"
                 recyclingKey={asset.id}
@@ -151,6 +153,10 @@ const SectionTile = memo<SectionTileProps>(
                 <Ionicons name="heart" size={9} color="#fff" />
                 <Text style={styles.likeBadgeText}>{asset.likeCount}</Text>
               </View>
+            )}
+            {/* Still uploading to the album (local-first tile) */}
+            {(asset.pending || asset.uploadFailed) && (
+              <UploadingBadge failed={asset.uploadFailed} />
             )}
             {badge}
             {dimmed && <View style={styles.tileDimmed} pointerEvents="none" />}

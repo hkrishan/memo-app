@@ -1,33 +1,40 @@
 /**
- * Capture-destination store
- * Sticky preference for where the MAIN camera tab auto-saves each capture:
- * the device gallery (default) or a specific album. Persisted to
- * AsyncStorage, matching the codebase's persisted-store style (see
- * photoAlbumStore). If the stored album is later deleted, the read site
- * falls back to gallery — the store itself does not know the album list.
+ * Capture-extras store
+ * Every main-tab capture ALWAYS uploads to the Memo library (the base action,
+ * not configurable). These are the sticky OPTIONAL extras applied on top:
+ * also save to the device camera roll, and/or also copy into one album.
+ * Persisted to AsyncStorage (see photoAlbumStore for the pattern). If the
+ * stored album is later deleted, the read site falls back to no-album — the
+ * store itself does not know the album list.
  */
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export type CaptureDestination =
-  | { type: "gallery" }
-  | { type: "album"; albumId: string };
-
-interface CaptureDestinationState {
-  destination: CaptureDestination;
-  setDestination: (destination: CaptureDestination) => void;
+export interface CaptureExtras {
+  /** Also write each capture to the device camera roll. */
+  alsoDeviceGallery: boolean;
+  /** Also copy each capture into this album (null = none). */
+  alsoAlbumId: string | null;
 }
 
-export const useCaptureDestinationStore = create<CaptureDestinationState>()(
+interface CaptureExtrasState extends CaptureExtras {
+  setAlsoDeviceGallery: (value: boolean) => void;
+  /** Toggle the single sticky album (pass null to clear). */
+  setAlsoAlbumId: (albumId: string | null) => void;
+}
+
+export const useCaptureExtrasStore = create<CaptureExtrasState>()(
   persist(
     (set) => ({
-      destination: { type: "gallery" },
-      setDestination: (destination) => set({ destination }),
+      alsoDeviceGallery: false,
+      alsoAlbumId: null,
+      setAlsoDeviceGallery: (alsoDeviceGallery) => set({ alsoDeviceGallery }),
+      setAlsoAlbumId: (alsoAlbumId) => set({ alsoAlbumId }),
     }),
     {
-      name: "capture-destination",
+      name: "capture-extras",
       storage: createJSONStorage(() => AsyncStorage),
     },
   ),

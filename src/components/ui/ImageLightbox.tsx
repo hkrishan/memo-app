@@ -12,6 +12,7 @@ import PagerView from "react-native-pager-view";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
+import { stableCacheKey } from "@/lib/imageCache";
 
 type LightboxItem = {
   uri: string;
@@ -71,10 +72,11 @@ export const ImageLightbox: React.FC<ImageLightboxProps> = ({
                 />
               ) : (
                 <Image
-                  source={{ uri: item.uri }}
+                  source={{ uri: item.uri, cacheKey: stableCacheKey(item.uri) }}
                   style={styles.image}
                   contentFit="contain"
                   transition={100}
+                  cachePolicy="memory-disk"
                 />
               )}
             </View>

@@ -20,6 +20,7 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { ChatMessage, ChatUser, MessageAction } from "../types/chat.types";
 import { memberColor } from "@/features/album/memberColor";
+import { stableCacheKey } from "@/lib/imageCache";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -123,7 +124,7 @@ const MessageBubble = memo<MessageBubbleProps>(
           <View style={styles.avatarContainer}>
             {showAvatar && sender?.avatarUrl ? (
               <Image
-                source={{ uri: sender.avatarUrl }}
+                source={{ uri: sender.avatarUrl, cacheKey: stableCacheKey(sender.avatarUrl) }}
                 style={[
                   styles.avatar,
                   { borderWidth: 2, borderColor: memberColor(sender) },

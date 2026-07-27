@@ -1,6 +1,8 @@
 export { default as GalleryCarousel } from "./GaleryCarousel";
 export { AlbumCover } from "./AlbumCover";
-export { AlbumsGrid } from "./AlbumsGrid";
+export { AlbumsGrid, AlbumCard } from "./AlbumsGrid";
+export { AlbumSortControl } from "./AlbumSortControl";
+export { AlbumsSearchOverlay } from "./AlbumsSearchOverlay";
 export { AlbumHeader } from "./AlbumHeader";
 export { CoverPhotoPicker } from "./CoverPhotoPicker";
 export { AlbumNavBar } from "./AlbumNavBar";

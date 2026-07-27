@@ -329,7 +329,7 @@ export const AlbumPhotoSocialOverlay = forwardRef<
     [],
   );
 
-  const handleDeleteConfirm = useCallback(() => {
+  const handleDeleteConfirm = useCallback((alsoLibrary: boolean) => {
     const target = photo;
     if (!target || deletePhoto.isPending) return;
     setDeleteConfirmOpen(false);
@@ -339,7 +339,7 @@ export const AlbumPhotoSocialOverlay = forwardRef<
     onDeleteStarted?.(target.photoId);
     requestClose?.();
     deletePhoto.mutate(
-      { albumId, photoId: target.photoId },
+      { albumId, photoId: target.photoId, alsoLibrary },
       {
         onSuccess: () => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -456,6 +456,7 @@ export const AlbumPhotoSocialOverlay = forwardRef<
         visible={deleteConfirmOpen}
         onClose={closeDeleteConfirm}
         onConfirm={handleDeleteConfirm}
+        isUploader={photo?.uploader?.userId === currentUserId}
         busy={deletePhoto.isPending}
       />
       <ReportContentSheet

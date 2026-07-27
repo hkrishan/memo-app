@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Video, ResizeMode } from "expo-av";
+import { stableCacheKey } from "@/lib/imageCache";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -85,10 +86,11 @@ const MediaItem = memo<{
   return (
     <View style={styles.mediaContainer}>
       <Image
-        source={{ uri: media.url }}
+        source={{ uri: media.url, cacheKey: stableCacheKey(media.url) }}
         style={styles.media}
         contentFit="cover"
         transition={200}
+        cachePolicy="memory-disk"
       />
     </View>
   );

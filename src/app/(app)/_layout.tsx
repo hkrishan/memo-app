@@ -5,6 +5,7 @@ import {
   useAuthStore,
 } from "@/features/auth/store/authStore";
 import { useDropTakeover } from "@/features/moments/hooks/useDropTakeover";
+import { useResumeLibraryUploads } from "@/features/photos/store/libraryUploadQueue";
 
 export default function AppLayout() {
   const isAuthenticated = useAuthStore(selectIsAuthenticated);
@@ -16,6 +17,10 @@ export default function AppLayout() {
   // (also keeps the iOS Live Activity countdown in sync, app-wide).
   // Internally a no-op while unauthenticated.
   useDropTakeover();
+
+  // Resume any captures still waiting to upload to the Memo library
+  // (persisted queue survives restarts; retries on foreground/network)
+  useResumeLibraryUploads();
 
   // Wait for the persisted auth state to rehydrate before deciding
   if (!isInitialized) {

@@ -28,6 +28,7 @@ import { useGetPhotosQuery } from "../api/photo.queries";
 import { useGetAlbumActivitiesQuery } from "../api/album.queries";
 import { useGetMomentsQuery } from "@/features/moments/api/moments.queries";
 import { useAlbumPhotoViewerExtras } from "../hooks/useAlbumPhotoViewerExtras";
+import { useAlbumPendingAssets } from "../hooks/useAlbumPendingAssets";
 import { photoToMediaAsset } from "../utils/mediaAsset";
 import { PhotoWithUploader } from "../types/album.types";
 import { PhotoBrowser } from "@/features/photos/components";
@@ -115,9 +116,18 @@ const FullGalleryScreen = () => {
     }
   }, [photos, filter, memberId, momentId, tag, activityId, moments, activities]);
 
+  // In-flight captures belong to the unfiltered gallery only: every other
+  // filter keys off server-side data (uploader, moment, tag, likes) that a
+  // photo doesn't have until it lands.
+  const pendingAssets = useAlbumPendingAssets(albumId, photos);
+  const showsPending = filter == null || filter === "all";
+
   const assets = useMemo(
-    () => filteredPhotos.map(photoToMediaAsset),
-    [filteredPhotos],
+    () => [
+      ...(showsPending ? pendingAssets : []),
+      ...filteredPhotos.map(photoToMediaAsset),
+    ],
+    [filteredPhotos, pendingAssets, showsPending],
   );
 
   const { renderSocialOverlay, onDoubleTapAsset, poppingIds } =

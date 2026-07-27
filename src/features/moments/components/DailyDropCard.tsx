@@ -11,6 +11,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 
+import { stableCacheKey } from "@/lib/imageCache";
 import {
   DailyDropConfig,
   LATE_WINDOW_MS,
@@ -100,18 +101,23 @@ const SubmittersRow: React.FC<{ submissions: MomentSubmission[] }> = ({
               style={[styles.thumbWrap, index > 0 && styles.thumbOverlap]}
             >
               <Image
-                source={{ uri: thumbUri }}
+                source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
                 style={styles.thumb}
                 contentFit="cover"
                 transition={120}
+                cachePolicy="memory-disk"
                 accessibilityLabel={`${submission.user.name}'s photo`}
               />
               {front && (
                 <Image
-                  source={{ uri: front.thumbnailUrl ?? front.url }}
+                  source={{
+                    uri: front.thumbnailUrl ?? front.url,
+                    cacheKey: stableCacheKey(front.thumbnailUrl ?? front.url),
+                  }}
                   style={styles.thumbPip}
                   contentFit="cover"
                   transition={120}
+                  cachePolicy="memory-disk"
                 />
               )}
             </View>

@@ -41,6 +41,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { useResolvedAssetUri } from "@/features/album/hooks";
+import { stableCacheKey } from "@/lib/imageCache";
 
 const THUMB_SIZE = 46;
 const PAGE_SIZE = 60;
@@ -146,7 +147,7 @@ const RollVideoSlide: React.FC<RollVideoSlideProps> = ({ item, isActive }) => {
           until the player's first frame paints, so no black flash */}
       {(!showPlayer || !firstFrameRendered) && (
         <Image
-          source={{ uri: item.uri }}
+          source={{ uri: item.uri, cacheKey: stableCacheKey(item.uri) }}
           style={[StyleSheet.absoluteFill, styles.slideImage]}
           contentFit="contain"
           recyclingKey={`${item.id}-poster`}
@@ -189,14 +190,29 @@ export interface LastCapture {
 interface LastCaptureThumbnailProps {
   /** Latest library/session capture; null renders nothing. */
   capture: LastCapture | null;
+  /**
+   * Overrides the tap behavior. When set, tapping the thumbnail calls this
+   * instead of opening the built-in device-library viewer (the main-tab
+   * camera opens the Memo-library viewer this way). Receives the
+   * thumbnail's window frame so the caller's viewer can zoom-fly from it.
+   */
+  onPress?: (originFrame: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null) => void;
 }
 
 export const LastCaptureThumbnail: React.FC<LastCaptureThumbnailProps> = ({
   capture,
+  onPress,
 }) => {
   const insets = useSafeAreaInsets();
   const [viewerOpen, setViewerOpen] = useState(false);
   const pop = useSharedValue(0);
+  // Window frame source for the caller-owned viewer's zoom flight
+  const thumbRef = useRef<View>(null);
 
   const uri = capture?.uri ?? null;
   const isVideoThumb = capture?.mediaType === "video";
@@ -248,6 +264,21 @@ export const LastCaptureThumbnail: React.FC<LastCaptureThumbnailProps> = ({
 
   const openViewer = useCallback(async () => {
     Haptics.selectionAsync();
+    if (onPress) {
+      // Caller owns the viewer (main-tab camera → Memo library viewer).
+      // Hand over the thumb's window frame for the zoom flight.
+      const node = thumbRef.current;
+      if (node) {
+        node.measureInWindow((x, y, width, height) => {
+          onPress(
+            width > 0 && height > 0 ? { x, y, width, height } : null,
+          );
+        });
+      } else {
+        onPress(null);
+      }
+      return;
+    }
     setActiveIndex(0);
     setViewerOpen(true);
 
@@ -271,7 +302,7 @@ export const LastCaptureThumbnail: React.FC<LastCaptureThumbnailProps> = ({
     } finally {
       isLoadingPageRef.current = false;
     }
-  }, [fetchRollPage]);
+  }, [fetchRollPage, onPress]);
 
   const loadMoreItems = useCallback(async () => {
     if (isLoadingPageRef.current || !hasNextPageRef.current) return;
@@ -311,7 +342,7 @@ export const LastCaptureThumbnail: React.FC<LastCaptureThumbnailProps> = ({
       return (
         <Pressable style={styles.slide} onPress={closeViewer}>
           <Image
-            source={{ uri: item.uri }}
+            source={{ uri: item.uri, cacheKey: stableCacheKey(item.uri) }}
             style={styles.slideImage}
             contentFit="contain"
             recyclingKey={item.id}
@@ -344,6 +375,7 @@ export const LastCaptureThumbnail: React.FC<LastCaptureThumbnailProps> = ({
     <>
       <Animated.View style={popStyle}>
         <Pressable
+          ref={thumbRef}
           onPress={openViewer}
           style={({ pressed }) => [styles.thumb, pressed && styles.pressed]}
           accessibilityRole="imagebutton"
@@ -368,7 +400,7 @@ export const LastCaptureThumbnail: React.FC<LastCaptureThumbnailProps> = ({
             </>
           ) : (
             <Image
-              source={{ uri }}
+              source={{ uri, cacheKey: stableCacheKey(uri) }}
               style={styles.thumbImage}
               contentFit="cover"
               transition={120}

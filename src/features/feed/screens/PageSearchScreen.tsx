@@ -21,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 import SafeAreaView from "@/components/layout/SafeAreaView";
+import { stableCacheKey } from "@/lib/imageCache";
 import {
   useFollowPageMutation,
   usePageSearchQuery,
@@ -229,7 +230,11 @@ const PageRow = React.memo<{
   return (
     <Pressable style={styles.row} onPress={() => onOpen(item)}>
       {item.coverUrl ? (
-        <Image source={{ uri: item.coverUrl }} style={styles.cover} />
+        <Image
+          source={{ uri: item.coverUrl, cacheKey: stableCacheKey(item.coverUrl) }}
+          style={styles.cover}
+          cachePolicy="memory-disk"
+        />
       ) : (
         <View style={[styles.cover, styles.coverFallback]}>
           <Ionicons name="albums" size={20} color="#77777c" />

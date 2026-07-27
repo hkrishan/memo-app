@@ -20,6 +20,13 @@ export interface MediaAsset {
   modificationTime: number;
   /** Album photos: like count for the grid badges. Device assets omit it. */
   likeCount?: number;
+  /**
+   * Local-only capture whose upload is still in flight — the tile renders
+   * from `uri` (a local file) and shows the uploading badge.
+   */
+  pending?: boolean;
+  /** A pending capture whose upload failed and is awaiting auto-retry. */
+  uploadFailed?: boolean;
 }
 
 interface UseMediaLibraryOptions {

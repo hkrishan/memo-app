@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect } from "react";
-import { View, StyleSheet, Pressable, Linking, ScrollView } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import { View, StyleSheet, Pressable, ScrollView } from "react-native";
 import { Button, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,27 +13,42 @@ import {
   useSwipeableTabs,
   TOP_BAR_HEIGHT,
 } from "../../../contexts/SwipeableTabsContext";
-import { useMediaLibrary } from "../hooks";
-import { GalleryCarousel, AlbumsGrid } from "../components";
-import { useGalleryStore } from "../store/galleryStore";
+import {
+  GalleryCarousel,
+  AlbumsGrid,
+  AlbumSortControl,
+  AlbumsSearchOverlay,
+} from "../components";
 import { useGetAlbumsQuery } from "../api/album.queries";
+import { sortAlbums, useAlbumSortStore } from "../store/albumSortStore";
+import { Album } from "../types/album.types";
+import { useMergedLibrary } from "@/features/photos/api/library.queries";
+import { libraryPhotoToAsset } from "@/features/photos/utils/libraryAsset";
 import { theme } from "@/lib/theme";
 
 export default function AlbumTabScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { scrollPosition, pageIndex } = useSwipeableTabs();
-  const { assets, hasPermission, requestPermission, refresh } =
-    useMediaLibrary();
-  const refreshKey = useGalleryStore((state) => state.refreshKey);
+  // "My Photos" reads the server-side Memo library — local-first: captures
+  // still uploading render from their on-device files at the front, so a
+  // shot appears here the instant the shutter fires.
+  const { photos: libraryPhotos } = useMergedLibrary();
+  const libraryAssets = useMemo(
+    () => libraryPhotos.slice(0, 30).map(libraryPhotoToAsset),
+    [libraryPhotos],
+  );
   const { data: albums, isLoading: albumsLoading } = useGetAlbumsQuery();
 
-  // Refresh gallery when triggered (e.g., after saving from camera)
-  useEffect(() => {
-    if (refreshKey > 0) {
-      refresh();
-    }
-  }, [refreshKey, refresh]);
+  // Client-side ordering (persisted choice). New array; the grid glides cards
+  // to their new positions via reanimated layout animations.
+  const sort = useAlbumSortStore((s) => s.sort);
+  const sortedAlbums = useMemo(
+    () => (albums ? sortAlbums(albums, sort) : albums),
+    [albums, sort],
+  );
+
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const handleViewAll = useCallback(() => {
     router.push("/photos");
@@ -46,6 +61,17 @@ export default function AlbumTabScreen() {
   const handleAddNewAlbum = useCallback(() => {
     router.push("/album/create");
   }, [router]);
+
+  const openAlbum = useCallback(
+    (album: Album) => {
+      setSearchOpen(false);
+      router.push({
+        pathname: `/album/${album.albumId}`,
+        params: { title: album.title },
+      });
+    },
+    [router],
+  );
 
   const contentFadeStyle = useAnimatedStyle(() => {
     const distance = Math.abs(scrollPosition.value - pageIndex);
@@ -63,49 +89,6 @@ export default function AlbumTabScreen() {
     };
   });
 
-  const handleRequestPermission = useCallback(async () => {
-    const granted = await requestPermission();
-    if (!granted) {
-      Linking.openSettings();
-    }
-  }, [requestPermission]);
-
-  // Permission not granted
-  if (hasPermission === false) {
-    return (
-      <View
-        style={[styles.container, { paddingTop: insets.top + TOP_BAR_HEIGHT }]}
-      >
-        <View style={styles.permissionContainer}>
-          <Ionicons name="images-outline" size={64} color="#ccc" />
-          <Text style={styles.permissionTitle}>Access Your Photos</Text>
-          <Text style={styles.permissionText}>
-            Allow access to your photo library to view and manage your photos
-          </Text>
-          <Pressable
-            style={styles.permissionButton}
-            onPress={handleRequestPermission}
-          >
-            <Text style={styles.permissionButtonText}>Allow Access</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
-  // Loading initial permission check
-  if (hasPermission === null) {
-    return (
-      <View
-        style={[styles.container, { paddingTop: insets.top + TOP_BAR_HEIGHT }]}
-      >
-        <View style={styles.permissionContainer}>
-          <Text style={styles.permissionText}>Loading...</Text>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <ScrollView
@@ -120,7 +103,7 @@ export default function AlbumTabScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#000" />
               </Pressable>
             </View>
-            <GalleryCarousel assets={assets} />
+            <GalleryCarousel assets={libraryAssets} />
           </Animated.View>
 
           <Animated.View style={[styles.section, contentFadeStyle]}>
@@ -133,20 +116,51 @@ export default function AlbumTabScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#000" />
               </Pressable>
 
-              <Button
-                onPress={handleAddNewAlbum}
-                style={{
-                  backgroundColor: theme.colors.primary,
-                }}
-                textColor={theme.colors.onPrimary}
-              >
-                + Add new
-              </Button>
+              <View style={styles.headerActions}>
+                <Pressable
+                  onPress={() => setSearchOpen(true)}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.searchIconButton,
+                    pressed && styles.searchIconButtonPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Search albums"
+                >
+                  <Ionicons name="search" size={20} color="#111" />
+                </Pressable>
+
+                <Button
+                  onPress={handleAddNewAlbum}
+                  style={{
+                    backgroundColor: theme.colors.primary,
+                  }}
+                  textColor={theme.colors.onPrimary}
+                >
+                  + Add new
+                </Button>
+              </View>
             </View>
-            <AlbumsGrid albums={albums} isLoading={albumsLoading} />
+
+            <View style={styles.sortRow}>
+              <AlbumSortControl />
+            </View>
+
+            <AlbumsGrid
+              albums={sortedAlbums}
+              isLoading={albumsLoading}
+              onAlbumPress={openAlbum}
+            />
           </Animated.View>
         </View>
       </ScrollView>
+
+      <AlbumsSearchOverlay
+        visible={searchOpen}
+        albums={albums}
+        onClose={() => setSearchOpen(false)}
+        onAlbumPress={openAlbum}
+      />
     </View>
   );
 }
@@ -178,35 +192,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 2,
   },
-  permissionContainer: {
-    flex: 1,
-    justifyContent: "center",
+  headerActions: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 40,
-    paddingBottom: 100,
+    gap: 6,
   },
-  permissionTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#000",
-    marginTop: 16,
-    marginBottom: 8,
+  searchIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F1F3",
   },
-  permissionText: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 24,
+  searchIconButtonPressed: {
+    opacity: 0.6,
   },
-  permissionButton: {
-    backgroundColor: "#007AFF",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  permissionButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    marginBottom: 14,
   },
 });

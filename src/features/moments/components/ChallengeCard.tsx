@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 
 import { notify } from "@/components/global";
+import { stableCacheKey } from "@/lib/imageCache";
 import {
   ChallengeConfig,
   LATE_WINDOW_MS,
@@ -80,13 +81,14 @@ const SubmissionThumb: React.FC<{ submission: MomentSubmission }> = ({
         </View>
       ) : (
         <Image
-          source={{ uri: thumbUri }}
+          source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
           style={[
             styles.thumb,
             validationStatus === "rejected" && styles.thumbRejected,
           ]}
           contentFit="cover"
           transition={120}
+          cachePolicy="memory-disk"
         />
       )}
       {validationStatus === "pending" && (

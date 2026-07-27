@@ -67,6 +67,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import dayjs from "dayjs";
+import { stableCacheKey } from "@/lib/imageCache";
 import { MediaAsset, useResolvedAssetUri } from "@/features/album/hooks";
 import { Filmstrip, FILMSTRIP_HEIGHT } from "./Filmstrip";
 import { Frame } from "./types";
@@ -375,6 +376,32 @@ const PhotoPage = memo<PhotoPageProps>(
       setLoadedUri(asset.uri);
       onFirstImageLoad?.();
     }, [asset.uri, onFirstImageLoad]);
+
+    // Full-res load failed (expired signed URL, network blip). Without this
+    // the page silently stays on the blurry thumbnail underlay forever.
+    // Retry by remounting the Image a few times with backoff — and once the
+    // parent query refetches (fresh signature), the new asset.uri reloads
+    // too. Cached images never reach here (served from disk).
+    const [fullResRetry, setFullResRetry] = useState(0);
+    const retryCountRef = useRef(0);
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleFullImageError = useCallback(() => {
+      if (retryCountRef.current >= 3) return;
+      retryCountRef.current += 1;
+      const attempt = retryCountRef.current;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = setTimeout(
+        () => setFullResRetry((n) => n + 1),
+        400 * attempt,
+      );
+    }, []);
+    // A fresh URI (query refetched) resets the retry budget
+    useEffect(() => {
+      retryCountRef.current = 0;
+      return () => {
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      };
+    }, [asset.uri]);
 
     // Reset transforms whenever this page stops being the active one so
     // swiping back to it always shows a clean 1x photo. Uses setZoomed so
@@ -760,7 +787,7 @@ const PhotoPage = memo<PhotoPageProps>(
                   underlay in exactly the same framing — a sharpen, not a jump */}
               {showThumbUnderlay && (
                 <Image
-                  source={{ uri: thumbUri }}
+                  source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
                   style={styles.media}
                   contentFit="contain"
                   recyclingKey={`${asset.id}-thumb`}
@@ -771,7 +798,9 @@ const PhotoPage = memo<PhotoPageProps>(
               )}
               {showFullRes && (
                 <Image
-                  source={{ uri: asset.uri }}
+                  // Remount on retry (key) to re-attempt a failed load
+                  key={`${asset.id}-full-${fullResRetry}`}
+                  source={{ uri: asset.uri, cacheKey: stableCacheKey(asset.uri) }}
                   style={styles.media}
                   contentFit="contain"
                   recyclingKey={asset.id}
@@ -781,6 +810,7 @@ const PhotoPage = memo<PhotoPageProps>(
                   // outrank grid/filmstrip thumbnail traffic
                   priority="high"
                   onLoad={handleFullImageLoad}
+                  onError={handleFullImageError}
                 />
               )}
             </Animated.View>
@@ -1140,7 +1170,7 @@ const VideoPage = memo<VideoPageProps>(
             {(!showPlayer || !firstFrameRendered) &&
               (posterUri != null ? (
                 <Image
-                  source={{ uri: posterUri }}
+                  source={{ uri: posterUri, cacheKey: stableCacheKey(posterUri) }}
                   style={styles.media}
                   contentFit="contain"
                   recyclingKey={`${asset.id}-poster`}
@@ -2629,6 +2659,27 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     [jumpToIndex],
   );
 
+  /**
+   * Keeps the open viewer coherent when `assets` shrinks under it — deleting
+   * the on-screen photo should advance to the next one, not tear the viewer
+   * down. The pager's offset doesn't move, so the following photo simply
+   * slides into the same index and the counter re-renders; only two cases
+   * need handling: nothing left to show (close), and the deleted photo was
+   * the last one (step back onto the new final page).
+   */
+  const assetCount = assets.length;
+  useEffect(() => {
+    if (phaseRef.current !== "open") return;
+    if (assetCount === 0) {
+      finishClose();
+      return;
+    }
+    const maxIndex = assetCount - 1;
+    if (activeIndexRef.current > maxIndex) {
+      jumpToIndex(maxIndex, false);
+    }
+  }, [assetCount, finishClose, jumpToIndex]);
+
   /** Filmstrip drag — drive the pager directly, one page per thumb-width. */
   const handleScrub = useCallback(
     (offset: number) => {
@@ -3030,7 +3081,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                       grid, so it comes straight from cache. */}
                   {flight.thumbUri != null && (
                     <Image
-                      source={{ uri: flight.thumbUri }}
+                      source={{ uri: flight.thumbUri, cacheKey: stableCacheKey(flight.thumbUri) }}
                       style={styles.media}
                       contentFit={flight.contain ? "contain" : "cover"}
                       recyclingKey={`${flight.id}-thumb`}
@@ -3041,7 +3092,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                     />
                   )}
                   <Image
-                    source={{ uri: flight.uri }}
+                    source={{ uri: flight.uri, cacheKey: stableCacheKey(flight.uri) }}
                     style={styles.media}
                     contentFit={flight.contain ? "contain" : "cover"}
                     recyclingKey={flight.id}

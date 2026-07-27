@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import albumApi, { UpdateAlbumParams, UploadPhotoParams } from "./album.api";
 import { photoKeys } from "./photo.queries";
+import { Album } from "../types/album.types";
 
 export const useGetAlbumsQuery = () => {
   return useQuery({
@@ -75,6 +76,28 @@ export const useLeaveAlbumMutation = () => {
     onSuccess: (_, albumId) => {
       queryClient.removeQueries({ queryKey: ["albums", albumId] });
       queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
+    },
+  });
+};
+
+/**
+ * Mark an album seen for the caller — fired once when the album screen
+ * mounts. On success we zero that album's `newPhotoCount` directly in the
+ * `["albums"]` list cache so the "NEW +n" badge is already gone when the
+ * user swipes back, and refresh the album detail (cheap, usually warm).
+ */
+export const useMarkAlbumViewedMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (albumId: string) => albumApi.markAlbumViewed(albumId),
+    onSuccess: (_, albumId) => {
+      queryClient.setQueryData<Album[]>(["albums"], (prev) =>
+        prev?.map((a) =>
+          a.albumId === albumId ? { ...a, newPhotoCount: 0 } : a,
+        ),
+      );
+      queryClient.invalidateQueries({ queryKey: ["albums", albumId] });
     },
   });
 };

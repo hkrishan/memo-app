@@ -27,6 +27,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Image, type ImageLoadEventData } from "expo-image";
+import { stableCacheKey } from "@/lib/imageCache";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import Animated, {
@@ -112,10 +113,14 @@ const PostTile = memo<{
       accessibilityRole="imagebutton"
     >
       <Image
-        source={{ uri: firstMedia.thumbnailUrl ?? firstMedia.url }}
+        source={{
+          uri: firstMedia.thumbnailUrl ?? firstMedia.url,
+          cacheKey: stableCacheKey(firstMedia.thumbnailUrl ?? firstMedia.url),
+        }}
         style={styles.tileImage}
         contentFit="cover"
         transition={180}
+        cachePolicy="memory-disk"
         onLoad={handleLoad}
       />
       {hasMultipleMedia && (

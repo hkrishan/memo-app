@@ -8,6 +8,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 
+import { stableCacheKey } from "@/lib/imageCache";
 import { initialsFromName } from "./socialUtils";
 
 type SocialAvatarProps = {
@@ -31,7 +32,7 @@ const SocialAvatar: React.FC<SocialAvatarProps> = ({
   if (avatarUrl) {
     return (
       <Image
-        source={{ uri: avatarUrl }}
+        source={{ uri: avatarUrl, cacheKey: stableCacheKey(avatarUrl) }}
         style={[
           { width: size, height: size, borderRadius: radius },
           borderStyle,
