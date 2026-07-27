@@ -37,6 +37,11 @@ export type Photo = {
   createdAt: string;
   thumbnailUrl?: string | null;
   /**
+   * Screen-sized frame for the fullscreen viewer — paging decodes this
+   * instead of the multi-megabyte original. Null/absent falls back to url.
+   */
+  displayUrl?: string | null;
+  /**
    * "video" for video uploads (thumbnailUrl is then the poster frame).
    * Optional — older cached responses may lack it; treat missing as "photo".
    */

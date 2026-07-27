@@ -27,6 +27,18 @@ export interface MediaAsset {
   pending?: boolean;
   /** A pending capture whose upload failed and is awaiting auto-retry. */
   uploadFailed?: boolean;
+  /**
+   * A local file holding the very same image as `uri`, shown underneath it
+   * while the remote one downloads. Set for photos that were just uploaded
+   * from this device: without it the tile would go blank at the moment the
+   * local-first asset hands over to the (not yet downloaded) server one.
+   */
+  placeholderUri?: string;
+  /**
+   * Screen-sized version of `uri` for the fullscreen viewer. Absent for
+   * device-library assets and videos, where `uri` is already right.
+   */
+  displayUrl?: string | null;
 }
 
 interface UseMediaLibraryOptions {

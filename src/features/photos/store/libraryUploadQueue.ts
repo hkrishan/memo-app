@@ -5,7 +5,13 @@
  * an entry lands in this persisted queue, and the shutter is free again.
  * The processor then uploads in the background (iOS BACKGROUND NSURLSession
  * via the legacy expo-file-system uploadAsync — same transport as the album
- * uploadManager), applies the optional album copy server-side, and settles.
+ * uploadManager), applies the optional album copy server-side, submits to a
+ * moment event when the capture was taken for one, and settles.
+ *
+ * Photos and videos both travel this way (the library endpoint takes
+ * mp4/mov/webm and cuts their poster frame), so every capture — whatever
+ * the shutter did — is resumable, background, and visible locally while it
+ * flies.
  *
  * Entries are resumable at every stage: an entry with no serverPhotoId
  * uploads; one WITH a serverPhotoId but a pending album target only redoes
@@ -35,9 +41,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { env } from "@/lib/env";
 import { captureException } from "@/lib/sentry";
-import { endpoints, queryClient, tokenStorage } from "@/lib/api";
+import { endpoints, isApiError, queryClient, tokenStorage } from "@/lib/api";
+import { uploadIndicator } from "@/components/global/uploadIndicator";
 import { photoKeys } from "@/features/album/api/photo.queries";
 import photoApi from "@/features/album/api/photo.api";
+import momentsApi from "@/features/moments/api/moments.api";
+import { momentKeys } from "@/features/moments/api/moments.queries";
 import libraryApi, { libraryKeys } from "../api/library.api";
 
 const QUEUE_DIR = `${documentDirectory ?? ""}library-queue/`;
@@ -46,6 +55,17 @@ const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 5 * 60_000;
 /** How long a settled ("done") entry lingers for banner retargeting. */
 const DONE_PRUNE_MS = 60_000;
+
+/** Queue-file extension per content type (the server keys off the mime). */
+const EXTENSION_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/heic": "heic",
+  "video/quicktime": "mov",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+};
+const DEFAULT_MIME_TYPE = "image/jpeg";
 
 export type QueuedCaptureStatus = "queued" | "uploading" | "failed" | "done";
 
@@ -57,11 +77,32 @@ export type QueuedAlbumTarget = {
   albumPhotoId: string | null;
 };
 
+/** A moment event this capture was taken for ("Post now" → the camera). */
+export type QueuedMomentTarget = {
+  albumId: string;
+  momentId: string;
+  eventId: string;
+};
+
 export type QueuedCapture = {
   localId: string;
   /** App-storage copy of the capture — survives restarts. */
   fileUri: string;
   capturedAt: string;
+  /** "photo" unless the shutter recorded a video. */
+  mediaType: "photo" | "video";
+  /** Content type of the queued file — drives the upload AND its extension. */
+  mimeType: string;
+  /**
+   * Videos only: a local uri that renders as a poster frame (the device
+   * library asset — ph:// on iOS, the file itself on Android). A video file
+   * has no renderable image of its own, so grids show this instead.
+   */
+  posterUri?: string;
+  /** Submitted to this event once the album copy exists. */
+  momentTarget?: QueuedMomentTarget;
+  /** True once the moment submission landed (or was already there). */
+  momentSubmitted?: boolean;
   latitude?: number;
   longitude?: number;
   /** Albums this capture should (also) land in; editable while pending. */
@@ -95,7 +136,8 @@ export const useLibraryUploadQueue = create<LibraryUploadQueueState>()(
     name: "library-upload-queue",
     storage: createJSONStorage(() => AsyncStorage),
     // A JS-death mid-upload leaves "uploading" — reset to queued on load.
-    // Also migrates entries persisted under the single-album shape.
+    // Also migrates entries persisted under the single-album shape, and
+    // entries from before the queue carried videos (all were JPEGs).
     onRehydrateStorage: () => (state) => {
       if (!state) return;
       useLibraryUploadQueue.setState({
@@ -115,6 +157,8 @@ export const useLibraryUploadQueue = create<LibraryUploadQueueState>()(
           return {
             ...raw,
             albumTargets,
+            mediaType: raw.mediaType ?? "photo",
+            mimeType: raw.mimeType ?? DEFAULT_MIME_TYPE,
             ...(raw.status === "uploading"
               ? { status: "queued" as const }
               : {}),
@@ -214,11 +258,17 @@ const pruneSettled = (): void => {
 export type EnqueueCaptureInput = {
   /** The vision-camera temp file (copied into app storage before return). */
   tempFileUri: string;
+  /** Content type of that file. Defaults to JPEG (the photo shutter). */
+  mimeType?: string;
+  /** Videos: the device-library asset uri, which renders as a poster. */
+  posterUri?: string;
   latitude?: number;
   longitude?: number;
   albumId?: string | null;
   albumTitle?: string | null;
   cameraRollSaved?: boolean;
+  /** Set when the camera was opened from a moment's "Post now". */
+  momentTarget?: QueuedMomentTarget;
 };
 
 /**
@@ -229,16 +279,31 @@ export async function enqueueCapture(
   input: EnqueueCaptureInput,
 ): Promise<string> {
   const localId = `cap-${Date.now()}-${captureCounter++}`;
-  const fileUri = `${QUEUE_DIR}${localId}.jpg`;
+  const mimeType = input.mimeType ?? DEFAULT_MIME_TYPE;
+  const mediaType = mimeType.startsWith("video/") ? "video" : "photo";
+  // The extension must match the container: the server (and the OS upload
+  // session) key off it, and a .mov renamed .mp4 stores an unplayable file
+  const extension =
+    EXTENSION_BY_MIME[mimeType] ??
+    input.tempFileUri.split(".").pop()?.toLowerCase() ??
+    "jpg";
+  const fileUri = `${QUEUE_DIR}${localId}.${extension}`;
 
   await makeDirectoryAsync(QUEUE_DIR, { intermediates: true }).catch(() => {});
   await copyAsync({ from: input.tempFileUri, to: fileUri });
 
-  // Local file → instant, EXIF-correct display size (no network round-trip)
+  // Local file → instant, EXIF-correct display size (no network round-trip).
+  // A video file isn't decodable here — its poster stands in when there is
+  // one, otherwise the size arrives with the server photo.
+  const sizeSource = mediaType === "video" ? input.posterUri : fileUri;
   const size = await new Promise<{ width: number; height: number } | null>(
     (resolve) => {
+      if (!sizeSource) {
+        resolve(null);
+        return;
+      }
       RNImage.getSize(
-        fileUri,
+        sizeSource,
         (width, height) =>
           resolve(width > 0 && height > 0 ? { width, height } : null),
         () => resolve(null),
@@ -253,6 +318,10 @@ export async function enqueueCapture(
         localId,
         fileUri,
         capturedAt: new Date().toISOString(),
+        mediaType,
+        mimeType,
+        ...(input.posterUri && { posterUri: input.posterUri }),
+        ...(input.momentTarget && { momentTarget: input.momentTarget }),
         ...(input.latitude !== undefined && { latitude: input.latitude }),
         ...(input.longitude !== undefined && { longitude: input.longitude }),
         albumTargets: input.albumId
@@ -472,7 +541,7 @@ async function processEntry(localId: string): Promise<void> {
           httpMethod: "POST",
           uploadType: FileSystemUploadType.MULTIPART,
           fieldName: "photo",
-          mimeType: "image/jpeg",
+          mimeType: entry.mimeType,
           parameters,
           headers: { Authorization: `Bearer ${token}` },
           ...(Platform.OS === "ios"
@@ -510,6 +579,8 @@ async function processEntry(localId: string): Promise<void> {
     }
 
     // Deleted while the copies were being made — tear the whole thing down
+    // (checked before the moment submission: never post a photo that's
+    // about to be deleted)
     if (cancelledIds.has(localId)) {
       cancelledIds.delete(localId);
       await teardownEntry({
@@ -519,6 +590,17 @@ async function processEntry(localId: string): Promise<void> {
       });
       void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
       return;
+    }
+
+    // Stage 3 — moment submission ("Post now"). The event references the
+    // ALBUM copy, so this can only run once stage 2 made it.
+    const withCopies = getEntry(localId);
+    const moment = withCopies?.momentTarget;
+    if (moment && !withCopies?.momentSubmitted) {
+      const albumPhotoId = withCopies?.albumTargets.find(
+        (target) => target.albumId === moment.albumId,
+      )?.albumPhotoId;
+      if (albumPhotoId) await submitToMoment(localId, moment, albumPhotoId);
     }
 
     // Settle: refetch the library FIRST so the server photo is in the list
@@ -546,6 +628,44 @@ async function processEntry(localId: string): Promise<void> {
     }
     scheduleBackoffRetry(attempts);
   }
+}
+
+/**
+ * Posts the album copy to the moment event the capture was taken for, with
+ * the same pill treatment the old in-screen flow had. A 409 means someone
+ * (this device, earlier) already posted for the event — that's settled, not
+ * a failure. Anything else rethrows into the entry's retry path; the album
+ * copy already exists, so a retry redoes only this step.
+ */
+async function submitToMoment(
+  localId: string,
+  moment: QueuedMomentTarget,
+  albumPhotoId: string,
+): Promise<void> {
+  const indicatorId = `moment-submit-${localId}`;
+  uploadIndicator.begin(indicatorId, "Posting to moment…");
+  try {
+    await momentsApi.submitToEvent(
+      moment.albumId,
+      moment.momentId,
+      moment.eventId,
+      albumPhotoId,
+    );
+    uploadIndicator.succeed(indicatorId, "Posted to moment");
+  } catch (error) {
+    if (isApiError(error) && error.status === 409) {
+      uploadIndicator.succeed(indicatorId, "Already posted");
+    } else {
+      uploadIndicator.fail(indicatorId, "Couldn't post to moment");
+      throw error;
+    }
+  }
+  patchEntry(localId, { momentSubmitted: true });
+  void queryClient.invalidateQueries({
+    queryKey: momentKeys.byAlbum(moment.albumId),
+  });
+  // The submitted event no longer counts as an open drop
+  void queryClient.invalidateQueries({ queryKey: momentKeys.openDrops });
 }
 
 function scheduleBackoffRetry(attempts: number): void {

@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import {
+  InfiniteData,
   QueryClient,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -9,7 +12,7 @@ import {
   PhotoSocial,
   PhotoWithUploader,
 } from "../types/album.types";
-import photoApi, { UploadPhotoParams } from "./photo.api";
+import photoApi, { AlbumPhotoPage, UploadPhotoParams } from "./photo.api";
 
 export const photoKeys = {
   all: ["photos"] as const,
@@ -34,14 +37,21 @@ const updatePhotoSocial = (
   photoId: string,
   updater: (social: PhotoSocial) => PhotoSocial,
 ) => {
-  queryClient.setQueryData<PhotoWithUploader[]>(
+  // The cache holds pages now, so patch the photo wherever it sits
+  queryClient.setQueryData<InfiniteData<AlbumPhotoPage>>(
     photoKeys.byAlbum(albumId),
-    (photos) =>
-      photos?.map((photo) =>
-        photo.photoId === photoId
-          ? { ...photo, social: updater(photo.social ?? emptySocial) }
-          : photo,
-      ),
+    (data) =>
+      data && {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          photos: page.photos.map((photo) =>
+            photo.photoId === photoId
+              ? { ...photo, social: updater(photo.social ?? emptySocial) }
+              : photo,
+          ),
+        })),
+      },
   );
 };
 
@@ -59,24 +69,53 @@ const removeBucketFromUrl = (url: string): string => {
 // filmstrip, social overlay) a freshly-built array, defeating all their
 // downstream memoization.
 const selectPhotosWithCleanUrls = (
-  photos: PhotoWithUploader[],
+  data: InfiniteData<AlbumPhotoPage>,
 ): PhotoWithUploader[] =>
-  photos.map((photo) => ({
-    ...photo,
-    url: removeBucketFromUrl(photo.url),
-  }));
+  data.pages.flatMap((page) =>
+    page.photos.map((photo) => ({
+      ...photo,
+      url: removeBucketFromUrl(photo.url),
+    })),
+  );
 
+/** Photos per request. Big enough that most albums are one round-trip. */
+const ALBUM_PAGE_SIZE = 100;
+
+/**
+ * An album's photos, newest first.
+ *
+ * Paged, but the pages are pulled in automatically until the album is fully
+ * loaded, so callers still see one flat array and the Gallery tab's derived
+ * sections (Most loved, Places, per-member) still see every photo. What
+ * changes is WHEN: the first 100 render immediately instead of the screen
+ * waiting on a single ~400KB response, and each page's JSON is parsed in its
+ * own frame rather than one long block during the open animation.
+ */
 export const useGetPhotosQuery = (albumId: string) => {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: photoKeys.byAlbum(albumId),
-    queryFn: () => photoApi.getPhotos(albumId),
-    staleTime: 1000, // 1 second - quick refetch but uses cache for navigation
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    queryFn: ({ pageParam }) =>
+      photoApi.getPhotos(albumId, ALBUM_PAGE_SIZE, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    // Navigating back into an album shouldn't refetch the whole thing; a
+    // new photo arrives through the upload paths' invalidation instead
+    staleTime: 30 * 1000,
+    gcTime: 10 * 60 * 1000,
     enabled: !!albumId,
-    placeholderData: (previousData) => previousData, // Use cached data immediately
+    placeholderData: (previousData) => previousData,
     networkMode: "offlineFirst", // Show cached data first, then update
     select: selectPhotosWithCleanUrls,
   });
+
+  // Keep pulling until the album is whole. Runs after each page settles, so
+  // the list grows a page at a time instead of blocking on all of them.
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return query;
 };
 
 export const useUploadPhotoMutation = () => {
@@ -139,8 +178,9 @@ export const useTogglePhotoLikeMutation = (albumId: string) => {
       // on rollback, clobber refetches and other photos' social updates
       // that landed while this request was in flight
       const previousSocial = queryClient
-        .getQueryData<PhotoWithUploader[]>(photoKeys.byAlbum(albumId))
-        ?.find((photo) => photo.photoId === photoId)?.social;
+        .getQueryData<InfiniteData<AlbumPhotoPage>>(photoKeys.byAlbum(albumId))
+        ?.pages.flatMap((page) => page.photos)
+        .find((photo) => photo.photoId === photoId)?.social;
       updatePhotoSocial(queryClient, albumId, photoId, (social) => ({
         ...social,
         likedByMe: like,

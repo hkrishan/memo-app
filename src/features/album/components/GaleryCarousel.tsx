@@ -15,12 +15,12 @@ import React, {
 } from "react";
 import { View, StyleSheet, Pressable, Image as RNImage } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { FlashList, ListRenderItemInfo } from "@shopify/flash-list";
 import { MediaAsset } from "../hooks";
 import { usePhotoAlbumStore } from "../store/photoAlbumStore";
 import { PhotoViewer, Frame } from "@/features/photos/components";
-import { stableCacheKey } from "@/lib/imageCache";
+import { useLibraryViewerSession } from "@/features/photos/hooks/useLibraryViewerSession";
+import { MediaTile } from "@/components/ui/MediaTile";
 
 const ITEM_SIZE = 80;
 const ITEM_HEIGHT = ITEM_SIZE * 1.4;
@@ -32,7 +32,8 @@ const PADDING_HORIZONTAL = 20;
 const MIN_VISIBLE_CELL_FRACTION = 0.6;
 
 interface GalleryCarouselProps {
-  assets: MediaAsset[];
+  /** How many library photos the strip previews. */
+  limit?: number;
 }
 
 interface ViewerSession {
@@ -51,7 +52,6 @@ interface CarouselItemProps {
 const CarouselItem = memo<CarouselItemProps>(
   ({ asset, index, hasAlbumAssociation, dimmed, onPressItem }) => {
     const innerRef = useRef<View>(null);
-    const thumb = asset.thumbnailUrl ?? asset.uri;
 
     const handlePress = useCallback(() => {
       const node = innerRef.current;
@@ -81,14 +81,7 @@ const CarouselItem = memo<CarouselItemProps>(
         accessibilityLabel={asset.mediaType === "video" ? "Video" : "Photo"}
       >
         <View ref={innerRef} collapsable={false} style={styles.imageContent}>
-          <Image
-            source={{ uri: thumb, cacheKey: stableCacheKey(thumb) }}
-            style={styles.image}
-            contentFit="cover"
-            recyclingKey={asset.id}
-            cachePolicy="memory"
-            transition={0}
-          />
+          <MediaTile asset={asset} fallbackGlyphSize={18} />
           {asset.mediaType === "video" && (
             <View style={styles.videoIndicator}>
               <Ionicons name="play" size={14} color="#fff" />
@@ -111,95 +104,29 @@ CarouselItem.displayName = "CarouselItem";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const HorizontalFlashList = FlashList as any;
 
-const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
+const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ limit = 30 }) => {
   const associations = usePhotoAlbumStore((state) => state.associations);
 
   const listRef = useRef<any>(null);
   const containerRef = useRef<View>(null);
   const scrollXRef = useRef(0);
+
+  // The session needs a return-frame resolver up front, but the real one
+  // (below) closes over layout refs — bridge them with a ref so the
+  // identity handed to the session never changes.
+  const returnFrameRef = useRef<(index: number) => Promise<Frame | null>>(
+    async () => null,
+  );
+  const getReturnFrame = useCallback(
+    (index: number) => returnFrameRef.current(index),
+    [],
+  );
+  const libraryViewer = useLibraryViewerSession({ getReturnFrame, limit });
+  const assets = libraryViewer.assets;
   const assetCountRef = useRef(assets.length);
   assetCountRef.current = assets.length;
 
-  const [viewerSession, setViewerSession] = useState<ViewerSession | null>(
-    null,
-  );
   const [viewedIndex, setViewedIndex] = useState<number | null>(null);
-
-  // Natural-size enrichment: library photos arrive with width/height 0, and
-  // the viewer only performs the zoom flight (and full-size fit) when it
-  // knows an asset's aspect ratio. Sizes are resolved with RNImage.getSize —
-  // the SAME source the main-tab camera's library viewer uses — so an
-  // EXIF-rotated capture reports its true DISPLAY orientation (an expo-image
-  // onLoad can report un-oriented dims, which fits the photo into a sideways
-  // box and renders it shrunk). We merge resolved sizes into the assets
-  // handed to the viewer.
-  const sizeCacheRef = useRef<Map<string, { width: number; height: number }>>(
-    new Map(),
-  );
-  const bumpScheduledRef = useRef(false);
-  const [sizeVersion, setSizeVersion] = useState(0);
-  const handleNaturalSize = useCallback(
-    (assetId: string, width: number, height: number) => {
-      if (!(width > 0 && height > 0)) return;
-      const cache = sizeCacheRef.current;
-      if (cache.has(assetId)) return;
-      cache.set(assetId, { width, height });
-      // Coalesce a burst of resolutions into one re-render
-      if (bumpScheduledRef.current) return;
-      bumpScheduledRef.current = true;
-      queueMicrotask(() => {
-        bumpScheduledRef.current = false;
-        setSizeVersion((v) => v + 1);
-      });
-    },
-    [],
-  );
-  // Thumbnail onLoad only enriches cells the user has scrolled past. The
-  // viewer, though, needs the TAPPED photo's aspect ratio the instant it
-  // opens — otherwise it drops into its unknown-dimension path (no zoom
-  // flight, and the photo renders shrunk in the chrome-fitted box). So we
-  // also resolve sizes directly with RNImage.getSize, exactly like the
-  // main-tab camera's library viewer, for any asset that arrives without
-  // dimensions (a fresh local capture whose measurement hasn't landed yet).
-  const resolveAssetSize = useCallback(
-    (asset: MediaAsset | undefined): Promise<void> =>
-      new Promise((resolve) => {
-        if (
-          !asset ||
-          (asset.width > 0 && asset.height > 0) ||
-          sizeCacheRef.current.has(asset.id)
-        ) {
-          resolve();
-          return;
-        }
-        RNImage.getSize(
-          asset.thumbnailUrl || asset.uri,
-          (width, height) => {
-            handleNaturalSize(asset.id, width, height);
-            resolve();
-          },
-          () => resolve(),
-        );
-      }),
-    [handleNaturalSize],
-  );
-
-  // Proactively resolve every missing size once the strip mounts/changes, so
-  // by the time a thumbnail is tapped its dimensions are already cached (and
-  // swiping to neighbours in the viewer fits + return-flies correctly too).
-  useEffect(() => {
-    for (const asset of assets) void resolveAssetSize(asset);
-  }, [assets, resolveAssetSize]);
-
-  const enrichedAssets = useMemo(() => {
-    void sizeVersion; // recompute as sizes arrive
-    const cache = sizeCacheRef.current;
-    return assets.map((asset) => {
-      if (asset.width > 0 && asset.height > 0) return asset;
-      const size = cache.get(asset.id);
-      return size ? { ...asset, width: size.width, height: size.height } : asset;
-    });
-  }, [assets, sizeVersion]);
 
   const hasAlbumAssociation = useCallback(
     (uri: string): boolean => {
@@ -217,22 +144,12 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
 
   const handlePressItem = useCallback(
     (index: number, originFrame: Frame | null) => {
-      // Make sure the tapped photo's dimensions are known before the viewer
-      // mounts — if they aren't cached yet, resolve them first so it opens
-      // with the zoom flight and full-size fit instead of the shrunk fade.
-      const asset = assets[index];
-      if (asset && !(asset.width > 0 && asset.height > 0) &&
-          !sizeCacheRef.current.has(asset.id)) {
-        void resolveAssetSize(asset).then(() => {
-          setViewerSession({ index, originFrame });
-          pendingViewedIndexRef.current = index;
-        });
-        return;
-      }
-      setViewerSession({ index, originFrame });
+      // The session resolves the tapped photo's dimensions before it opens,
+      // so the viewer gets its zoom flight instead of the shrunk fade
       pendingViewedIndexRef.current = index;
+      libraryViewer.open(index, originFrame);
     },
-    [assets, resolveAssetSize],
+    [libraryViewer],
   );
 
   const handleOpenTransitionStart = useCallback(() => {
@@ -244,13 +161,17 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
 
   const handleCloseViewer = useCallback(() => {
     pendingViewedIndexRef.current = null;
-    setViewerSession(null);
+    libraryViewer.viewerProps.onClose();
     setViewedIndex(null);
-  }, []);
+  }, [libraryViewer]);
 
-  const handleViewerIndexChange = useCallback((index: number) => {
-    setViewedIndex(index);
-  }, []);
+  const handleActiveIndexChange = useCallback(
+    (index: number) => {
+      libraryViewer.viewerProps.onActiveIndexChange(index);
+      setViewedIndex(index);
+    },
+    [libraryViewer],
+  );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleScroll = useCallback((event: any) => {
@@ -260,7 +181,7 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
   // Same contract as CameraRollGrid.getReturnFrame, but horizontal: the
   // strip's cell frames are deterministic, and an off-screen landing cell
   // is scrolled into view while the viewer's backdrop still hides it.
-  const getReturnFrame = useCallback(
+  const getReturnFrameForIndex = useCallback(
     async (index: number): Promise<Frame | null> => {
       try {
         if (index < 0 || index >= assetCountRef.current) return null;
@@ -331,6 +252,8 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
     [],
   );
 
+  returnFrameRef.current = getReturnFrameForIndex;
+
   const renderItem = useCallback(
     ({ item, index }: ListRenderItemInfo<MediaAsset>) => (
       <CarouselItem
@@ -375,15 +298,14 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ assets }) => {
           extraData={viewedIndex}
         />
       </View>
+      {/* The SAME session the camera's last-capture thumbnail opens —
+          social overlay, pagination and sizing all come with it. Only the
+          return flight is ours: the photo flies back into its strip cell. */}
       <PhotoViewer
-        visible={viewerSession !== null}
-        assets={enrichedAssets}
-        initialIndex={viewerSession?.index ?? 0}
-        originFrame={viewerSession?.originFrame ?? null}
-        getReturnFrame={getReturnFrame}
+        {...libraryViewer.viewerProps}
         onClose={handleCloseViewer}
+        onActiveIndexChange={handleActiveIndexChange}
         onOpenTransitionStart={handleOpenTransitionStart}
-        onActiveIndexChange={handleViewerIndexChange}
         gridCornerRadius={ITEM_RADIUS}
       />
     </>

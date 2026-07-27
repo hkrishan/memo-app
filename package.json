@@ -5,7 +5,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "ios": "bash scripts/patch-ios-pods.sh && expo run:ios --device",
+    "ios": "bash scripts/patch-ios-pods.sh && SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device",
     "web": "expo start --web",
     "prebuild:ios:patched": "expo prebuild --platform ios --clean && bash scripts/patch-ios-pods.sh && (cd ios && pod install --repo-update)"
   },

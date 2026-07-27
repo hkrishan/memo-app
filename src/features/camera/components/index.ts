@@ -7,8 +7,6 @@ export { CaptureButton } from './CaptureButton';
 export { ModeToggle } from './ModeToggle';
 export { VideoTimer } from './VideoTimer';
 export { MediaPreview } from './MediaPreview';
-export { PhotoSaveSheet } from './PhotoSaveSheet';
-export type { PhotoSaveStatus } from './PhotoSaveSheet';
 export { ZoomPresetSelector } from './ZoomPresetSelector';
 export { CameraToolbar } from './CameraToolbar';
 export { GridOverlay } from './GridOverlay';
@@ -18,6 +16,7 @@ export { LastCaptureThumbnail } from './LastCaptureThumbnail';
 export { CaptureDestinationButton } from './CaptureDestinationButton';
 export { DestinationPickerSheet } from './DestinationPickerSheet';
 export { CaptureExtrasSheet } from './CaptureExtrasSheet';
+export { DualCameraPreview } from './DualCameraPreview';
 
 // Re-export component props types for convenience
 export type {

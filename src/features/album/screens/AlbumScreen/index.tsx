@@ -14,7 +14,10 @@ import { useGetPageQuery } from "@/features/page/api/page.queries";
 import { AlbumNavBar, AlbumTabs } from "../../components";
 import MemberColorSheet from "../../components/MemberColorSheet";
 import { photoToMediaAsset } from "../../utils/mediaAsset";
-import { useAlbumPendingAssets } from "../../hooks/useAlbumPendingAssets";
+import {
+  useAlbumLocalPlaceholders,
+  useAlbumPendingAssets,
+} from "../../hooks/useAlbumPendingAssets";
 import GalleryPage from "./GalleryPage";
 import PagePage from "./PagePage";
 import MomentsPage from "@/features/moments/screens/MomentsPage";
@@ -84,13 +87,29 @@ const AlbumScreen = () => {
   // walking into the album straight after the shutter shows the photo (with
   // its uploading badge) instead of a gallery that's missing it
   const pendingAssets = useAlbumPendingAssets(albumId, photos);
+  // Photos this device just uploaded keep their local file underneath the
+  // (still downloading) server image, so the tile never blanks on handover
+  const placeholders = useAlbumLocalPlaceholders(albumId);
 
   const assets = useMemo(() => {
     if (!photos && pendingAssets.length === 0) return [];
-    return [...pendingAssets, ...(photos ?? []).map(photoToMediaAsset)].sort(
-      (a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0),
-    );
-  }, [photos, pendingAssets]);
+    const serverAssets = (photos ?? [])
+      .map((photo) => {
+        const asset = photoToMediaAsset(photo);
+        const local = placeholders.get(photo.photoId);
+        // This device still holds the original: draw THAT, so the tile
+        // never waits on a download of an image we just uploaded
+        return local
+          ? { ...asset, uri: local, thumbnailUrl: local, placeholderUri: local }
+          : asset;
+      })
+      .sort((a, b) => (b.creationTime ?? 0) - (a.creationTime ?? 0));
+    // Uploads in flight are pinned to the front and NOT run through that
+    // sort: they are, by definition, newer than anything the server has,
+    // and sorting them by a local timestamp buried them mid-list — off the
+    // end of the Recents strip, which looks exactly like "it disappeared".
+    return [...pendingAssets, ...serverAssets];
+  }, [photos, pendingAssets, placeholders]);
 
   const members = useMemo(() => album?.members ?? [], [album?.members]);
 

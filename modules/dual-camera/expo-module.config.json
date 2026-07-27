@@ -1,0 +1,7 @@
+{
+  "platforms": ["apple"],
+  "apple": {
+    "podspecPath": "DualCamera.podspec",
+    "modules": ["DualCameraModule"]
+  }
+}

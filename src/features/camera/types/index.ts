@@ -156,6 +156,11 @@ export interface MediaPreviewProps {
   onDelete: () => void;
   visible: boolean;
   isUploading?: boolean;
+  /**
+   * Album-capture mode: the destination is fixed, so the preview drops its
+   * album picker and saves straight into that album.
+   */
+  lockedAlbumId?: string;
 }
 
 // ============================================================================

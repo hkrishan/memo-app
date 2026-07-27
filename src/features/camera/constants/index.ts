@@ -112,6 +112,21 @@ export const FLASH_LABELS: Record<FlashMode, string> = {
 export const TIMER_MODE_CYCLE: TimerMode[] = [0, 3, 10];
 
 // ============================================================================
+// Dual Camera Constants
+// ============================================================================
+
+/**
+ * Dual-camera layout cycle order. Side-by-side leads because it's the
+ * layout that reads as "two cameras" at a glance; the inset (PiP) is last
+ * since it's the least destructive to the main shot.
+ */
+export const DUAL_LAYOUT_CYCLE = [
+  'horizontal',
+  'vertical',
+  'pip',
+] as const;
+
+// ============================================================================
 // Capture Gesture Constants
 // ============================================================================
 

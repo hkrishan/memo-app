@@ -21,7 +21,6 @@
 import React, { memo, useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -32,7 +31,7 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 import { MediaAsset } from "@/features/album/hooks";
-import { stableCacheKey } from "@/lib/imageCache";
+import { MediaTile } from "@/components/ui/MediaTile";
 
 /** Collapsed thumb width. */
 const THUMB_WIDTH = 24;
@@ -102,14 +101,6 @@ const ThumbCell = memo<ThumbCellProps>(
       onPress(index);
     }, [onPress, index]);
 
-    const thumbUri = asset.thumbnailUrl ?? asset.uri;
-    // A remote video without a poster has no renderable image (its uri is
-    // the video file) — the dark thumb background + play badge carry it
-    const posterlessVideo =
-      asset.mediaType === "video" &&
-      asset.thumbnailUrl == null &&
-      asset.uri.startsWith("http");
-
     return (
       <Animated.View style={[styles.thumb, animatedStyle]}>
         <Pressable
@@ -118,22 +109,15 @@ const ThumbCell = memo<ThumbCellProps>(
           accessibilityRole="button"
           accessibilityLabel={`Photo ${index + 1}`}
         >
-          {!posterlessVideo && (
-            <Image
-              source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
-              style={styles.thumbImage}
-              contentFit="cover"
-              recyclingKey={`${asset.id}-strip`}
-              cachePolicy={
-                thumbUri.startsWith("http") ? "memory-disk" : "memory"
-              }
-              transition={0}
-              // The strip's ~30 mounted thumbs must never compete with the
-              // active page's full-res fetch/decode for bandwidth or decode
-              // slots — they're 24px tiles, always the last in line
-              priority="low"
-            />
-          )}
+          <MediaTile
+            asset={asset}
+            recyclingKeySuffix="strip"
+            // 24px cells: their own decode, never shared with the grids
+            sizeBucket="micro"
+            // The strip's ~30 mounted thumbs must never compete with the
+            // active page's full-res fetch/decode — they're 24px tiles
+            priority="low"
+          />
           {asset.mediaType === "video" && (
             <View style={styles.playBadge} pointerEvents="none">
               <Ionicons

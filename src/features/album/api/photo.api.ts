@@ -14,9 +14,17 @@ export type UploadPhotoParams = {
   caption?: string;
 };
 
+/** One page of an album's photos, newest first. */
+export type AlbumPhotoPage = {
+  photos: PhotoWithUploader[];
+  nextCursor: string | null;
+};
+
 const photoApi = {
-  getPhotos: async (albumId: string) =>
-    httpClient.get<PhotoWithUploader[]>(endpoints.album.photos(albumId)),
+  getPhotos: async (albumId: string, limit: number, cursor?: string) =>
+    httpClient.get<AlbumPhotoPage>(endpoints.album.photos(albumId), {
+      params: { limit, ...(cursor && { cursor }) },
+    }),
 
   uploadPhoto: async ({ albumId, uri, mimeType, caption }: UploadPhotoParams) => {
     const formData = new FormData();

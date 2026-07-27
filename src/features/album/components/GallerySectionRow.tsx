@@ -28,7 +28,6 @@ import {
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -42,9 +41,14 @@ import type { SocialOverlayInfo } from "../hooks/useAlbumPhotoViewerExtras";
 import { PhotoViewer } from "@/features/photos/components";
 import type { Frame } from "@/features/photos/components";
 import UploadingBadge from "@/components/ui/UploadingBadge";
-import { stableCacheKey } from "@/lib/imageCache";
+import { MediaTile, VideoPlayBadge } from "@/components/ui/MediaTile";
+import { hasRenderableStill } from "@/lib/mediaStill";
 
-export const TILE_SIZE = 108;
+// Portrait tiles, matching the "My Photos" strip on the My Albums tab
+// (GaleryCarousel: 80 wide, 1.4x tall, same radius and gap) so a photo is
+// the same shape and size wherever it is shown in a horizontal strip.
+export const TILE_WIDTH = 80;
+export const TILE_HEIGHT = TILE_WIDTH * 1.4;
 const TILE_RADIUS = 12;
 const TILE_GAP = 8;
 const H_PADDING = 16;
@@ -106,11 +110,7 @@ const SectionTile = memo<SectionTileProps>(
     );
 
     const isVideo = asset.mediaType === "video";
-    // A remote video without a poster has no renderable image — dark
-    // tile + play glyph instead of a broken cell (same rule as the grid)
-    const posterlessVideo =
-      isVideo && asset.thumbnailUrl == null && asset.uri.startsWith("http");
-    const thumbUri = asset.thumbnailUrl ?? asset.uri;
+    const posterlessVideo = isVideo && !hasRenderableStill(asset);
 
     return (
       <Pressable
@@ -120,34 +120,12 @@ const SectionTile = memo<SectionTileProps>(
       >
         <View ref={handleRef} collapsable={false} style={styles.tile}>
           <Animated.View style={[styles.tileFill, popStyle]}>
-            {posterlessVideo ? (
-              <View style={[styles.tileImage, styles.tileVideoFallback]}>
-                <Ionicons
-                  name="play"
-                  size={20}
-                  color="rgba(255, 255, 255, 0.9)"
-                />
-              </View>
-            ) : (
-              <Image
-                source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
-                style={styles.tileImage}
-                contentFit="cover"
-                recyclingKey={asset.id}
-                cachePolicy={thumbUri.startsWith("http") ? "memory-disk" : "memory"}
-                transition={0}
-                onLoad={handleLoad}
-              />
-            )}
-            {isVideo && !posterlessVideo && (
-              <View style={styles.playBadge}>
-                <Ionicons
-                  name="play"
-                  size={10}
-                  color="rgba(255, 255, 255, 0.95)"
-                />
-              </View>
-            )}
+            <MediaTile
+              asset={asset}
+              fallbackGlyphSize={20}
+              onLoad={handleLoad}
+            />
+            {isVideo && !posterlessVideo && <VideoPlayBadge />}
             {(asset.likeCount ?? 0) > 0 && (
               <View style={styles.likeBadge} pointerEvents="none">
                 <Ionicons name="heart" size={9} color="#fff" />
@@ -349,18 +327,18 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
 
       const viewportW =
         stripViewportWRef.current || Dimensions.get("window").width;
-      const tileStart = H_PADDING + stripIndex * (TILE_SIZE + TILE_GAP);
+      const tileStart = H_PADDING + stripIndex * (TILE_WIDTH + TILE_GAP);
       const visibleStart = stripScrollXRef.current;
       const fullyVisible =
         tileStart >= visibleStart &&
-        tileStart + TILE_SIZE <= visibleStart + viewportW;
+        tileStart + TILE_WIDTH <= visibleStart + viewportW;
       if (fullyVisible) {
         return frameForAsset(id);
       }
 
       // Center the tile, clamped by the ScrollView itself
       stripRef.current?.scrollTo({
-        x: Math.max(0, tileStart - (viewportW - TILE_SIZE) / 2),
+        x: Math.max(0, tileStart - (viewportW - TILE_WIDTH) / 2),
         animated: false,
       });
       return new Promise<Frame | null>((resolve) => {
@@ -478,8 +456,8 @@ const styles = StyleSheet.create({
     gap: TILE_GAP,
   },
   tile: {
-    width: TILE_SIZE,
-    height: TILE_SIZE,
+    width: TILE_WIDTH,
+    height: TILE_HEIGHT,
   },
   tileFill: {
     flex: 1,
@@ -490,11 +468,6 @@ const styles = StyleSheet.create({
   tileImage: {
     width: "100%",
     height: "100%",
-  },
-  tileVideoFallback: {
-    backgroundColor: "#1c1c1e",
-    alignItems: "center",
-    justifyContent: "center",
   },
   // Plain gray slot while the photo is open in the viewer — covers the
   // image (and any badges) completely, like the grid's dimmed cell
@@ -516,8 +489,8 @@ const styles = StyleSheet.create({
     paddingLeft: 1,
   },
   viewAllTile: {
-    width: TILE_SIZE,
-    height: TILE_SIZE,
+    width: TILE_WIDTH,
+    height: TILE_HEIGHT,
     borderRadius: TILE_RADIUS,
     backgroundColor: "#F2F2F7",
     borderWidth: StyleSheet.hairlineWidth,

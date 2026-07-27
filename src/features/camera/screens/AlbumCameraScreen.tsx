@@ -7,16 +7,16 @@
  * save sheet.
  *
  * When opened from a moment's "Post now" the route also carries
- * momentId + eventId: after the captured photo uploads to the album, it
- * is submitted to that moment event (see useMomentUploadSubmission).
+ * momentId + eventId: the capture is handed to the upload queue with that
+ * event attached, which submits it once the album copy exists — so it
+ * lands even if the camera is closed mid-upload.
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSharedValue } from "react-native-reanimated";
 
 import { SwipeableTabsProvider } from "@/contexts/SwipeableTabsContext";
-import { useMomentUploadSubmission } from "@/features/moments/api/moments.queries";
 import CameraScreen from "./CameraScreen";
 
 const AlbumCameraScreen = () => {
@@ -34,11 +34,10 @@ const AlbumCameraScreen = () => {
   const handleClose = useCallback(() => router.back(), [router]);
 
   // undefined unless this capture is tied to a moment event
-  const handlePhotoUploaded = useMomentUploadSubmission({
-    albumId,
-    momentId,
-    eventId,
-  });
+  const momentTarget = useMemo(
+    () => (momentId && eventId ? { momentId, eventId } : undefined),
+    [momentId, eventId],
+  );
 
   return (
     <SwipeableTabsProvider
@@ -49,7 +48,7 @@ const AlbumCameraScreen = () => {
       <CameraScreen
         albumId={albumId}
         onRequestClose={handleClose}
-        onPhotoUploaded={handlePhotoUploaded}
+        momentTarget={momentTarget}
       />
     </SwipeableTabsProvider>
   );

@@ -1,6 +1,6 @@
 /**
  * DestinationPickerSheet
- * A simple dark bottom sheet (RN Modal) listing capture destinations:
+ * A dark bottom sheet listing capture destinations:
  * optionally "Gallery" first, then the user's albums (cover thumb + title).
  * The current selection shows a checkmark on a highlighted row. Used both by
  * the camera's sticky destination picker and by the post-capture sheet's
@@ -9,7 +9,6 @@
 
 import React from "react";
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,8 +17,8 @@ import {
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import Sheet from "@/components/ui/Sheet";
 import { Album } from "@/features/album/types/album.types";
 
 /** Best available cover image for an album, or null when it has none yet. */
@@ -56,21 +55,10 @@ export const DestinationPickerSheet: React.FC<DestinationPickerSheetProps> = ({
   onSelectAlbum,
   onClose,
 }) => {
-  const insets = useSafeAreaInsets();
   const hasAlbums = !!albums && albums.length > 0;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
-          <View style={styles.grabber} />
-          <Text style={styles.title}>{title}</Text>
+    <Sheet visible={visible} onClose={onClose} title={title} tone="dark">
 
           <ScrollView
             style={styles.list}
@@ -148,41 +136,11 @@ export const DestinationPickerSheet: React.FC<DestinationPickerSheetProps> = ({
               </Text>
             )}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </Sheet>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-  },
-  sheet: {
-    backgroundColor: "rgba(22, 22, 24, 0.98)",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 10,
-    paddingHorizontal: 16,
-    maxHeight: "70%",
-  },
-  grabber: {
-    alignSelf: "center",
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    marginBottom: 14,
-  },
-  title: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 12,
-    marginLeft: 4,
-  },
   list: {
     flexGrow: 0,
   },

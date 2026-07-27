@@ -13,6 +13,8 @@ export const photoToMediaAsset = (photo: PhotoWithUploader): MediaAsset => ({
       ? (photo.thumbnailUrl ?? null)
       : (photo.thumbnailUrl ?? photo.url),
   mediaType: photo.mediaType === "video" ? "video" : "photo",
+  // The viewer paints this instead of the original upload
+  displayUrl: photo.displayUrl ?? null,
   width: 0,
   height: 0,
   duration: 0,

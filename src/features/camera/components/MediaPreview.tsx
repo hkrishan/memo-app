@@ -174,6 +174,7 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
   onDelete,
   visible,
   isUploading = false,
+  lockedAlbumId,
 }) => {
   const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
@@ -214,6 +215,9 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
     }
   }, [selectedAlbumId, onSave]);
 
+  // No album argument: the gallery-only save on the main tab, and — in
+  // album-capture mode — the save into the camera's own album (the screen
+  // forces that destination).
   const handleSaveToGallery = useCallback(() => {
     onSave();
   }, [onSave]);
@@ -222,7 +226,10 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
     return null;
   }
 
-  const hasAlbums = albums && albums.length > 0;
+  const lockedTitle = lockedAlbumId
+    ? albums?.find((album) => album.albumId === lockedAlbumId)?.title
+    : undefined;
+  const hasAlbums = !lockedAlbumId && albums && albums.length > 0;
 
   return (
     <Animated.View
@@ -296,30 +303,45 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
             disabled={isUploading}
           />
 
-          <ActionButton
-            icon="download-outline"
-            label="Gallery"
-            onPress={handleSaveToGallery}
-            disabled={isUploading}
-          />
-
-          {hasAlbums && (
+          {lockedAlbumId ? (
+            // Album camera: one destination, one button
             <ActionButton
               icon={isUploading ? "hourglass-outline" : "checkmark-circle-outline"}
-              label={isUploading ? "Uploading..." : "Save"}
-              onPress={handleSaveToAlbum}
-              variant={selectedAlbumId ? "primary" : "default"}
-              disabled={!selectedAlbumId || isUploading}
+              label={isUploading ? "Saving..." : (lockedTitle ?? "Save")}
+              onPress={handleSaveToGallery}
+              variant="primary"
+              disabled={isUploading}
             />
+          ) : (
+            <>
+              <ActionButton
+                icon="download-outline"
+                label="Gallery"
+                onPress={handleSaveToGallery}
+                disabled={isUploading}
+              />
+
+              {hasAlbums && (
+                <ActionButton
+                  icon={
+                    isUploading ? "hourglass-outline" : "checkmark-circle-outline"
+                  }
+                  label={isUploading ? "Saving..." : "Save"}
+                  onPress={handleSaveToAlbum}
+                  variant={selectedAlbumId ? "primary" : "default"}
+                  disabled={!selectedAlbumId || isUploading}
+                />
+              )}
+            </>
           )}
         </View>
       </Animated.View>
 
-      {/* Upload overlay */}
+      {/* Save overlay — the upload itself continues in the background */}
       {isUploading && (
         <View style={styles.uploadOverlay}>
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.uploadText}>Uploading to album...</Text>
+          <Text style={styles.uploadText}>Saving...</Text>
         </View>
       )}
     </Animated.View>

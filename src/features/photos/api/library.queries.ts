@@ -9,6 +9,7 @@
 import { useMemo } from "react";
 import {
   InfiniteData,
+  QueryClient,
   useInfiniteQuery,
   useMutation,
   useQueryClient,
@@ -16,6 +17,11 @@ import {
 
 import { photoKeys } from "@/features/album/api/photo.queries";
 import photoApi from "@/features/album/api/photo.api";
+import {
+  beginAlbumLinks,
+  failAlbumLinks,
+  settleAlbumLink,
+} from "@/features/album/store/albumLinkStore";
 import { useLibraryUploadQueue } from "../store/libraryUploadQueue";
 import libraryApi, {
   LibraryPage,
@@ -77,8 +83,14 @@ export const useMergedLibrary = () => {
       .map((entry) => ({
         photoId: entry.localId,
         url: entry.fileUri,
-        thumbnailUrl: entry.fileUri,
-        mediaType: "photo" as const,
+        // Videos have no still of their own — the device-library poster
+        // recorded at enqueue time stands in (null keeps the grid's dark
+        // play-glyph tile rather than a blank one)
+        thumbnailUrl:
+          entry.mediaType === "video"
+            ? (entry.posterUri ?? null)
+            : entry.fileUri,
+        mediaType: entry.mediaType === "video" ? ("video" as const) : ("photo" as const),
         width: entry.width ?? null,
         height: entry.height ?? null,
         caption: null,
@@ -100,6 +112,50 @@ export const useMergedLibrary = () => {
   }, [entries, query.data]);
 
   return { ...query, photos };
+};
+
+// ---------------------------------------------------------------------------
+// Adding a library photo to an album — shown in the album IMMEDIATELY
+// ---------------------------------------------------------------------------
+
+/**
+ * The library photo behind an id, read straight from the cached feed — it
+ * supplies the image the album paints while the link is being made.
+ */
+const findLibraryPhoto = (
+  queryClient: QueryClient,
+  libraryPhotoId: string,
+): MergedLibraryPhoto | undefined =>
+  queryClient
+    .getQueryData<InfiniteData<LibraryPage>>(libraryKeys.all)
+    ?.pages.flatMap((page) => page.photos)
+    .find((photo) => photo.photoId === libraryPhotoId);
+
+/**
+ * Records the in-flight links so every album surface can show the photo at
+ * once. This goes to a STORE, not the album's query cache: a cache entry is
+ * erased by the next refetch of that album's photos, which lands a moment
+ * later and would make the tile vanish again.
+ */
+const beginLinks = (
+  queryClient: QueryClient,
+  libraryPhotoId: string,
+  albumIds: string[],
+): void => {
+  if (albumIds.length === 0) return;
+  const photo = findLibraryPhoto(queryClient, libraryPhotoId);
+  if (!photo) return;
+  beginAlbumLinks(
+    albumIds.map((albumId) => ({
+      albumId,
+      libraryPhotoId,
+      url: photo.url,
+      thumbnailUrl: photo.thumbnailUrl,
+      mediaType: photo.mediaType === "video" ? "video" : "photo",
+      width: photo.width,
+      height: photo.height,
+    })),
+  );
 };
 
 /**
@@ -176,10 +232,22 @@ export const useSetLibraryPhotoAlbumsMutation = () => {
         if (!membership.photoId) continue;
         await photoApi.deletePhoto(membership.albumId, membership.photoId);
       }
+      const createdRows: { albumId: string; photoId: string }[] = [];
       for (const albumId of added) {
-        await libraryApi.addLibraryPhotoToAlbum(albumId, libraryPhotoId);
+        const created = await libraryApi.addLibraryPhotoToAlbum(
+          albumId,
+          libraryPhotoId,
+        );
+        createdRows.push({ albumId, photoId: created.photoId });
+        // Hand this album's tile over as soon as ITS row exists, rather
+        // than waiting for the rest of the batch
+        settleAlbumLink(albumId, libraryPhotoId, created.photoId);
       }
-      return { addedTo: added, removedFrom: removed.map((a) => a.albumId) };
+      return {
+        addedTo: added,
+        createdRows,
+        removedFrom: removed.map((a) => a.albumId),
+      };
     },
     // Paint the new membership at once — the viewer's "In <album>" label must
     // react to the checkbox choice, not to the network round-trip
@@ -189,6 +257,14 @@ export const useSetLibraryPhotoAlbumsMutation = () => {
         libraryKeys.all,
       );
       const copyIds = new Map(current.map((a) => [a.albumId, a.photoId]));
+
+      // Paint the photo into every newly checked album NOW — the album must
+      // not sit empty while the server makes its copy
+      const currentIds = new Set(current.map((a) => a.albumId));
+      const addedAlbumIds = nextAlbums
+        .map((album) => album.albumId)
+        .filter((albumId) => !currentIds.has(albumId));
+      beginLinks(queryClient, libraryPhotoId, addedAlbumIds);
       queryClient.setQueryData<InfiniteData<LibraryPage>>(
         libraryKeys.all,
         (data) =>
@@ -214,11 +290,14 @@ export const useSetLibraryPhotoAlbumsMutation = () => {
               }
             : data,
       );
-      return { previous };
+      return { previous, addedAlbumIds };
     },
-    onError: (_error, _variables, context) => {
+    onError: (_error, { libraryPhotoId }, context) => {
       if (context?.previous) {
         queryClient.setQueryData(libraryKeys.all, context.previous);
+      }
+      for (const albumId of context?.addedAlbumIds ?? []) {
+        failAlbumLinks(albumId, [libraryPhotoId]);
       }
     },
     onSettled: (_data, _error, { current, nextAlbums }) => {
@@ -252,7 +331,16 @@ export const useAddLibraryPhotoToAlbumMutation = () => {
       albumId: string;
       libraryPhotoId: string;
     }) => libraryApi.addLibraryPhotoToAlbum(albumId, libraryPhotoId),
-    onSuccess: (_data, { albumId }) => {
+    // Same as the multi-album picker: the album shows the photo at once,
+    // badged as pending, instead of waiting on the server copy
+    onMutate: async ({ albumId, libraryPhotoId }) => {
+      beginLinks(queryClient, libraryPhotoId, [albumId]);
+    },
+    onError: (_error, { albumId, libraryPhotoId }) => {
+      failAlbumLinks(albumId, [libraryPhotoId]);
+    },
+    onSuccess: (created, { albumId, libraryPhotoId }) => {
+      settleAlbumLink(albumId, libraryPhotoId, created.photoId);
       queryClient.invalidateQueries({
         queryKey: photoKeys.byAlbum(albumId),
       });

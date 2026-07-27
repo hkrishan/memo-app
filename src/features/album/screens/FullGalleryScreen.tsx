@@ -28,7 +28,10 @@ import { useGetPhotosQuery } from "../api/photo.queries";
 import { useGetAlbumActivitiesQuery } from "../api/album.queries";
 import { useGetMomentsQuery } from "@/features/moments/api/moments.queries";
 import { useAlbumPhotoViewerExtras } from "../hooks/useAlbumPhotoViewerExtras";
-import { useAlbumPendingAssets } from "../hooks/useAlbumPendingAssets";
+import {
+  useAlbumLocalPlaceholders,
+  useAlbumPendingAssets,
+} from "../hooks/useAlbumPendingAssets";
 import { photoToMediaAsset } from "../utils/mediaAsset";
 import { PhotoWithUploader } from "../types/album.types";
 import { PhotoBrowser } from "@/features/photos/components";
@@ -122,12 +125,21 @@ const FullGalleryScreen = () => {
   const pendingAssets = useAlbumPendingAssets(albumId, photos);
   const showsPending = filter == null || filter === "all";
 
+  const placeholders = useAlbumLocalPlaceholders(albumId);
+
   const assets = useMemo(
     () => [
       ...(showsPending ? pendingAssets : []),
-      ...filteredPhotos.map(photoToMediaAsset),
+      ...filteredPhotos.map((photo) => {
+        const asset = photoToMediaAsset(photo);
+        const local = placeholders.get(photo.photoId);
+        // See AlbumScreen: local bytes beat a fresh signed URL every time
+        return local
+          ? { ...asset, uri: local, thumbnailUrl: local, placeholderUri: local }
+          : asset;
+      }),
     ],
-    [filteredPhotos, pendingAssets, showsPending],
+    [filteredPhotos, pendingAssets, showsPending, placeholders],
   );
 
   const { renderSocialOverlay, onDoubleTapAsset, poppingIds } =

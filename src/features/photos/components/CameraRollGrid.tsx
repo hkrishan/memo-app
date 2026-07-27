@@ -58,7 +58,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Image, type ImageLoadEventData } from "expo-image";
+import { type ImageLoadEventData } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "react-native-paper";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
@@ -77,7 +77,8 @@ import Animated, {
 import dayjs from "dayjs";
 import { MediaAsset } from "@/features/album/hooks";
 import UploadingBadge from "@/components/ui/UploadingBadge";
-import { stableCacheKey } from "@/lib/imageCache";
+import { MediaTile } from "@/components/ui/MediaTile";
+import { hasRenderableStill } from "@/lib/mediaStill";
 import { GridScrubber, type MonthRange } from "./GridScrubber";
 import { Frame } from "./types";
 
@@ -537,17 +538,8 @@ const GridCell = memo<GridCellProps>(
       paddingTop: isFlushTop ? 0 : GRID_GAP,
     };
 
-    // Remote thumbnails (album photos) are worth keeping on disk; local
-    // ph:// URIs stay memory-only (disk caching local assets is overhead)
     const isVideo = asset.mediaType === "video";
-    // A remote video without a poster has NO renderable image (its uri is
-    // the video file, which expo-image can't paint) — dark tile + play
-    // glyph instead of a blank/broken cell. Local videos are fine: their
-    // ph://-style uris render as poster frames.
-    const posterlessVideo =
-      isVideo && asset.thumbnailUrl == null && asset.uri.startsWith("http");
-    const thumbUri = asset.thumbnailUrl ?? asset.uri;
-    const isRemote = thumbUri.startsWith("http");
+    const posterlessVideo = isVideo && !hasRenderableStill(asset);
 
     return (
       <Pressable
@@ -560,25 +552,10 @@ const GridCell = memo<GridCellProps>(
           consistent relative to the visible image in every column */}
         <View ref={imageAreaRef} collapsable={false} style={styles.cellInner}>
           <Animated.View style={[styles.cellPop, popStyle]}>
-            {posterlessVideo ? (
-              <View style={[styles.cellImage, styles.cellVideoFallback]}>
-                <Ionicons
-                  name="play"
-                  size={22}
-                  color="rgba(255, 255, 255, 0.9)"
-                />
-              </View>
-            ) : (
-              <Image
-                source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
-                style={styles.cellImage}
-                contentFit="cover"
-                recyclingKey={asset.id}
-                cachePolicy={isRemote ? "memory-disk" : "memory"}
-                transition={0}
-                onLoad={onCellImageLoad ? handleImageLoad : undefined}
-              />
-            )}
+            <MediaTile
+              asset={asset}
+              onLoad={onCellImageLoad ? handleImageLoad : undefined}
+            />
             {isVideo && !posterlessVideo && (
               <View style={styles.durationBadge}>
                 {asset.duration > 0 ? (
@@ -1224,11 +1201,6 @@ const styles = StyleSheet.create({
   cellImage: {
     flex: 1,
     backgroundColor: "#f0f0f0",
-  },
-  cellVideoFallback: {
-    backgroundColor: "#1c1c1e",
-    alignItems: "center",
-    justifyContent: "center",
   },
   durationBadge: {
     position: "absolute",

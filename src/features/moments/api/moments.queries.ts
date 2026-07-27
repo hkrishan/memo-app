@@ -1,8 +1,4 @@
-import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isApiError } from "@/lib/api";
-import { notify } from "@/components/global";
-import { uploadIndicator } from "@/components/global/uploadIndicator";
 import {
   selectIsAuthenticated,
   useAuthStore,
@@ -131,48 +127,7 @@ export const useSubmitToMomentMutation = () => {
   });
 };
 
-/**
- * Camera → moment bridge. When the album camera was opened from a moment's
- * "Post now" (route params carry momentId + eventId), this returns a
- * callback for CameraScreen's onPhotoUploaded: once the photo lands in the
- * album, it is submitted to the open event with the upload-pill treatment.
- * Returns undefined when the capture isn't tied to a moment.
- */
-export const useMomentUploadSubmission = ({
-  albumId,
-  momentId,
-  eventId,
-}: {
-  albumId?: string;
-  momentId?: string;
-  eventId?: string;
-}): ((photo: { photoId: string }) => void) | undefined => {
-  const submitMutation = useSubmitToMomentMutation();
-
-  const handlePhotoUploaded = useCallback(
-    (photo: { photoId: string }) => {
-      if (!albumId || !momentId || !eventId) return;
-      const indicatorId = `moment-submit-${Date.now()}`;
-      uploadIndicator.begin(indicatorId, "Posting to moment…");
-      // mutateAsync, not per-call callbacks: react-query drops those on
-      // unmount, which would strand the pill mid-spin.
-      submitMutation
-        .mutateAsync({ albumId, momentId, eventId, photoId: photo.photoId })
-        .then(() => {
-          uploadIndicator.succeed(indicatorId, "Posted to moment");
-        })
-        .catch((error) => {
-          if (isApiError(error) && error.status === 409) {
-            uploadIndicator.succeed(indicatorId, "Already posted");
-            notify.error("Already posted", "You already posted for this drop");
-          } else {
-            uploadIndicator.fail(indicatorId, "Couldn't post to moment");
-          }
-        });
-    },
-    [albumId, momentId, eventId, submitMutation],
-  );
-
-  if (!albumId || !momentId || !eventId) return undefined;
-  return handlePhotoUploaded;
-};
+// The camera → moment bridge used to live here as a post-upload callback.
+// Captures now carry their moment event into the upload queue instead
+// (libraryUploadQueue submits once the album copy exists), so the
+// submission survives the camera closing mid-upload.

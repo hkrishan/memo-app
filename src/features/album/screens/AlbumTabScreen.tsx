@@ -22,22 +22,15 @@ import {
 import { useGetAlbumsQuery } from "../api/album.queries";
 import { sortAlbums, useAlbumSortStore } from "../store/albumSortStore";
 import { Album } from "../types/album.types";
-import { useMergedLibrary } from "@/features/photos/api/library.queries";
-import { libraryPhotoToAsset } from "@/features/photos/utils/libraryAsset";
 import { theme } from "@/lib/theme";
 
 export default function AlbumTabScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { scrollPosition, pageIndex } = useSwipeableTabs();
-  // "My Photos" reads the server-side Memo library — local-first: captures
-  // still uploading render from their on-device files at the front, so a
-  // shot appears here the instant the shutter fires.
-  const { photos: libraryPhotos } = useMergedLibrary();
-  const libraryAssets = useMemo(
-    () => libraryPhotos.slice(0, 30).map(libraryPhotoToAsset),
-    [libraryPhotos],
-  );
+  // "My Photos" owns its own data through the shared library viewer session
+  // (see GalleryCarousel) — local-first, so a capture still uploading shows
+  // from its on-device file the instant the shutter fires.
   const { data: albums, isLoading: albumsLoading } = useGetAlbumsQuery();
 
   // Client-side ordering (persisted choice). New array; the grid glides cards
@@ -103,7 +96,7 @@ export default function AlbumTabScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#000" />
               </Pressable>
             </View>
-            <GalleryCarousel assets={libraryAssets} />
+            <GalleryCarousel />
           </Animated.View>
 
           <Animated.View style={[styles.section, contentFadeStyle]}>

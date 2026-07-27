@@ -12,6 +12,8 @@ export interface LibraryPhoto {
   photoId: string;
   url: string;
   thumbnailUrl: string | null;
+  /** See Photo.displayUrl — the size the viewer paints. */
+  displayUrl?: string | null;
   mediaType: "photo" | "video";
   width: number | null;
   height: number | null;

@@ -33,6 +33,12 @@ import { usePhotoAlbumStore } from "./photoAlbumStore";
 
 /** How long the "done" state lingers before the pill auto-hides. */
 const DONE_HIDE_MS = 1500;
+/**
+ * How long a landed upload's local file stays available to the album tiles
+ * after the server row appears. Long enough for the remote image to be
+ * fetched normally, so the switch is never visible.
+ */
+const SETTLED_LINGER_MS = 5 * 60_000;
 
 /** A failed asset remembers which album it was headed to, for retries. */
 export type FailedAsset = PendingAsset & { albumId: string };
@@ -54,13 +60,52 @@ export interface UploadBatch {
   status: "uploading" | "done";
 }
 
+/**
+ * One photo this manager is carrying into an album, kept so the album can
+ * render it from its LOCAL file while it flies (see useAlbumPendingAssets).
+ * A record outlives its upload: it retires only once the album's photo list
+ * has refetched, so the local tile hands over to the server one with no gap.
+ */
+export type PendingAlbumUpload = {
+  uri: string;
+  albumId: string;
+  /** Server took it; the tile retires on the next album refetch. */
+  uploaded: boolean;
+  /** The album photo the server created — lets the server tile borrow this
+   *  local file as its placeholder while the remote image downloads. */
+  albumPhotoId: string | null;
+  /** Failed — waiting on the batch's retry (or its dismissal). */
+  failed: boolean;
+  /** Drives newest-first ordering alongside the album's server photos. */
+  startedAt: number;
+  /**
+   * When the album's list picked this photo up. The record LINGERS past
+   * that: its local file is what the album tile draws until the record is
+   * pruned, so the photo never blanks while its remote image downloads.
+   */
+  settledAt: number | null;
+};
+
 interface UploadManagerState {
   batch: UploadBatch | null;
+  pending: PendingAlbumUpload[];
 }
 
 export const useUploadManagerStore = create<UploadManagerState>(() => ({
   batch: null,
+  pending: [],
 }));
+
+const patchPending = (
+  match: (upload: PendingAlbumUpload) => boolean,
+  patch: Partial<PendingAlbumUpload>,
+): void => {
+  useUploadManagerStore.setState((state) => ({
+    pending: state.pending.map((upload) =>
+      match(upload) ? { ...upload, ...patch } : upload,
+    ),
+  }));
+};
 
 /** True once every enqueued photo has either completed or failed. */
 export const isBatchSettled = (batch: UploadBatch): boolean =>
@@ -143,6 +188,36 @@ export function startUploadBatch(
     });
   }
 
+  // Local-first: the album renders these from their local files right away.
+  // A retry replaces its old record rather than stacking a second tile.
+  const startedAt = Date.now();
+  const staleBefore = startedAt - SETTLED_LINGER_MS;
+  useUploadManagerStore.setState((state) => ({
+    pending: [
+      ...state.pending
+        .filter(
+          (upload) =>
+            upload.settledAt == null || upload.settledAt > staleBefore,
+        )
+        .filter(
+        (upload) =>
+          !(
+            upload.albumId === albumId &&
+            toEnqueue.some((asset) => asset.uri === upload.uri)
+          ),
+      ),
+      ...toEnqueue.map((asset) => ({
+        uri: asset.uri,
+        albumId,
+        uploaded: false,
+        albumPhotoId: null,
+        failed: false,
+        startedAt,
+        settledAt: null,
+      })),
+    ],
+  }));
+
   albumIdsToInvalidate.add(albumId);
   for (const asset of toEnqueue) {
     inFlightUris.add(asset.uri);
@@ -163,6 +238,11 @@ export function retryFailedUploads(): void {
     albumIdsToInvalidate.add(albumId);
     inFlightUris.add(asset.uri);
     inFlight += 1;
+    // Its tile goes back to spinning
+    patchPending(
+      (upload) => upload.uri === asset.uri && upload.albumId === albumId,
+      { failed: false },
+    );
     void uploadOne(albumId, asset);
   }
 }
@@ -178,7 +258,11 @@ export function dismissUploadBatch(): void {
     isBatchSettled(batch) && batch.failedAssets.length > 0;
   if (batch.status === "done" || finishedWithFailures) {
     clearHideTimer();
-    useUploadManagerStore.setState({ batch: null });
+    // Abandoning the failures retires their tiles too — nothing is coming
+    useUploadManagerStore.setState((state) => ({
+      batch: null,
+      pending: state.pending.filter((upload) => !upload.failed),
+    }));
   }
 }
 
@@ -194,6 +278,7 @@ export function dismissUploadBatch(): void {
  */
 async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
   let succeeded = false;
+  let createdPhotoId: string | null = null;
   try {
     // Fresh token per file — a long batch can outlive an access token
     const token = await tokenStorage.getAccessToken();
@@ -222,6 +307,15 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
     });
 
     succeeded = result.status === 201;
+    if (succeeded) {
+      try {
+        createdPhotoId = (JSON.parse(result.body) as { photoId?: string })
+          .photoId ?? null;
+      } catch {
+        // Body wasn't the photo we expected — the tile just loses its
+        // placeholder, nothing else depends on this
+      }
+    }
     if (!succeeded) {
       if (__DEV__) {
         console.error(
@@ -250,6 +344,9 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
     return;
   }
 
+  const isThisUpload = (upload: PendingAlbumUpload) =>
+    upload.uri === asset.uri && upload.albumId === albumId;
+
   if (succeeded) {
     // Bookkeeping mirrors the old in-screen flow: remember the association
     // and drop the asset from the pending list so retries can't duplicate
@@ -257,10 +354,14 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
       .getState()
       .addAssociation(asset.uri, albumId, batch.albumTitle);
     usePendingUploadsStore.getState().removeAsset(asset.uri);
+    // The local tile stays (the album's list doesn't have the photo until
+    // the batch settles and refetches) — it just stops spinning
+    patchPending(isThisUpload, { uploaded: true, albumPhotoId: createdPhotoId });
     useUploadManagerStore.setState({
       batch: { ...batch, completed: batch.completed + 1 },
     });
   } else {
+    patchPending(isThisUpload, { failed: true });
     useUploadManagerStore.setState({
       batch: {
         ...batch,
@@ -276,10 +377,37 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
 function settleBatch(): void {
   // Refresh every album the batch touched (the response body is ignored —
   // invalidation is what brings the new photos into the grid)
-  for (const id of albumIdsToInvalidate) {
-    queryClient.invalidateQueries({ queryKey: photoKeys.byAlbum(id) });
-  }
+  const touchedAlbumIds = [...albumIdsToInvalidate];
   albumIdsToInvalidate.clear();
+  void Promise.all(
+    touchedAlbumIds.map((id) =>
+      queryClient.invalidateQueries({ queryKey: photoKeys.byAlbum(id) }),
+    ),
+  ).then(() => {
+    // The refetch landed, so the server rows exist — but the records STAY.
+    // Their local files are what the album tiles draw until the linger
+    // window closes; deleting them here is what made photos blink out at
+    // exactly this moment and reappear only once R2 served them back.
+    const settledAt = Date.now();
+    useUploadManagerStore.setState((state) => ({
+      pending: state.pending.map((upload) =>
+        upload.uploaded &&
+        upload.settledAt == null &&
+        touchedAlbumIds.includes(upload.albumId)
+          ? { ...upload, settledAt }
+          : upload,
+      ),
+    }));
+    // Deterministic cleanup: the picker's cache files aren't ours to keep
+    // alive forever, and by now the remote image is a normal album fetch
+    setTimeout(() => {
+      useUploadManagerStore.setState((state) => ({
+        pending: state.pending.filter(
+          (upload) => upload.settledAt == null || upload.settledAt > settledAt,
+        ),
+      }));
+    }, SETTLED_LINGER_MS);
+  });
   // Also refresh the albums LIST (["albums"]) + every album detail
   // (["albums", id]) by prefix — the My Albums tab derives each card's
   // cover from the list's recentPhotos, which a per-id invalidation misses.

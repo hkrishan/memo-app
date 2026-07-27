@@ -16,7 +16,6 @@
 
 import React, { memo, useCallback, useMemo } from "react";
 import { View, StyleSheet, Pressable, ScrollView } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
   SharedValue,
@@ -39,7 +38,7 @@ import { memberColor } from "../../memberColor";
 import { useGetMomentsQuery } from "@/features/moments/api/moments.queries";
 import { momentTypeRegistry } from "@/features/moments/registry/momentTypes";
 import Avatar from "@/components/ui/Avatar";
-import { stableCacheKey } from "@/lib/imageCache";
+import { MediaTile } from "@/components/ui/MediaTile";
 
 const LIST_BOTTOM_PADDING = 100;
 /** Moment sections shown (newest first). */
@@ -370,11 +369,6 @@ const PeopleRow = memo<{
       contentContainerStyle={styles.peopleStrip}
     >
       {people.map((entry) => {
-        const thumbUri = entry.latest.thumbnailUrl ?? entry.latest.uri;
-        const posterlessVideo =
-          entry.latest.mediaType === "video" &&
-          entry.latest.thumbnailUrl == null &&
-          entry.latest.uri.startsWith("http");
         return (
           <Pressable
             key={entry.member.userId}
@@ -387,24 +381,12 @@ const PeopleRow = memo<{
             accessibilityLabel={`${entry.member.name}, ${entry.count} photos`}
           >
             <View style={styles.personTile}>
-              {posterlessVideo ? (
-                <View style={[styles.personImage, styles.personVideoFallback]}>
-                  <Ionicons
-                    name="play"
-                    size={20}
-                    color="rgba(255, 255, 255, 0.9)"
-                  />
-                </View>
-              ) : (
-                <Image
-                  source={{ uri: thumbUri, cacheKey: stableCacheKey(thumbUri) }}
-                  style={styles.personImage}
-                  contentFit="cover"
-                  recyclingKey={`person-${entry.member.userId}`}
-                  transition={100}
-                  cachePolicy="memory-disk"
-                />
-              )}
+              <MediaTile
+                asset={entry.latest}
+                recyclingKeySuffix={`person-${entry.member.userId}`}
+                fallbackGlyphSize={20}
+                transition={100}
+              />
               <View style={styles.personCountBadge} pointerEvents="none">
                 <Text style={styles.personCountText}>{entry.count}</Text>
               </View>
@@ -497,11 +479,6 @@ const styles = StyleSheet.create({
   personImage: {
     width: "100%",
     height: "100%",
-  },
-  personVideoFallback: {
-    backgroundColor: "#1c1c1e",
-    alignItems: "center",
-    justifyContent: "center",
   },
   personLabel: {
     flexDirection: "row",
