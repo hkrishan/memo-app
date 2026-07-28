@@ -13,6 +13,7 @@ import {
   useSwipeableTabs,
   TOP_BAR_HEIGHT,
 } from "../../../contexts/SwipeableTabsContext";
+import { CreateBanner } from "@/features/create/components/CreateBanner";
 import {
   GalleryCarousel,
   AlbumsGrid,
@@ -97,6 +98,11 @@ export default function AlbumTabScreen() {
               </Pressable>
             </View>
             <GalleryCarousel />
+          </Animated.View>
+
+          {/* Memo Create — collage & carousel builder */}
+          <Animated.View style={contentFadeStyle}>
+            <CreateBanner />
           </Animated.View>
 
           <Animated.View style={[styles.section, contentFadeStyle]}>

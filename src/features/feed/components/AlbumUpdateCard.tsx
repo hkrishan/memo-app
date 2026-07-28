@@ -52,7 +52,7 @@ const Surface: React.FC<{
 
 const AlbumChip = memo<{ title: string }>(({ title }) => (
   <View style={styles.albumChip}>
-    <Ionicons name="images-outline" size={10} color="#c7c7cc" />
+    <Ionicons name="images-outline" size={10} color="#6e6e73" />
     <Text style={styles.albumChipText} numberOfLines={1}>
       {title}
     </Text>
@@ -234,16 +234,16 @@ const AlbumUpdateCard = memo<{ update: AlbumFeedUpdate }>(({ update }) => {
 
 const styles = StyleSheet.create({
   surface: {
-    backgroundColor: "#212123",
+    backgroundColor: "#F7F7F8",
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(0, 0, 0, 0.06)",
     padding: CARD_PADDING,
     marginHorizontal: H_PADDING,
     marginBottom: 12,
   },
   surfacePressed: {
-    backgroundColor: "#28282b",
+    backgroundColor: "#EFEFF1",
   },
   headerRow: {
     flexDirection: "row",
@@ -254,12 +254,12 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   title: {
-    color: "#c9c9ce",
+    color: "#3a3a3c",
     fontSize: 14.5,
     lineHeight: 19,
   },
   name: {
-    color: "#fff",
+    color: "#111",
     fontWeight: "600",
   },
   metaRow: {
@@ -272,19 +272,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(0, 0, 0, 0.06)",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2.5,
     maxWidth: 200,
   },
   albumChipText: {
-    color: "#c7c7cc",
+    color: "#6e6e73",
     fontSize: 11.5,
     fontWeight: "500",
   },
   time: {
-    color: "#77777c",
+    color: "#8e8e93",
     fontSize: 12,
     fontVariant: ["tabular-nums"],
   },
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#30B15C",
     borderWidth: 2,
-    borderColor: "#212123",
+    borderColor: "#F7F7F8",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   momentTitle: {
-    color: "#e8e8ea",
+    color: "#1c1c1e",
     fontSize: 14,
     fontWeight: "500",
     lineHeight: 19,

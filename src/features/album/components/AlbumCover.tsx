@@ -10,11 +10,20 @@ import React from "react";
 import { View, StyleSheet, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { Album } from "../types/album.types";
+import { Album, AlbumPhoto } from "../types/album.types";
 import AvatarListRow from "@/components/ui/AvatarListRow";
 import { CachedImage } from "@/components/ui/CachedImage";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+/** The renderable image for a cover candidate: videos use their poster
+ *  frame (the raw video URL is not an image). || (not ??) so empty-string
+ *  URLs fall through too. */
+const coverImageUri = (photo?: AlbumPhoto | null): string | null => {
+  if (!photo) return null;
+  if (photo.mediaType === "video") return photo.thumbnailUrl || null;
+  return photo.url || null;
+};
 
 interface AlbumCoverProps {
   album: Album;
@@ -31,9 +40,9 @@ export const AlbumCover: React.FC<AlbumCoverProps> = ({
 }) => {
   const { coverPhoto, recentPhotos, members } = album;
   // The dedicated cover wins; otherwise the newest photo stands in — shown
-  // crisp either way, since no text sits on top of it anymore. || (not ??)
-  // so an empty-string URL falls through to the placeholder well too.
-  const coverUri = coverPhoto?.url || recentPhotos?.[0]?.url || null;
+  // crisp either way, since no text sits on top of it anymore.
+  const coverUri =
+    coverImageUri(coverPhoto) || coverImageUri(recentPhotos?.[0]) || null;
   const hasAvatars = showMembers && members && members.length > 0;
 
   return (

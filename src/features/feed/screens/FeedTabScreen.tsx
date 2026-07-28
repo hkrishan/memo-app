@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
@@ -25,7 +26,9 @@ import {
 import { useGetFeedQuery } from "../api/feed.queries";
 import FeedPost from "../components/FeedPost";
 import AlbumsFeedList from "../components/AlbumsFeedList";
-import FeedModeSwitch from "../components/FeedModeSwitch";
+import FeedModeSwitch, {
+  SWITCH_ROW_HEIGHT,
+} from "../components/FeedModeSwitch";
 import { useFeedModeStore } from "../store/feedModeStore";
 import type { PagePostFeedItem } from "../types/feed.types";
 import Animated, {
@@ -44,11 +47,12 @@ const ESTIMATED_ITEM_HEIGHT = 420;
 /** How far the inactive view slides while cross-fading (px) */
 const VIEW_SLIDE = 24;
 
+
 // ---------------------------------------------------------------------------
 // Pages view — the original posts feed, data logic untouched
 // ---------------------------------------------------------------------------
 
-const PagesFeedList = memo(() => {
+const PagesFeedList = memo<{ topInset: number }>(({ topInset }) => {
   const { data, refetch, isRefetching, isLoading } = useGetFeedQuery();
   // The /feed response still mixes in album_activity items; those belong to
   // the Albums view now — Pages shows page posts only
@@ -91,20 +95,25 @@ const PagesFeedList = memo(() => {
     );
   }, [isLoading]);
 
+  const contentStyle = useMemo(
+    () => ({ paddingTop: topInset, paddingBottom: 100 }),
+    [topInset],
+  );
+
   return (
     <FeedFlashList
       data={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       estimatedItemSize={ESTIMATED_ITEM_HEIGHT}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={contentStyle}
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={listEmpty}
       refreshControl={
         <RefreshControl
           refreshing={isRefetching}
           onRefresh={refetch}
-          tintColor="#fff"
+          tintColor="#888"
         />
       }
     />
@@ -147,31 +156,14 @@ export default function FeedScreen() {
     transform: [{ translateX: VIEW_SLIDE * (1 - modeProgress.value) }],
   }));
 
-  return (
-    <View
-      style={[styles.container, { paddingTop: insets.top + TOP_BAR_HEIGHT }]}
-    >
-      <Animated.View style={[contentFadeStyle, styles.content]}>
-        <View style={styles.switchRow}>
-          <View style={styles.switchSpacer} />
-          <FeedModeSwitch
-            mode={mode}
-            onChange={setMode}
-            progress={modeProgress}
-          />
-          <View style={styles.switchSpacer}>
-            <Pressable
-              onPress={handleOpenSearch}
-              hitSlop={8}
-              style={styles.searchButton}
-              accessibilityRole="button"
-              accessibilityLabel="Search pages"
-            >
-              <Ionicons name="search" size={20} color="#e6e6ea" />
-            </Pressable>
-          </View>
-        </View>
+  // Content scrolls under the blurred top bar (like the Albums tab) and
+  // under the floating pill row that sits just below it
+  const barBottom = insets.top + TOP_BAR_HEIGHT;
+  const listTopInset = barBottom + SWITCH_ROW_HEIGHT + 8;
 
+  return (
+    <View style={styles.container}>
+      <Animated.View style={[contentFadeStyle, styles.content]}>
         {/* Both views stay mounted: queries keep their cache and each list
             keeps its scroll position across switches */}
         <View style={styles.views}>
@@ -179,14 +171,44 @@ export default function FeedScreen() {
             style={[StyleSheet.absoluteFill, pagesViewStyle]}
             pointerEvents={mode === "pages" ? "auto" : "none"}
           >
-            <PagesFeedList />
+            <PagesFeedList topInset={listTopInset} />
           </Animated.View>
           <Animated.View
             style={[StyleSheet.absoluteFill, albumsViewStyle]}
             pointerEvents={mode === "albums" ? "auto" : "none"}
           >
-            <AlbumsFeedList />
+            <AlbumsFeedList topInset={listTopInset} />
           </Animated.View>
+        </View>
+
+        {/* Floating mode switch + search — overlays the lists, which
+            scroll underneath (they reserve SWITCH_ROW_HEIGHT at the top) */}
+        <View
+          style={[styles.switchRow, { top: barBottom }]}
+          pointerEvents="box-none"
+        >
+          <View style={styles.switchSpacer} pointerEvents="none" />
+          <FeedModeSwitch
+            mode={mode}
+            onChange={setMode}
+            progress={modeProgress}
+          />
+          <View style={styles.switchSpacer} pointerEvents="box-none">
+            <Pressable
+              onPress={handleOpenSearch}
+              hitSlop={8}
+              style={styles.searchButton}
+              accessibilityRole="button"
+              accessibilityLabel="Search pages"
+            >
+              <BlurView
+                intensity={25}
+                tint="light"
+                style={styles.frostedFill}
+              />
+              <Ionicons name="search" size={20} color="#111" />
+            </Pressable>
+          </View>
         </View>
       </Animated.View>
     </View>
@@ -196,12 +218,16 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#fff",
   },
   content: {
     flex: 1,
   },
   switchRow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 10,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
@@ -219,14 +245,16 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#262628",
+    overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0, 0, 0, 0.06)",
+  },
+  frostedFill: {
+    ...StyleSheet.absoluteFillObject,
   },
   views: {
     flex: 1,
-  },
-  listContent: {
-    paddingTop: 8,
-    paddingBottom: 100,
   },
   emptyContainer: {
     alignItems: "center",
@@ -237,19 +265,19 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#232325",
+    backgroundColor: "#F1F1F3",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
   emptyTitle: {
-    color: "#fff",
+    color: "#111",
     fontSize: 17,
     fontWeight: "600",
     marginBottom: 6,
   },
   emptySubtitle: {
-    color: "#9a9aa0",
+    color: "#8e8e93",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",

@@ -268,13 +268,16 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
     return { opacity };
   });
 
-  // Background tint for album (light) vs feed (dark)
+  // Background tint — light on Album and Feed, transparent on Camera
   const blurTintStyle = useAnimatedStyle(() => {
-    // Album gets light tint, feed gets dark tint
     const backgroundColor = interpolateColor(
       scrollPosition.value,
       [0, 1, 2],
-      ["rgba(255, 255, 255, 0.7)", "rgba(0, 0, 0, 0)", "rgba(26, 26, 26, 0.5)"],
+      [
+        "rgba(255, 255, 255, 0.7)",
+        "rgba(0, 0, 0, 0)",
+        "rgba(255, 255, 255, 0.7)",
+      ],
     );
     return { backgroundColor };
   });
@@ -282,8 +285,8 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
   const iconColorStyle = useAnimatedStyle(() => {
     const color = interpolateColor(
       scrollPosition.value,
-      [0, 0.5, 1, 2],
-      ["#000000", "#ffffff", "#ffffff", "#ffffff"],
+      [0, 0.5, 1, 1.5, 2],
+      ["#000000", "#ffffff", "#ffffff", "#ffffff", "#000000"],
     );
     return { color };
   });
@@ -392,8 +395,8 @@ function TopBarTitle({ title, index, scrollPosition }: TopBarTitleProps) {
   const textColorStyle = useAnimatedStyle(() => {
     const color = interpolateColor(
       scrollPosition.value,
-      [0, 0.5, 1, 2],
-      ["#000000", "#ffffff", "#ffffff", "#ffffff"],
+      [0, 0.5, 1, 1.5, 2],
+      ["#000000", "#ffffff", "#ffffff", "#ffffff", "#000000"],
     );
     return { color };
   });
@@ -420,7 +423,7 @@ function TabBar({
   onNavigate,
   bottomInset,
 }: TabBarProps) {
-  // Background color: white for Album (0), dark transparent for Camera (1), dark gray for Feed (2)
+  // Background color: white for Album (0), dark transparent for Camera (1), frosted white for Feed (2)
   const animatedBarStyle = useAnimatedStyle(() => {
     const backgroundColor = interpolateColor(
       scrollPosition.value,
@@ -428,7 +431,7 @@ function TabBar({
       [
         "rgba(255, 255, 255, 1)",
         "rgba(0, 0, 0, 0.85)",
-        "rgba(26, 26, 26, 0.75)",
+        "rgba(255, 255, 255, 0.75)",
       ],
     );
 
@@ -450,7 +453,7 @@ function TabBar({
     <View style={[styles.tabBar, { paddingBottom: bottomInset + 8 }]}>
       {/* Blur background for Feed screen */}
       <Animated.View style={[StyleSheet.absoluteFill, blurStyle]}>
-        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
       </Animated.View>
 
       {/* Colored overlay */}
@@ -532,12 +535,12 @@ function TabButton({
     return { opacity };
   });
 
-  // Icon color: white on Camera (1) and Feed (2), black on Album (0)
+  // Icon color: white on Camera (1), black on Album (0) and Feed (2)
   const iconColorStyle = useAnimatedStyle(() => {
     const color = interpolateColor(
       scrollPosition.value,
-      [0, 0.5, 1, 2],
-      ["#000000", "#ffffff", "#ffffff", "#ffffff"],
+      [0, 0.5, 1, 1.5, 2],
+      ["#000000", "#ffffff", "#ffffff", "#ffffff", "#000000"],
     );
     return { color };
   });
@@ -553,8 +556,8 @@ function TabButton({
     );
     const borderColor = interpolateColor(
       scrollPosition.value,
-      [0, 0.5, 1, 2],
-      ["#000000", "#ffffff", "#ffffff", "#ffffff"],
+      [0, 0.5, 1, 1.5, 2],
+      ["#000000", "#ffffff", "#ffffff", "#ffffff", "#000000"],
     );
     return { borderWidth, borderColor };
   });
@@ -602,11 +605,11 @@ function TabIndicator({ scrollPosition, tabCount }: TabIndicatorProps) {
     const translateX =
       scrollPosition.value * tabWidth + (tabWidth - indicatorWidth) / 2;
 
-    // White on Camera (1) and Feed (2), black on Album (0)
+    // White on Camera (1), black on Album (0) and Feed (2)
     const backgroundColor = interpolateColor(
       scrollPosition.value,
-      [0, 0.5, 1, 2],
-      ["#000000", "#ffffff", "#ffffff", "#ffffff"],
+      [0, 0.5, 1, 1.5, 2],
+      ["#000000", "#ffffff", "#ffffff", "#ffffff", "#000000"],
     );
 
     return {

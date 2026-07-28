@@ -8,6 +8,7 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet } from "react-native";
 import { PaperProvider } from "react-native-paper";
 import { useFonts } from "expo-font";
+import { Pacifico_400Regular } from "@expo-google-fonts/pacifico";
 import * as SplashScreen from "expo-splash-screen";
 import { QueryProvider } from "@/lib/queryProvider";
 import { theme } from "@/lib/theme";
@@ -71,6 +72,8 @@ function RootContent() {
 function Layout() {
   const [fontsLoaded] = useFonts({
     BowlbyOneSC: require("../../assets/fonts/BowlbyOneSC-Regular.ttf"),
+    // "Create" wordmark script (Memo Create)
+    Pacifico_400Regular,
   });
 
   useEffect(() => {

@@ -164,6 +164,8 @@ export interface GallerySectionRowProps {
   renderTileBadge?: (asset: MediaAsset) => React.ReactNode;
   /** Album social layer for the viewer — see useAlbumPhotoViewerExtras. */
   renderSocialOverlay?: (info: SocialOverlayInfo) => React.ReactNode;
+  /** Per-page uploader pill — travels with each photo while swiping. */
+  renderPageAttribution?: (asset: MediaAsset) => React.ReactNode;
   onDoubleTapAsset?: (asset: MediaAsset) => void;
   poppingIds?: string[];
 }
@@ -176,6 +178,7 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
   leading,
   renderTileBadge,
   renderSocialOverlay,
+  renderPageAttribution,
   onDoubleTapAsset,
   poppingIds,
 }) => {
@@ -419,6 +422,7 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
         onOpenTransitionStart={handleOpenTransitionStart}
         gridCornerRadius={TILE_RADIUS}
         renderSocialOverlay={renderSocialOverlay}
+        renderPageAttribution={renderPageAttribution}
         onDoubleTapAsset={onDoubleTapAsset}
       />
     </View>

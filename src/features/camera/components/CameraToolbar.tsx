@@ -6,7 +6,7 @@
 
 import React, { useCallback } from 'react';
 import { StyleSheet, View, Pressable, Text } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 import type { DualCameraLayout } from '../../../../modules/dual-camera';
 import { CameraPosition, FlashMode, TimerMode } from '../types';
@@ -15,7 +15,9 @@ import {
   FLASH_ICONS,
   TIMER_MODE_CYCLE,
   CAMERA_UI_CONFIG,
+  DUAL_LAYOUT_LABELS,
 } from '../constants';
+import { DualLayoutGlyph } from './DualLayoutGlyph';
 
 const { CONTROL_BUTTON, COLORS } = CAMERA_UI_CONFIG;
 
@@ -58,28 +60,10 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
 );
 
 /**
- * Layout picker for dual mode. MaterialCommunityIcons has proper split /
- * picture-in-picture glyphs where Ionicons doesn't.
- *
- * Note the deliberate name inversion: OUR "vertical" stacks the panes
- * top-over-bottom, which MDI calls a *horizontal* split (the divider runs
- * horizontally), and vice versa.
+ * Opens the layout picker, showing the current arrangement as its icon —
+ * the same miniature the picker uses, so the button reads as "this is how
+ * the cameras are arranged" rather than as an abstract settings symbol.
  */
-const DUAL_LAYOUT_ICONS: Record<
-  DualCameraLayout,
-  keyof typeof MaterialCommunityIcons.glyphMap
-> = {
-  pip: 'picture-in-picture-top-right',
-  vertical: 'view-split-horizontal',
-  horizontal: 'view-split-vertical',
-};
-
-const DUAL_LAYOUT_LABELS: Record<DualCameraLayout, string> = {
-  pip: 'inset',
-  vertical: 'stacked',
-  horizontal: 'side by side',
-};
-
 const DualLayoutButton: React.FC<{
   layout: DualCameraLayout;
   onPress: () => void;
@@ -93,10 +77,10 @@ const DualLayoutButton: React.FC<{
     accessibilityLabel={`Dual camera layout: ${DUAL_LAYOUT_LABELS[layout]}. Tap to change.`}
     style={[styles.button, disabled && styles.buttonDisabled]}
   >
-    <MaterialCommunityIcons
-      name={DUAL_LAYOUT_ICONS[layout]}
-      size={CONTROL_BUTTON.ICON_SIZE}
+    <DualLayoutGlyph
+      layout={layout}
       color={COLORS.TEXT}
+      size={CONTROL_BUTTON.ICON_SIZE}
     />
   </Pressable>
 );
@@ -121,7 +105,8 @@ interface CameraToolbarProps {
   dualMode?: boolean;
   onToggleDual?: () => void;
   dualLayout?: DualCameraLayout;
-  onCycleDualLayout?: () => void;
+  /** Opens the layout picker. */
+  onOpenDualLayouts?: () => void;
   /** Swaps which camera fills the main pane. */
   onSwapDual?: () => void;
 }
@@ -144,7 +129,7 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
   dualMode,
   onToggleDual,
   dualLayout,
-  onCycleDualLayout,
+  onOpenDualLayouts,
   onSwapDual,
 }) => {
   const cycleFlash = useCallback(() => {
@@ -187,14 +172,6 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
         />
       )}
 
-      {dualMode && dualLayout && onCycleDualLayout && (
-        <DualLayoutButton
-          layout={dualLayout}
-          onPress={onCycleDualLayout}
-          disabled={disabled}
-        />
-      )}
-
       <ToolbarButton
         icon="timer-outline"
         onPress={cycleTimer}
@@ -228,6 +205,16 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
           accessibilityLabel={
             dualMode ? 'Turn off dual camera' : 'Turn on dual camera'
           }
+        />
+      )}
+
+      {/* Directly under the dual toggle it enables — reads as a setting
+          belonging to dual mode rather than a peer of flash and grid. */}
+      {dualMode && dualLayout && onOpenDualLayouts && (
+        <DualLayoutButton
+          layout={dualLayout}
+          onPress={onOpenDualLayouts}
+          disabled={disabled}
         />
       )}
 

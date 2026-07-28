@@ -68,6 +68,8 @@ export interface PhotoBrowserProps {
     bottomInset: number;
     requestClose: () => void;
   }) => React.ReactNode;
+  /** Passed through to the viewer — the per-page uploader pill. */
+  renderPageAttribution?: (asset: MediaAsset) => React.ReactNode;
   /** Passed through to the viewer — see PhotoViewerProps. */
   onDoubleTapAsset?: (asset: MediaAsset) => void;
   /** Asset ids mid-deletion — their grid cells pop away. */
@@ -89,6 +91,7 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
   animatedScrollY,
   contentBottomPadding,
   renderSocialOverlay,
+  renderPageAttribution,
   onDoubleTapAsset,
   poppingIds,
 }) => {
@@ -282,6 +285,7 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
         onEndReached={onEndReached}
         totalCount={totalCount}
         renderSocialOverlay={renderSocialOverlay}
+        renderPageAttribution={renderPageAttribution}
         onDoubleTapAsset={onDoubleTapAsset}
       />
     </>

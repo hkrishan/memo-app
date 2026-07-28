@@ -142,8 +142,12 @@ const FullGalleryScreen = () => {
     [filteredPhotos, pendingAssets, showsPending, placeholders],
   );
 
-  const { renderSocialOverlay, onDoubleTapAsset, poppingIds } =
-    useAlbumPhotoViewerExtras(albumId, assets);
+  const {
+    renderSocialOverlay,
+    renderPageAttribution,
+    onDoubleTapAsset,
+    poppingIds,
+  } = useAlbumPhotoViewerExtras(albumId, assets);
 
   const noun = filter === "videos" ? "video" : "photo";
   const countLabel = `${assets.length} ${noun}${assets.length === 1 ? "" : "s"}`;
@@ -176,6 +180,7 @@ const FullGalleryScreen = () => {
         ListEmptyComponent={isLoading ? null : EmptyFilteredGallery}
         contentBottomPadding={LIST_BOTTOM_PADDING}
         renderSocialOverlay={renderSocialOverlay}
+        renderPageAttribution={renderPageAttribution}
         onDoubleTapAsset={onDoubleTapAsset}
         poppingIds={poppingIds}
       />

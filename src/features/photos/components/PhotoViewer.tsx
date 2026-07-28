@@ -52,6 +52,7 @@ import {
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
 import Animated, {
+  useAnimatedProps,
   cancelAnimation,
   Easing,
   Extrapolation,
@@ -108,11 +109,11 @@ const OPEN_OVERLAY_HOLD_CAP = 400;
 /** Crossover fade of the held overlay once the pager has painted. */
 const OPEN_OVERLAY_FADE_DURATION = 80;
 /**
- * Slightly underdamped return spring (~0.77 damping ratio) — the photo
- * dips just past the cell and settles back, a soft landing bounce.
+ * Slightly underdamped return spring (~0.91 damping ratio) — the photo
+ * barely dips past the cell before settling, just a hint of give.
  */
 const RETURN_SPRING = {
-  damping: 22,
+  damping: 26,
   stiffness: 340,
   mass: 0.6,
   overshootClamping: false,
@@ -245,6 +246,12 @@ interface PhotoViewerProps {
     requestClose: () => void;
   }) => React.ReactNode;
   /**
+   * Per-PAGE chrome (the uploader pill): rendered inside each pager item so
+   * it travels with its photo during swipes, unlike renderSocialOverlay
+   * which is one fixed layer for the active page.
+   */
+  renderPageAttribution?: (asset: MediaAsset) => React.ReactNode;
+  /**
    * Double-tap on an unzoomed photo page (double-tap zoom is gone —
    * zooming is pinch-only). Album contexts like the photo here.
    */
@@ -264,6 +271,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   gridCornerRadius = 0,
   onOpenTransitionStart,
   renderSocialOverlay,
+  renderPageAttribution,
   onDoubleTapAsset,
 }) => {
   const insets = useSafeAreaInsets();
@@ -271,7 +279,10 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   // gesture math and paging stay correct across devices and rotation
   const { width: pageWidth, height: pageHeight } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(initialIndex);
-  const [scrollEnabled, setScrollEnabled] = useState(true);
+  // Shared value + animated prop, NOT React state: paging is toggled at
+  // pinch start/end, and a state flip there commits a full viewer
+  // re-render mid-gesture — the release hitch. This path never renders.
+  const scrollEnabledSV = useSharedValue(true);
   const [chromeVisible, setChromeVisible] = useState(true);
   // Session-wide video sound state (applied to each video page's player as
   // it activates; toggled from the scrub bar's mute button)
@@ -331,9 +342,9 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   pageSizeRef.current = { pageWidth, pageHeight };
   const chromeVisibleRef = useRef(true);
   chromeVisibleRef.current = chromeVisible;
-  // scrollEnabled is false exactly while the active photo is zoomed
-  const scrollEnabledRef = useRef(true);
-  scrollEnabledRef.current = scrollEnabled;
+  const pagerAnimatedProps = useAnimatedProps(() => ({
+    scrollEnabled: scrollEnabledSV.value,
+  }));
 
   // The chrome-fitted box: the area between the top bar and the filmstrip
   // that pages shrink into while the chrome is visible. Degenerates to the
@@ -399,6 +410,40 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   // UI-thread mirror of the live (rounded) page index, so the scroll
   // worklet only crosses to JS when the index actually changes
   const liveIndexSv = useSharedValue(initialIndex);
+
+
+  const chromeIntroProgress = useDerivedValue(() =>
+    flightActive.value && flightBackdropTo.value === 1
+      ? flightProgress.value
+      : chromeIntro.value,
+  );
+
+  // Everything that fades the chrome, folded into one UI-thread value for
+  // the social slot: the show/hide toggle and dismiss-flight fade
+  // (chromeOpacity) and the pan-to-dismiss backdrop coupling. Entirely
+  // worklet-driven so the overlay can never lag the chrome by a frame
+  // (a JS-effect-driven fade starts late whenever the JS thread is busy).
+  const socialVisibility = useDerivedValue(() => {
+    const openFlight = flightActive.value && flightBackdropTo.value === 1;
+    const dismissFade = openFlight
+      ? 1
+      : interpolate(
+          backdropOpacity.value,
+          [0.7, 1],
+          [0, 1],
+          Extrapolation.CLAMP,
+        );
+    return chromeOpacity.value * dismissFade;
+  });
+
+  // Page-attribution pills fade exactly like the social overlay: in with
+  // the viewer's intro, out with the chrome. Declaration ORDER matters for
+  // all three: worklet closures capture what exists at this point in the
+  // body, so these sit right after the shared values they read and before
+  // renderItem, which consumes them.
+  const pageAttributionOpacity = useDerivedValue(
+    () => chromeIntroProgress.value * socialVisibility.value,
+  );
 
   const setPhaseBoth = useCallback((next: ViewerPhase) => {
     phaseRef.current = next;
@@ -507,7 +552,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       chromeOpacity.value = withTiming(next ? 1 : 0, { duration: 180 });
       // While zoomed, showing the chrome overlays it without re-fitting
       // the photo (as iPhone Photos does) — the re-fit happens on unzoom
-      const fitTarget = next && scrollEnabledRef.current ? 1 : 0;
+      const fitTarget = next && scrollEnabledSV.value ? 1 : 0;
       chromeFit.value = withTiming(fitTarget, { duration: 180 });
       return next;
     });
@@ -532,7 +577,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
         chromeFit.value = withTiming(1, { duration: 180 });
       }
       // While zoomed, panning the photo must not page the FlatList
-      setScrollEnabled(!zoomed);
+      scrollEnabledSV.value = !zoomed;
     },
     [releaseOpenOverlayNow, chromeOpacity, chromeFit],
   );
@@ -793,7 +838,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     if (visible) {
       setActiveIndex(initialIndex);
       activeIndexRef.current = initialIndex;
-      setScrollEnabled(true);
+      scrollEnabledSV.value = true;
       setChromeVisible(true);
       // Every session starts with sound on (autoplay-with-sound contract)
       setVideoMuted(false);
@@ -1319,7 +1364,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       onActiveIndexChange?.(index);
       // Defensive: the pager must never stay stuck unscrollable after a
       // page change, whatever happened to zoom state on the previous page
-      setScrollEnabled(true);
+      scrollEnabledSV.value = true;
     },
     [onActiveIndexChange],
   );
@@ -1379,7 +1424,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       liveIndexSv.value = clampedIndex;
       setActiveIndex(clampedIndex);
       onActiveIndexChange?.(clampedIndex);
-      setScrollEnabled(true);
+      scrollEnabledSV.value = true;
       const offset = clampedIndex * pageSizeRef.current.pageWidth;
       // A non-animated jump fires no momentum end (and on some platforms no
       // scroll event) — sync the filmstrip position directly
@@ -1449,10 +1494,15 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     ({ item, index }: ListRenderItemInfo<MediaAsset>) => {
       const isActive = index === activeIndex;
       const isAdjacent = Math.abs(index - activeIndex) === 1;
+      const attribution = renderPageAttribution
+        ? renderPageAttribution(item)
+        : null;
       if (item.mediaType === "video") {
         return (
           <VideoPage
             asset={item}
+            attribution={attribution}
+            attributionOpacity={pageAttributionOpacity}
             // A dismissing viewer pauses the active video before its poster
             // flies home in the overlay
             isActive={isActive && phase !== "dismissing"}
@@ -1475,6 +1525,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       return (
         <PhotoPage
           asset={item}
+          attribution={attribution}
+          attributionOpacity={pageAttributionOpacity}
           isActive={isActive}
           isAdjacent={isAdjacent}
           pageWidth={pageWidth}
@@ -1510,6 +1562,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       handleDismissPanEnd,
       handleActiveImageLoad,
       onDoubleTapAsset,
+      renderPageAttribution,
+      pageAttributionOpacity,
       handlePageDoubleTap,
     ],
   );
@@ -1572,29 +1626,6 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   // flight's own progress (identified by a backdrop target of 1 — dismiss
   // flights target 0), so every chrome piece moves in the one motion the
   // photo does; otherwise the settled chromeIntro value (1) applies.
-  const chromeIntroProgress = useDerivedValue(() =>
-    flightActive.value && flightBackdropTo.value === 1
-      ? flightProgress.value
-      : chromeIntro.value,
-  );
-
-  // Everything that fades the chrome, folded into one UI-thread value for
-  // the social slot: the show/hide toggle and dismiss-flight fade
-  // (chromeOpacity) and the pan-to-dismiss backdrop coupling. Entirely
-  // worklet-driven so the overlay can never lag the chrome by a frame
-  // (a JS-effect-driven fade starts late whenever the JS thread is busy).
-  const socialVisibility = useDerivedValue(() => {
-    const openFlight = flightActive.value && flightBackdropTo.value === 1;
-    const dismissFade = openFlight
-      ? 1
-      : interpolate(
-          backdropOpacity.value,
-          [0.7, 1],
-          [0, 1],
-          Extrapolation.CLAMP,
-        );
-    return chromeOpacity.value * dismissFade;
-  });
 
   const chromeStyle = useAnimatedStyle(() => ({
     opacity: chromeOpacity.value * chromeIntroProgress.value,
@@ -1775,7 +1806,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                   extraData={extraData}
                   horizontal
                   pagingEnabled
-                  scrollEnabled={scrollEnabled}
+                  animatedProps={pagerAnimatedProps}
                   initialScrollIndex={Math.min(
                     initialIndex,
                     Math.max(assets.length - 1, 0),

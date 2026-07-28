@@ -102,14 +102,12 @@ interface FeedCardHeaderProps {
   createdAt: string;
   /** Page-identity gradient ring around the avatar (page posts) */
   ring?: boolean;
-  /** Secondary attribution appended after the time, e.g. the post's author */
-  trailing?: string;
   /** Makes the whole header row a tap target (no visual button chrome) */
   onPress?: () => void;
 }
 
 export const FeedCardHeader = memo<FeedCardHeaderProps>(
-  ({ avatarName, avatarUrl, title, subtitle, createdAt, ring, trailing, onPress }) => {
+  ({ avatarName, avatarUrl, title, subtitle, createdAt, ring, onPress }) => {
     const content = (
       <>
         <FeedAvatar name={avatarName} avatarUrl={avatarUrl} ring={ring} />
@@ -123,9 +121,6 @@ export const FeedCardHeader = memo<FeedCardHeaderProps>(
             <Text style={styles.headerTime}>
               {formatRelativeTime(createdAt)}
             </Text>
-            {trailing ? (
-              <Text style={styles.headerTime}>{`  ·  by ${trailing}`}</Text>
-            ) : null}
           </Text>
         </View>
       </>
@@ -163,12 +158,12 @@ const styles = StyleSheet.create({
   },
   avatarCore: {
     overflow: "hidden",
-    backgroundColor: "#3a3a3c",
+    backgroundColor: "#d8d8dc",
     alignItems: "center",
     justifyContent: "center",
   },
   avatarInitial: {
-    color: "rgba(255, 255, 255, 0.85)",
+    color: "rgba(0, 0, 0, 0.6)",
     fontSize: 15,
     fontWeight: "600",
   },
@@ -183,7 +178,7 @@ const styles = StyleSheet.create({
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -192,19 +187,19 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   headerTitle: {
-    color: "#fff",
+    color: "#111",
     fontSize: 14.5,
     fontWeight: "600",
   },
   headerSubtitle: {
-    color: "#9a9aa0",
+    color: "#8e8e93",
     fontSize: 12.5,
     marginTop: 1,
   },
   headerDot: {
-    color: "#5a5a5e",
+    color: "#c7c7cc",
   },
   headerTime: {
-    color: "#77777c",
+    color: "#8e8e93",
   },
 });

@@ -14,6 +14,7 @@ import Animated, {
   Extrapolation,
   interpolate,
   runOnJS,
+  withDecay,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -41,13 +42,38 @@ const MAX_SCALE = 4;
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 900;
 const SPRING_CONFIG = { damping: 30, stiffness: 300, mass: 0.6 };
+/** Overshoot damping while dragging past the pan bounds. */
+const RUBBER_FACTOR = 0.35;
+/** Cap on release velocity fed into the decay — a finger-lift can report a
+ *  one-frame centroid spike that would otherwise fling the photo. */
+const MAX_FLING_VELOCITY = 2400;
+/** Same 15pt threshold the old activeOffset/failOffset config used. */
+const PAN_SLOP = 15;
+
+/** clamp() with give: past the edge, movement continues at RUBBER_FACTOR
+ *  so the drag resists instead of hitting a wall (iOS Photos feel). */
+const rubberClamp = (value: number, min: number, max: number): number => {
+  "worklet";
+  if (value < min) return min + (value - min) * RUBBER_FACTOR;
+  if (value > max) return max + (value - max) * RUBBER_FACTOR;
+  return value;
+};
 const PAGE_RADIUS = 12;
 const DISMISS_RADIUS = 24;
 const DISMISS_RADIUS_TRAVEL = 100;
+// Fraction of the page height of drag travel at which the dismiss shrink
+// bottoms out — smaller means the photo scales down faster
+const DISMISS_SCALE_TRAVEL_RATIO = 0.4;
+// Scale the photo shrinks to at full dismiss travel
+const DISMISS_MIN_SCALE = 0.52;
 
 interface PhotoPageProps {
   asset: MediaAsset;
   isActive: boolean;
+  /** Per-page uploader pill — travels with this page while swiping. */
+  attribution?: React.ReactNode;
+  /** Chrome-synced fade for the attribution (intro x visibility). */
+  attributionOpacity?: SharedValue<number>;
   /** One page either side of the active one — preloads its full image. */
   isAdjacent: boolean;
   pageWidth: number;
@@ -100,6 +126,8 @@ export const PhotoPage = memo<PhotoPageProps>(
   ({
     asset,
     isActive,
+    attribution,
+    attributionOpacity,
     isAdjacent,
     pageWidth,
     pageHeight,
@@ -118,7 +146,6 @@ export const PhotoPage = memo<PhotoPageProps>(
     // Local mirror of "scale > 1" so gesture configs (offsets) can be
     // rebuilt when zoom starts/ends; the parent uses onZoomChange to
     // disable FlatList paging at the same time.
-    const [isZoomed, setIsZoomed] = useState(false);
     const isZoomedRef = useRef(false);
 
     // Which URI the full-res Image has painted — compared against the
@@ -167,6 +194,9 @@ export const PhotoPage = memo<PhotoPageProps>(
     // movement) and its baseline offset re-anchored after the pinch ends
     const pinchedDuringPan = useSharedValue(false);
     const panBaseTranslationX = useSharedValue(0);
+    // First-touch origin for the manual activation decision
+    const panTouchStartX = useSharedValue(0);
+    const panTouchStartY = useSharedValue(0);
     const panBaseTranslationY = useSharedValue(0);
 
     // Aspect-fit ("contain") display size of the photo inside the page.
@@ -185,10 +215,13 @@ export const PhotoPage = memo<PhotoPageProps>(
       };
     }, [asset.width, asset.height, pageWidth, pageHeight]);
 
+    // No setState here: flipping React state at pinch release rebuilt the
+    // pan gesture and committed a re-render exactly when the settle springs
+    // were running — the release hitch. Zoom state lives in shared values /
+    // refs; activation is decided per-move in the worklet below.
     const setZoomed = useCallback(
       (zoomed: boolean) => {
         isZoomedRef.current = zoomed;
-        setIsZoomed(zoomed);
         onZoomChange(zoomed);
       },
       [onZoomChange],
@@ -257,6 +290,14 @@ export const PhotoPage = memo<PhotoPageProps>(
           .onStart((e) => {
             pinchActive.value = true;
             pinchedDuringPan.value = true;
+            // Freeze the pager NOW, not at pinch end: while scrollEnabled
+            // is still true the FlatList's native pan competes with the
+            // pinch, and any horizontal drift between the two fingers
+            // pages the carousel mid-zoom — the "laggy zoom" jitter.
+            // (Deliberately not setZoomed: the local isZoomed state waits
+            // for onEnd so the pan gesture's config can't rebuild while
+            // fingers are still down.)
+            runOnJS(onZoomChange)(true);
             // A second finger joining a dismiss drag hands control to the
             // pinch and the pan's onEnd early-returns — undo the drag's
             // offset and backdrop fade here or they would stick
@@ -275,6 +316,10 @@ export const PhotoPage = memo<PhotoPageProps>(
             focalOffsetY.value = e.focalY - pageHeight / 2;
           })
           .onUpdate((e) => {
+            // A finger lifting mid-pinch can emit one last update whose
+            // focal has jumped from the midpoint to the surviving finger —
+            // applying it shifts the photo by half the finger separation
+            if (e.numberOfPointers < 2) return;
             // Allow squishing below 1x with resistance; snapped back on end
             const next = clamp(savedScale.value * e.scale, 0.5, MAX_SCALE);
             const factor = next / savedScale.value;
@@ -306,22 +351,22 @@ export const PhotoPage = memo<PhotoPageProps>(
               savedTranslateY.value = 0;
               runOnJS(setZoomed)(false);
             } else {
-              const bounds = panBounds(
-                scale.value,
-                fittedWidth,
-                fittedHeight,
-                pageWidth,
-                pageHeight,
-              );
-              const clampedX = clamp(translateX.value, -bounds.x, bounds.x);
-              const clampedY = clamp(translateY.value, -bounds.y, bounds.y);
-              translateX.value = withSpring(clampedX, SPRING_CONFIG);
-              translateY.value = withSpring(clampedY, SPRING_CONFIG);
-              // Re-baseline the pan so a still-active pan (one finger left
-              // on screen) continues seamlessly from where the pinch ended
-              savedTranslateX.value = clampedX;
-              savedTranslateY.value = clampedY;
+              // Hand over at the CURRENT (possibly out-of-bounds) position.
+              // Snapping to clamped here is what caused the release jump:
+              // with one finger still down, the continuing pan's next frame
+              // re-asserted the clamped target and teleported the photo by
+              // the whole overshoot. The pan's rubber clamp + the release
+              // decay bring it back into bounds smoothly instead.
+              savedTranslateX.value = translateX.value;
+              savedTranslateY.value = translateY.value;
               runOnJS(setZoomed)(true);
+            }
+          })
+          .onFinalize(() => {
+            // Covers cancellation paths that skip onEnd: a pinch that dies
+            // at 1x must hand the pager back (onStart froze it)
+            if (scale.value <= MIN_SCALE) {
+              runOnJS(setZoomed)(false);
             }
           }),
       [
@@ -343,12 +388,52 @@ export const PhotoPage = memo<PhotoPageProps>(
         pageWidth,
         pageHeight,
         setZoomed,
+        onZoomChange,
       ],
     );
 
     const panGesture = useMemo(() => {
       const gesture = Gesture.Pan()
         .maxPointers(2)
+        // Activation is decided in onTouchesMove instead of via
+        // activeOffset/failOffset config, so the gesture object NEVER has
+        // to be rebuilt when zoom starts or ends (a rebuild re-attaches
+        // the recognizer — mid-interaction, that's a visible stutter)
+        .manualActivation(true)
+        .onTouchesDown((e) => {
+          if (e.numberOfTouches === 1) {
+            const touch = e.allTouches[0];
+            if (touch) {
+              panTouchStartX.value = touch.x;
+              panTouchStartY.value = touch.y;
+            }
+          }
+        })
+        .onTouchesMove((e, manager) => {
+          // Zoomed (or pinching, or two fingers down): the pan is ours
+          if (
+            scale.value > 1 ||
+            pinchActive.value ||
+            e.numberOfTouches >= 2
+          ) {
+            manager.activate();
+            return;
+          }
+          // 1x, one finger — the old declarative constraints, per-move:
+          // dominant-vertical drags activate (dismiss), dominant-horizontal
+          // fail fast so the FlatList can page
+          const touch = e.allTouches[0];
+          if (!touch) return;
+          const dx = touch.x - panTouchStartX.value;
+          const dy = touch.y - panTouchStartY.value;
+          if (Math.abs(dx) > PAN_SLOP || Math.abs(dy) > PAN_SLOP) {
+            if (Math.abs(dy) > Math.abs(dx)) {
+              manager.activate();
+            } else {
+              manager.fail();
+            }
+          }
+        })
         .onStart(() => {
           pinchedDuringPan.value = false;
           savedTranslateX.value = translateX.value;
@@ -380,13 +465,13 @@ export const PhotoPage = memo<PhotoPageProps>(
               pageWidth,
               pageHeight,
             );
-            translateX.value = clamp(
+            translateX.value = rubberClamp(
               savedTranslateX.value +
                 (e.translationX - panBaseTranslationX.value),
               -bounds.x,
               bounds.x,
             );
-            translateY.value = clamp(
+            translateY.value = rubberClamp(
               savedTranslateY.value +
                 (e.translationY - panBaseTranslationY.value),
               -bounds.y,
@@ -414,6 +499,28 @@ export const PhotoPage = memo<PhotoPageProps>(
           // A pan that hosted a pinch must never dismiss — its translation
           // includes pinch finger movement, not an intentional drag
           if (scale.value > 1 || pinchActive.value || pinchedDuringPan.value) {
+            // Zoomed pan: carry the release velocity into a decay glide,
+            // rubber-banding at the pan bounds — a flick coasts instead of
+            // stopping dead under the finger
+            if (scale.value > 1 && !pinchActive.value) {
+              const bounds = panBounds(
+                scale.value,
+                fittedWidth,
+                fittedHeight,
+                pageWidth,
+                pageHeight,
+              );
+              translateX.value = withDecay({
+                velocity: clamp(e.velocityX, -MAX_FLING_VELOCITY, MAX_FLING_VELOCITY),
+                clamp: [-bounds.x, bounds.x],
+                rubberBandEffect: true,
+              });
+              translateY.value = withDecay({
+                velocity: clamp(e.velocityY, -MAX_FLING_VELOCITY, MAX_FLING_VELOCITY),
+                clamp: [-bounds.y, bounds.y],
+                rubberBandEffect: true,
+              });
+            }
             runOnJS(onDismissPanEnd)();
             return;
           }
@@ -433,8 +540,8 @@ export const PhotoPage = memo<PhotoPageProps>(
             // shrink) and flies it back to the grid cell.
             const releaseScale = interpolate(
               travel,
-              [0, pageHeight],
-              [1, 0.6],
+              [0, pageHeight * DISMISS_SCALE_TRAVEL_RATIO],
+              [1, DISMISS_MIN_SCALE],
               Extrapolation.CLAMP,
             );
             // Screen-space corner radius at release (the page draws it
@@ -461,15 +568,8 @@ export const PhotoPage = memo<PhotoPageProps>(
           }
         });
 
-      if (!isZoomed) {
-        // At 1x only vertical drags belong to us — horizontal movement
-        // must fail fast so the FlatList can page
-        gesture.activeOffsetY([-15, 15]);
-        gesture.failOffsetX([-15, 15]);
-      }
       return gesture;
     }, [
-      isZoomed,
       scale,
       translateX,
       translateY,
@@ -543,6 +643,10 @@ export const PhotoPage = memo<PhotoPageProps>(
       [asset.width, asset.height, pageWidth, pageHeight, fitAvailableHeight],
     );
 
+    const attributionFadeStyle = useAnimatedStyle(() => ({
+      opacity: attributionOpacity ? attributionOpacity.value : 1,
+    }));
+
     const animatedStyle = useAnimatedStyle(() => {
       // Shrink slightly as the photo is dragged away during dismiss —
       // driven by how far it has travelled in any direction
@@ -552,8 +656,8 @@ export const PhotoPage = memo<PhotoPageProps>(
       );
       const dismissScale = interpolate(
         travel,
-        [0, pageHeight],
-        [1, 0.6],
+        [0, pageHeight * DISMISS_SCALE_TRAVEL_RATIO],
+        [1, DISMISS_MIN_SCALE],
         Extrapolation.CLAMP,
       );
       // The chrome-fit transform sits inside the dismiss transforms (the
@@ -594,6 +698,14 @@ export const PhotoPage = memo<PhotoPageProps>(
     return (
       <GestureDetector gesture={composedGesture}>
         <View style={[styles.page, { width: pageWidth }]}>
+          {attribution != null && (
+            <Animated.View
+              style={[StyleSheet.absoluteFill, styles.attributionLayer, attributionFadeStyle]}
+              pointerEvents="none"
+            >
+              {attribution}
+            </Animated.View>
+          )}
           <Animated.View
             style={[styles.pageMedia, styles.pageMediaCenter, animatedStyle]}
           >
@@ -651,21 +763,28 @@ PhotoPage.displayName = "PhotoPage";
 
 
 const styles = StyleSheet.create({
-  media: {
-    width: "100%",
-    height: "100%",
+  // Above the page's media siblings (the pill is declared first in the
+  // tree so gestures/transforms stay untouched underneath)
+  attributionLayer: {
+    zIndex: 10,
   },
-    fittedClip: {
+  // Verbatim from the pre-split PhotoViewer: the thumb underlay and the
+  // full-res image are siblings that must OVERLAY (absolute fill) — as
+  // in-flow 100% blocks the full-res stacked below and was clipped.
+  media: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  fittedClip: {
     overflow: "hidden",
   },
-    page: {
+  page: {
     height: "100%",
     justifyContent: "center",
   },
-    pageMedia: {
+  pageMedia: {
     ...StyleSheet.absoluteFillObject,
   },
-    pageMediaCenter: {
+  pageMediaCenter: {
     alignItems: "center",
     justifyContent: "center",
   },

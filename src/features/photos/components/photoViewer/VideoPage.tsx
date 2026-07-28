@@ -39,6 +39,11 @@ import { cachePolicyFor, chromeFitScale } from "./geometry";
 const SPRING_CONFIG = { damping: 30, stiffness: 300, mass: 0.6 };
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 900;
+// Fraction of the page height of drag travel at which the dismiss shrink
+// bottoms out — smaller means the video scales down faster
+const DISMISS_SCALE_TRAVEL_RATIO = 0.4;
+// Scale the video shrinks to at full dismiss travel
+const DISMISS_MIN_SCALE = 0.52;
 
 /**
  * Height of the video scrub-bar row the viewer seats just above the
@@ -73,6 +78,10 @@ const videoPosterUri = (asset: MediaAsset): string | null => {
 interface VideoPageProps {
   asset: MediaAsset;
   isActive: boolean;
+  /** Per-page uploader pill — travels with this page while swiping. */
+  attribution?: React.ReactNode;
+  /** Chrome-synced fade for the attribution (intro x visibility). */
+  attributionOpacity?: SharedValue<number>;
   pageWidth: number;
   pageHeight: number;
   /** See PhotoPageProps — videos re-fit above the filmstrip the same way. */
@@ -108,6 +117,8 @@ export const VideoPage = memo<VideoPageProps>(
   ({
     asset,
     isActive,
+    attribution,
+    attributionOpacity,
     pageWidth,
     pageHeight,
     chromeFit,
@@ -287,8 +298,8 @@ export const VideoPage = memo<VideoPageProps>(
             if (shouldDismiss) {
               const releaseScale = interpolate(
                 travel,
-                [0, pageHeight],
-                [1, 0.6],
+                [0, pageHeight * DISMISS_SCALE_TRAVEL_RATIO],
+                [1, DISMISS_MIN_SCALE],
                 Extrapolation.CLAMP,
               );
               // Videos render (and fly) square — release radius 0 keeps
@@ -330,9 +341,13 @@ export const VideoPage = memo<VideoPageProps>(
       [asset.width, asset.height, pageWidth, pageHeight, fitAvailableHeight],
     );
 
+    const attributionFadeStyle = useAnimatedStyle(() => ({
+      opacity: attributionOpacity ? attributionOpacity.value : 1,
+    }));
+
     const fitStyle = useAnimatedStyle(() => {
-      // Shrink slightly as the video is dragged away, exactly like the
-      // photo pages; the chrome-fit transform rides inside the dismiss
+      // Shrink as the video is dragged away, exactly like the photo
+      // pages; the chrome-fit transform rides inside the dismiss
       // transforms so the drag tracks the finger 1:1
       const travel = Math.sqrt(
         dismissTranslateX.value * dismissTranslateX.value +
@@ -340,8 +355,8 @@ export const VideoPage = memo<VideoPageProps>(
       );
       const dismissScale = interpolate(
         travel,
-        [0, pageHeight],
-        [1, 0.6],
+        [0, pageHeight * DISMISS_SCALE_TRAVEL_RATIO],
+        [1, DISMISS_MIN_SCALE],
         Extrapolation.CLAMP,
       );
       const cf = chromeFit.value;
@@ -359,6 +374,14 @@ export const VideoPage = memo<VideoPageProps>(
     return (
       <GestureDetector gesture={dismissPanGesture}>
       <View style={[styles.page, { width: pageWidth }]}>
+        {attribution != null && (
+          <Animated.View
+            style={[StyleSheet.absoluteFill, styles.attributionLayer, attributionFadeStyle]}
+            pointerEvents="none"
+          >
+            {attribution}
+          </Animated.View>
+        )}
         {/* Plain Pressables handle taps (the pan cancels them once it
             activates): the surface toggles the chrome, the nested center
             button wins its own taps, and the pager's horizontal swipes
@@ -616,26 +639,33 @@ VideoScrubBar.displayName = "VideoScrubBar";
 
 
 const styles = StyleSheet.create({
+  // Above the page's media siblings (the pill is declared first in the
+  // tree so gestures/transforms stay untouched underneath)
+  attributionLayer: {
+    zIndex: 10,
+  },
+  // Verbatim from the pre-split PhotoViewer: pageMedia MUST be a full
+  // absolute fill — position:absolute with no anchors is a zero-size box,
+  // which rendered the video (and its poster) into 0x0: a black page.
   page: {
-    alignItems: "center",
+    height: "100%",
     justifyContent: "center",
   },
   pageMedia: {
-    position: "absolute",
+    ...StyleSheet.absoluteFillObject,
   },
   media: {
-    width: "100%",
-    height: "100%",
+    ...StyleSheet.absoluteFillObject,
   },
-    playIconNudge: {
+  playIconNudge: {
     marginLeft: 3,
   },
-    playOverlay: {
+  playOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
   },
-    playPauseButton: {
+  playPauseButton: {
     width: 64,
     height: 64,
     borderRadius: 32,
@@ -645,13 +675,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-    videoControlsInner: {
+  videoControlsInner: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     gap: 10,
   },
-    videoKnob: {
+  videoKnob: {
     position: "absolute",
     top: 10,
     width: 11,
@@ -660,7 +690,7 @@ const styles = StyleSheet.create({
     marginLeft: -5.5,
     backgroundColor: "#fff",
   },
-    videoMuteButton: {
+  videoMuteButton: {
     width: 28,
     height: 28,
     borderRadius: 14,
@@ -668,10 +698,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-    videoPosterFallback: {
+  videoPosterFallback: {
     backgroundColor: "#101012",
   },
-    videoTimeText: {
+  videoTimeText: {
     color: "rgba(255, 255, 255, 0.85)",
     fontSize: 11,
     fontWeight: "600",
@@ -679,18 +709,18 @@ const styles = StyleSheet.create({
     minWidth: 34,
     textAlign: "center",
   },
-    videoTrack: {
+  videoTrack: {
     height: 3,
     borderRadius: 1.5,
     backgroundColor: "rgba(255, 255, 255, 0.28)",
     overflow: "hidden",
   },
-    videoTrackFill: {
+  videoTrackFill: {
     height: "100%",
     backgroundColor: "#fff",
     borderRadius: 1.5,
   },
-    videoTrackTouch: {
+  videoTrackTouch: {
     flex: 1,
     height: 30,
     justifyContent: "center",

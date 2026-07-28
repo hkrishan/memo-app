@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { Button, Dialog, Portal, Text, TextInput } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import * as Application from "expo-application";
@@ -96,6 +97,10 @@ const ProfileScreen = () => {
 
   const handleNewAlbum = useCallback(() => {
     router.push("/album/create");
+  }, [router]);
+
+  const handleOpenPremium = useCallback(() => {
+    router.push("/premium");
   }, [router]);
 
   const handleOpenJoinDialog = useCallback(() => {
@@ -285,6 +290,41 @@ const ProfileScreen = () => {
               <Text style={styles.statLabel}>Friends</Text>
             </View>
           </View>
+
+          {/* Upgrade — dark banner mirroring the paywall's look */}
+          <Pressable
+            onPress={handleOpenPremium}
+            style={({ pressed }) => [
+              styles.premiumBanner,
+              pressed && styles.rowPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Upgrade to Memo Premium"
+          >
+            <LinearGradient
+              colors={["#1c1c1e", "#000000"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.premiumIconTile}>
+              <Ionicons name="sparkles" size={18} color="#fff" />
+            </View>
+            <View style={styles.premiumText}>
+              {/* Wordmark: "Memo" in the app face, "Premium" in script */}
+              <Text style={styles.premiumTitle}>
+                Memo <Text style={styles.premiumTitleScript}>Premium</Text>
+              </Text>
+              <Text style={styles.premiumSubtitle}>
+                Unlock full access — upgrade now
+              </Text>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color="rgba(255,255,255,0.55)"
+            />
+          </Pressable>
 
           {/* Memories */}
           <Text style={styles.sectionLabel}>MEMORIES</Text>
@@ -512,6 +552,43 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 13,
     color: "#666",
+    marginTop: 2,
+  },
+  premiumBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  premiumIconTile: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  premiumText: {
+    flex: 1,
+  },
+  premiumTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  // Pacifico ships one weight; fontWeight would force a fallback font
+  premiumTitleScript: {
+    fontFamily: "Pacifico_400Regular",
+    fontSize: 17,
+    fontWeight: "400",
+    color: "#fff",
+  },
+  premiumSubtitle: {
+    fontSize: 12.5,
+    color: "rgba(255, 255, 255, 0.6)",
     marginTop: 2,
   },
   sectionLabel: {

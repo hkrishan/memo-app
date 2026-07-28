@@ -83,8 +83,12 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
 
   // The viewer's album layer (like/comment/tag overlay, double-tap like,
   // delete pop choreography) — shared with the full-gallery screen
-  const { renderSocialOverlay, onDoubleTapAsset, poppingIds } =
-    useAlbumPhotoViewerExtras(albumId, assets);
+  const {
+    renderSocialOverlay,
+    renderPageAttribution,
+    onDoubleTapAsset,
+    poppingIds,
+  } = useAlbumPhotoViewerExtras(albumId, assets);
 
   // The nav bar fades in as the hero scrolls under it — same contract
   // the old grid honored via CameraRollGrid's animatedScrollY mirror
@@ -312,6 +316,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
             key={key}
             {...section}
             renderSocialOverlay={renderSocialOverlay}
+            renderPageAttribution={renderPageAttribution}
             onDoubleTapAsset={onDoubleTapAsset}
             poppingIds={poppingIds}
           />
@@ -326,6 +331,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
             key={key}
             {...section}
             renderSocialOverlay={renderSocialOverlay}
+            renderPageAttribution={renderPageAttribution}
             onDoubleTapAsset={onDoubleTapAsset}
             poppingIds={poppingIds}
           />

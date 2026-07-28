@@ -367,7 +367,6 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
         title={page.pageTitle || `@${page.pageHandle}`}
         subtitle={`@${page.pageHandle}`}
         createdAt={post.createdAt}
-        trailing={author.name}
         onPress={openPage}
         ring
       />
@@ -411,12 +410,12 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           <Ionicons
             name={liked ? "heart" : "heart-outline"}
             size={24}
-            color={liked ? "#FF453A" : "#e8e8ea"}
+            color={liked ? "#FF3B30" : "#1c1c1e"}
           />
           {likeCount > 0 && <Text style={styles.actionCount}>{likeCount}</Text>}
         </Pressable>
         <Pressable style={styles.actionBtn} hitSlop={8} onPress={openComments}>
-          <Ionicons name="chatbubble-outline" size={21} color="#e8e8ea" />
+          <Ionicons name="chatbubble-outline" size={21} color="#1c1c1e" />
           {post.commentCount > 0 && (
             <Text style={styles.actionCount}>{post.commentCount}</Text>
           )}
@@ -463,7 +462,7 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
 
 const styles = StyleSheet.create({
   mediaContainer: {
-    backgroundColor: "#2c2c2e",
+    backgroundColor: "#ececee",
   },
   mediaPage: {
     width: MEDIA_WIDTH,
@@ -524,13 +523,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   actionCount: {
-    color: "#e8e8ea",
+    color: "#1c1c1e",
     fontSize: 13.5,
     fontWeight: "500",
     fontVariant: ["tabular-nums"],
   },
   caption: {
-    color: "#e8e8ea",
+    color: "#1c1c1e",
     fontSize: 14,
     marginTop: 8,
     paddingHorizontal: H_PADDING,
@@ -538,7 +537,7 @@ const styles = StyleSheet.create({
   },
   captionAuthor: {
     fontWeight: "600",
-    color: "#fff",
+    color: "#000",
   },
 });
 

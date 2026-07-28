@@ -17,6 +17,8 @@ export { CaptureDestinationButton } from './CaptureDestinationButton';
 export { DestinationPickerSheet } from './DestinationPickerSheet';
 export { CaptureExtrasSheet } from './CaptureExtrasSheet';
 export { DualCameraPreview } from './DualCameraPreview';
+export { DualLayoutPicker } from './DualLayoutPicker';
+export { DualLayoutGlyph } from './DualLayoutGlyph';
 
 // Re-export component props types for convenience
 export type {

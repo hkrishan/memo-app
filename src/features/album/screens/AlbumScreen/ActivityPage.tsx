@@ -298,7 +298,7 @@ const ActivityPage = memo<ActivityPageProps>(
     );
     // Same album-aware viewer layer as the gallery: like/comment/tag
     // overlay and double-tap like
-    const { renderSocialOverlay, onDoubleTapAsset } =
+    const { renderSocialOverlay, renderPageAttribution, onDoubleTapAsset } =
       useAlbumPhotoViewerExtras(albumId, viewerAssets);
 
     // Memoize content container style
@@ -371,6 +371,7 @@ const ActivityPage = memo<ActivityPageProps>(
           initialIndex={0}
           onClose={closeViewer}
           renderSocialOverlay={renderSocialOverlay}
+          renderPageAttribution={renderPageAttribution}
           onDoubleTapAsset={onDoubleTapAsset}
         />
       </View>

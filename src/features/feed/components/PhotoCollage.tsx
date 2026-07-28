@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
   },
   cell: {
     overflow: "hidden",
-    backgroundColor: "#2c2c2e",
+    backgroundColor: "#ececee",
   },
   playBadge: {
     position: "absolute",

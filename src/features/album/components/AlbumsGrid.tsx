@@ -25,6 +25,10 @@ const CARD_LAYOUT = LinearTransition.springify().damping(18).stiffness(160);
 const newBadgeLabel = (count: number): string =>
   `NEW +${count > 99 ? "99+" : count}`;
 
+/** Total picture count over the cover, capped like the NEW pill. */
+const countBadgeLabel = (count: number): string =>
+  count > 999 ? "999+" : `${count}`;
+
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_GAP = 12;
 const GRID_ROW_GAP = 20;
@@ -59,6 +63,7 @@ export const AlbumCard: React.FC<AlbumCardProps> = memo(
     }, [onPress, album]);
 
     const newCount = album.newPhotoCount ?? 0;
+    const photoCount = album.photoCount ?? 0;
 
     return (
       <Pressable
@@ -75,7 +80,17 @@ export const AlbumCard: React.FC<AlbumCardProps> = memo(
             : album.title
         }
       >
-        <AlbumCover album={album} size={size} borderRadius={24} />
+        <View style={{ width: size, height: size }}>
+          <AlbumCover album={album} size={size} borderRadius={24} />
+          {photoCount > 0 && (
+            <View style={styles.countBadge} pointerEvents="none">
+              <Ionicons name="images" size={10} color="#fff" />
+              <Text style={styles.countBadgeLabel}>
+                {countBadgeLabel(photoCount)}
+              </Text>
+            </View>
+          )}
+        </View>
         {newCount > 0 && (
           <Animated.View
             key={newCount}
@@ -215,6 +230,24 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.4,
+  },
+  countBadge: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    borderRadius: 11,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+  },
+  countBadgeLabel: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
   },
   liveBadge: {
     position: "absolute",

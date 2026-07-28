@@ -6,6 +6,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "bash scripts/patch-ios-pods.sh && SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device",
+    "ios:release": "bash scripts/patch-ios-pods.sh && SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios --device --configuration Release",
     "web": "expo start --web",
     "prebuild:ios:patched": "expo prebuild --platform ios --clean && bash scripts/patch-ios-pods.sh && (cd ios && pod install --repo-update)"
   },
@@ -13,6 +14,7 @@
     "@bacons/apple-targets": "^5.0.0",
     "@config-plugins/react-native-branch": "^11.0.0",
     "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/pacifico": "^0.4.1",
     "@expo/app-integrity": "^0.1.9",
     "@expo/vector-icons": "^15.0.2",
     "@gorhom/bottom-sheet": "^5.2.7",

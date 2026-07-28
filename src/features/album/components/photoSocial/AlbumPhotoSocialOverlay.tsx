@@ -37,11 +37,9 @@ import Animated, {
 import { Image } from "expo-image";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import dayjs from "dayjs";
 
 import { MediaAsset } from "../../hooks";
 import { PhotoWithUploader } from "../../types/album.types";
-import { memberColor } from "../../memberColor";
 import { useGetAlbumQuery } from "../../api/album.queries";
 import {
   useDeletePhotoMutation,
@@ -55,20 +53,6 @@ import { PhotoSocialBar } from "./PhotoSocialBar";
 import { CommentsSheet } from "./CommentsSheet";
 import { PhotoTagSheet } from "./PhotoTagSheet";
 import { DeleteConfirmSheet } from "./DeleteConfirmSheet";
-
-/** "now" / "12m" / "3h" / "5d" / "2 Jan" — compact, chrome-sized. */
-const compactTimeAgo = (iso: string): string => {
-  const then = dayjs(iso);
-  if (!then.isValid()) return "";
-  const minutes = dayjs().diff(then, "minute");
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return then.format("D MMM");
-};
 
 const HEART_SIZE = 96;
 // Spring up ~420ms, then fade + drift out — ~700ms total
@@ -281,15 +265,6 @@ export const AlbumPhotoSocialOverlay = forwardRef<
 
   // Attribution fades/moves exactly like the bar, but settles downward
   // from under the header instead of rising from the bottom
-  const attributionStyle = useAnimatedStyle(() => {
-    const introProgress = intro ? intro.value : 1;
-    const visible = visibility ? visibility.value : 1;
-    return {
-      opacity: introProgress * visible,
-      transform: [{ translateY: (1 - introProgress) * -10 }],
-    };
-  });
-
   // Delete: uploader or album owner only (the server enforces the same
   // rule — this just decides whether the pill shows at all)
   const canDelete =
@@ -362,12 +337,6 @@ export const AlbumPhotoSocialOverlay = forwardRef<
 
   if (!photo) return null;
 
-  // The uploader's album identity color (members ride on the album query)
-  const uploaderMember = album?.members?.find(
-    (m) => m.userId === photo.uploader?.userId,
-  );
-  const uploaderRing = memberColor(uploaderMember);
-
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {burstVisible && (
@@ -381,48 +350,6 @@ export const AlbumPhotoSocialOverlay = forwardRef<
             />
           </Animated.View>
         </View>
-      )}
-      {/* Who took it — small pill under the viewer's header chrome */}
-      {photo.uploader != null && (
-        <Animated.View
-          style={[
-            styles.attributionRow,
-            { top: insets.top + 58 },
-            attributionStyle,
-          ]}
-          pointerEvents="none"
-        >
-          <View style={styles.attributionPill}>
-            {photo.uploader.avatarUrl ? (
-              <Image
-                source={{ uri: photo.uploader.avatarUrl }}
-                style={[
-                  styles.attributionAvatar,
-                  { borderWidth: 2, borderColor: uploaderRing },
-                ]}
-                contentFit="cover"
-              />
-            ) : (
-              <View
-                style={[
-                  styles.attributionAvatar,
-                  styles.attributionAvatarFallback,
-                  { borderWidth: 2, borderColor: uploaderRing },
-                ]}
-              >
-                <Ionicons name="person" size={11} color="#ccc" />
-              </View>
-            )}
-            <Text style={styles.attributionName} numberOfLines={1}>
-              {photo.uploader.name}
-            </Text>
-            {compactTimeAgo(photo.createdAt) !== "" && (
-              <Text style={styles.attributionTime}>
-                {compactTimeAgo(photo.createdAt)}
-              </Text>
-            )}
-          </View>
-        </Animated.View>
       )}
       <Animated.View
         style={[styles.barRow, { bottom: bottomInset }, barStyle]}
@@ -481,44 +408,7 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
   },
-  attributionRow: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  attributionPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    height: 28,
-    maxWidth: 260,
-  },
-  // Slightly bigger than pre-ring (18) so the 2px identity ring doesn't
   // swallow the photo
-  attributionAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-  },
-  attributionAvatarFallback: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  attributionName: {
-    color: "#fff",
-    fontSize: 12.5,
-    fontWeight: "600",
-    flexShrink: 1,
-  },
-  attributionTime: {
-    color: "rgba(255, 255, 255, 0.65)",
-    fontSize: 12,
-  },
   burstLayer: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",

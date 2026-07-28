@@ -1,8 +1,8 @@
 /**
- * Pages / Albums segmented control for the feed. A frosted dark track with
- * a white sliding thumb (the app's pill language, inverted for the feed's
- * dark canvas). Labels cross-fade between ink-on-white and muted gray as
- * the thumb passes under them.
+ * Pages / Albums segmented control for the feed. A soft gray track with a
+ * white sliding thumb (the app's pill language on the feed's light
+ * canvas). Labels cross-fade between ink-on-white and muted gray as the
+ * thumb passes under them.
  */
 
 import React, { memo, useCallback, useEffect } from "react";
@@ -15,11 +15,19 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { BlurView } from "expo-blur";
 import type { FeedMode } from "../store/feedModeStore";
 
 const SEGMENT_WIDTH = 96;
 const TRACK_PADDING = 3;
 const TRACK_HEIGHT = 36;
+
+/**
+ * Height of the floating switch row on the feed (the 36pt pill plus the
+ * row's 10/4 vertical paddings). The feed lists reserve this much top
+ * padding so content starts below the pill but scrolls underneath it.
+ */
+export const SWITCH_ROW_HEIGHT = TRACK_HEIGHT + 14;
 
 const TIMING = { duration: 220, easing: Easing.out(Easing.cubic) };
 
@@ -72,6 +80,8 @@ const FeedModeSwitch = memo<FeedModeSwitchProps>(
 
     return (
       <View style={styles.track}>
+        {/* Frosted backdrop — the pill floats over the scrolling feed */}
+        <BlurView intensity={25} tint="light" style={styles.trackBlur} />
         <Animated.View style={[styles.thumb, thumbStyle]} />
         <Pressable
           style={styles.segment}
@@ -103,9 +113,14 @@ const styles = StyleSheet.create({
     height: TRACK_HEIGHT,
     padding: TRACK_PADDING,
     borderRadius: TRACK_HEIGHT / 2,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderColor: "rgba(0, 0, 0, 0.06)",
+  },
+  trackBlur: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: TRACK_HEIGHT / 2,
+    overflow: "hidden",
   },
   thumb: {
     position: "absolute",
@@ -114,10 +129,10 @@ const styles = StyleSheet.create({
     width: SEGMENT_WIDTH,
     height: TRACK_HEIGHT - TRACK_PADDING * 2,
     borderRadius: (TRACK_HEIGHT - TRACK_PADDING * 2) / 2,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#fff",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.12,
     shadowRadius: 4,
     elevation: 3,
   },

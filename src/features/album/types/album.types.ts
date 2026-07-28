@@ -22,6 +22,9 @@ export type Album = {
   recentPhotos?: AlbumPhoto[];
   albumCode: string;
   coverPhoto?: AlbumPhoto | null;
+  /** Total number of photos/videos in the album. Optional — older cached
+   *  responses may lack it. */
+  photoCount?: number;
   /** Photos added by OTHER members since you last opened the album. */
   newPhotoCount?: number;
   /** Newest photo's ISO timestamp (for "latest added" sort); null when empty. */

@@ -116,15 +116,25 @@ export const TIMER_MODE_CYCLE: TimerMode[] = [0, 3, 10];
 // ============================================================================
 
 /**
- * Dual-camera layout cycle order. Side-by-side leads because it's the
- * layout that reads as "two cameras" at a glance; the inset (PiP) is last
- * since it's the least destructive to the main shot.
+ * Dual-camera layouts, in the order the picker shows them: the two splits
+ * first (they're the same idea rotated), then the inset, which is the odd
+ * one out — it keeps one camera full-bleed.
  */
-export const DUAL_LAYOUT_CYCLE = [
-  'horizontal',
-  'vertical',
-  'pip',
-] as const;
+export const DUAL_LAYOUTS = ['vertical', 'horizontal', 'pip'] as const;
+
+/**
+ * Names the picker shows. Written from what the user sees on screen, not
+ * from the geometry: "stacked" reads instantly where "vertical" invites
+ * the question "vertical what?".
+ */
+export const DUAL_LAYOUT_LABELS: Record<
+  (typeof DUAL_LAYOUTS)[number],
+  string
+> = {
+  vertical: 'Stacked',
+  horizontal: 'Side by side',
+  pip: 'Inset',
+};
 
 // ============================================================================
 // Capture Gesture Constants

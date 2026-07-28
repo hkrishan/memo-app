@@ -178,3 +178,20 @@ else:
 PY
   echo "Patched React Native spm.rb for nil target handling."
 fi
+
+# 7) Local builds have no SENTRY_ORG/PROJECT/AUTH_TOKEN (those live on EAS),
+# so sentry-cli fails the "Bundle React Native code and images" phase. Xcode
+# script phases source .xcode.env.local, so the opt-out goes there — and here,
+# because `expo prebuild --clean` deletes ios/ along with it.
+XCODE_ENV_LOCAL="$ROOT_DIR/ios/.xcode.env.local"
+if [[ -d "$ROOT_DIR/ios" ]]; then
+  if ! grep -q "SENTRY_DISABLE_AUTO_UPLOAD" "$XCODE_ENV_LOCAL" 2>/dev/null; then
+    {
+      echo "# Source maps upload on EAS, where the Sentry env vars exist."
+      echo "export SENTRY_DISABLE_AUTO_UPLOAD=true"
+    } >> "$XCODE_ENV_LOCAL"
+    echo "Added SENTRY_DISABLE_AUTO_UPLOAD to ios/.xcode.env.local"
+  else
+    echo "SENTRY_DISABLE_AUTO_UPLOAD already set in ios/.xcode.env.local"
+  fi
+fi

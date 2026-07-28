@@ -13,6 +13,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { SharedValue } from "react-native-reanimated";
 
 import { AlbumPhotoSocialOverlay } from "../components/photoSocial";
+import { PhotoAttributionPill } from "../components/photoSocial/PhotoAttributionPill";
 import type { AlbumPhotoSocialOverlayHandle } from "../components/photoSocial/AlbumPhotoSocialOverlay";
 import { isPendingAssetId } from "./useAlbumPendingAssets";
 import { MediaAsset } from "./useMediaLibrary";
@@ -78,6 +79,17 @@ export const useAlbumPhotoViewerExtras = (
   // Double-tap on the fullscreen photo = like (with the overlay's heart
   // burst). Pass the asset the VIEWER resolved from its live scroll
   // position — the overlay's own prop can be a page behind mid-settle
+  // Uploader pill, rendered inside each pager page so it travels with its
+  // photo while swiping. Pending (local-first) tiles have no uploader row
+  // on the server yet — no pill.
+  const renderPageAttribution = useCallback(
+    (asset: MediaAsset) =>
+      albumId && !isPendingAssetId(asset.id) ? (
+        <PhotoAttributionPill albumId={albumId} asset={asset} />
+      ) : null,
+    [albumId],
+  );
+
   const onDoubleTapAsset = useCallback((asset: MediaAsset) => {
     if (isPendingAssetId(asset.id)) return;
     socialOverlayRef.current?.doubleTapLike(asset.id);
@@ -85,6 +97,7 @@ export const useAlbumPhotoViewerExtras = (
 
   return {
     renderSocialOverlay: albumId ? renderSocialOverlay : undefined,
+    renderPageAttribution: albumId ? renderPageAttribution : undefined,
     onDoubleTapAsset: albumId ? onDoubleTapAsset : undefined,
     poppingIds,
   };

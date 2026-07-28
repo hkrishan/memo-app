@@ -86,20 +86,22 @@ final class DualCameraCompositor {
 
     switch layout {
     case .pip:
-      // A deliberate small window — cropping to 3:4 here is a design
-      // choice, not an accident, so it stays a comfortable size.
-      let width = canvas.width * 0.30
-      let height = width * 4 / 3
-      let margin = canvas.width * 0.045
+      // A circle, low and to the right, over a full-bleed main pane. The
+      // rect is SQUARE and the radius is half its width — that's what
+      // turns the shared rounded-rect mask into a circle, so the inset
+      // needs no separate masking path.
+      let diameter = (canvas.width * 0.40).rounded()
+      let centerX = canvas.width * 0.765
+      let centerY = canvas.height * 0.655
       return DualCameraGeometry(
         main: CGRect(origin: .zero, size: canvas),
         secondary: CGRect(
-          x: margin,
-          y: canvas.height * 0.10,
-          width: width,
-          height: height
+          x: (centerX - diameter / 2).rounded(),
+          y: (centerY - diameter / 2).rounded(),
+          width: diameter,
+          height: diameter
         ),
-        cornerRadius: canvas.width * 0.05,
+        cornerRadius: diameter / 2,
         overlaps: true,
         letterboxed: false
       )
@@ -127,22 +129,22 @@ final class DualCameraCompositor {
       )
 
     case .vertical:
-      let slotHeight = (canvas.height / 2).rounded()
-      let paneHeight = min(slotHeight, canvas.width / aspect).rounded()
-      let paneWidth = (paneHeight * aspect).rounded()
-      let originX = ((canvas.width - paneWidth) / 2).rounded()
-      let insetY = ((slotHeight - paneHeight) / 2).rounded()
+      // Full-bleed, unlike the side-by-side split. Stacking two full-width
+      // panes only costs a crop off the top and bottom of each frame,
+      // which is a far better trade than pillarboxing them down to 60% of
+      // the width to keep every pixel.
+      let half = (canvas.height / 2).rounded()
       return DualCameraGeometry(
-        main: CGRect(x: originX, y: insetY, width: paneWidth, height: paneHeight),
+        main: CGRect(x: 0, y: 0, width: canvas.width, height: half),
         secondary: CGRect(
-          x: originX,
-          y: slotHeight + insetY,
-          width: paneWidth,
-          height: paneHeight
+          x: 0,
+          y: half,
+          width: canvas.width,
+          height: canvas.height - half
         ),
         cornerRadius: 0,
         overlaps: false,
-        letterboxed: true
+        letterboxed: false
       )
     }
   }

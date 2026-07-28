@@ -69,7 +69,7 @@ import {
   TimerMode,
   CapturedMedia,
 } from "../types";
-import { DUAL_LAYOUT_CYCLE, RECORDING_CONFIG } from "../constants";
+import { RECORDING_CONFIG } from "../constants";
 import { useCameraZoom, useDualCamera, useVideoRecording } from "../hooks";
 import { useCameraDevices } from "../hooks/useCameraDevices";
 import { useCaptureLocation } from "../hooks/useCaptureLocation";
@@ -92,6 +92,7 @@ import {
   CaptureDestinationButton,
   CaptureExtrasSheet,
   DualCameraPreview,
+  DualLayoutPicker,
 } from "../components";
 
 const ReanimatedCamera = Animated.createAnimatedComponent(Camera);
@@ -175,6 +176,15 @@ export default function CameraScreen({
   const [dualLayout, setDualLayout] =
     useState<DualCameraLayout>("horizontal");
   const [dualSwapped, setDualSwapped] = useState(false);
+  const [showDualLayouts, setShowDualLayouts] = useState(false);
+  /** When dual mode last flipped — see handleOpenDualLayouts. */
+  const dualToggledAtRef = useRef(0);
+
+  // Entering or leaving dual mode always starts with the picker closed,
+  // whatever opened it last.
+  useEffect(() => {
+    setShowDualLayouts(false);
+  }, [dualMode]);
 
   // The mic has to be wired in before the multi-cam session configures
   // itself — it can't be added to a running one.
@@ -816,17 +826,25 @@ export default function CameraScreen({
     flipShadeTimerRef.current = setTimeout(endFlipShade, 1500);
     setFocusPoint(null);
     exposureBias.value = 0;
+    dualToggledAtRef.current = Date.now();
+    setShowDualLayouts(false);
     setDualMode((v) => !v);
   }, [flipShade, endFlipShade, exposureBias]);
 
-  const handleCycleDualLayout = useCallback(() => {
-    Haptics.selectionAsync();
-    setDualLayout((prev) => {
-      const index = DUAL_LAYOUT_CYCLE.indexOf(
-        prev as (typeof DUAL_LAYOUT_CYCLE)[number],
-      );
-      return DUAL_LAYOUT_CYCLE[(index + 1) % DUAL_LAYOUT_CYCLE.length];
-    });
+  const handleOpenDualLayouts = useCallback(() => {
+    // Turning dual mode on hides flash and night and adds this button, so
+    // the toolbar shrinks and the layout button lands on the slot the
+    // finger is still resting on. Without this, enabling dual camera pops
+    // the picker open by itself.
+    if (Date.now() - dualToggledAtRef.current < 500) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowDualLayouts(true);
+  }, []);
+
+  // The picker stays open after a choice so the three arrangements can be
+  // compared against the live preview underneath.
+  const handleSelectDualLayout = useCallback((next: DualCameraLayout) => {
+    setDualLayout(next);
   }, []);
 
   const handleSwapDual = useCallback(() => {
@@ -1213,7 +1231,7 @@ export default function CameraScreen({
             dualMode={dualMode}
             onToggleDual={handleToggleDual}
             dualLayout={dualLayout}
-            onCycleDualLayout={handleCycleDualLayout}
+            onOpenDualLayouts={handleOpenDualLayouts}
             onSwapDual={handleSwapDual}
           />
         </Animated.View>
@@ -1368,6 +1386,19 @@ export default function CameraScreen({
         style={[styles.shutterBlink, shutterBlinkStyle]}
         pointerEvents="none"
       />
+
+      {/* Dual-camera layout picker. Sits above the toolbar so its
+          dismiss layer catches taps anywhere on the preview, matching the
+          "tap anywhere to close" affordance it advertises. */}
+      {dualMode && (
+        <DualLayoutPicker
+          visible={showDualLayouts}
+          layout={dualLayout}
+          onSelect={handleSelectDualLayout}
+          onDismiss={() => setShowDualLayouts(false)}
+          top={topControlsTop + 120}
+        />
+      )}
 
       {/* Self-timer countdown */}
       <CountdownOverlay

@@ -22,7 +22,9 @@ import AlbumUpdateCard from "./AlbumUpdateCard";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const UpdatesFlashList = FlashList as any;
 
-const AlbumsFeedList = memo(() => {
+/** topInset: clears the blurred top bar + floating pill; content scrolls
+ *  under both (the parent screen computes it from the safe-area inset). */
+const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
   const {
     data,
     refetch,
@@ -81,12 +83,17 @@ const AlbumsFeedList = memo(() => {
     );
   }, [isFetchingNextPage]);
 
+  const contentStyle = useMemo(
+    () => ({ paddingTop: topInset, paddingBottom: 100 }),
+    [topInset],
+  );
+
   return (
     <UpdatesFlashList
       data={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
-      contentContainerStyle={styles.listContent}
+      contentContainerStyle={contentStyle}
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={listEmpty}
       ListFooterComponent={listFooter}
@@ -98,7 +105,7 @@ const AlbumsFeedList = memo(() => {
           // pull spinner for genuine top refreshes
           refreshing={isRefetching && !isFetchingNextPage}
           onRefresh={refetch}
-          tintColor="#fff"
+          tintColor="#888"
         />
       }
     />
@@ -106,10 +113,6 @@ const AlbumsFeedList = memo(() => {
 });
 
 const styles = StyleSheet.create({
-  listContent: {
-    paddingTop: 8,
-    paddingBottom: 100,
-  },
   footer: {
     paddingVertical: 24,
     alignItems: "center",
@@ -123,19 +126,19 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#232325",
+    backgroundColor: "#F1F1F3",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
   },
   emptyTitle: {
-    color: "#fff",
+    color: "#111",
     fontSize: 17,
     fontWeight: "600",
     marginBottom: 6,
   },
   emptySubtitle: {
-    color: "#9a9aa0",
+    color: "#8e8e93",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",

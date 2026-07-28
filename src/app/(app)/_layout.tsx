@@ -89,6 +89,13 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="premium"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
         name="album/[albumId]/index"
         options={{
           headerShown: false,
