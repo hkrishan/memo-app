@@ -111,7 +111,8 @@ const styles = StyleSheet.create({
   optionText: {
     color: 'rgba(255, 255, 255, 0.85)',
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
   },
   optionTextActive: {
     color: '#000',

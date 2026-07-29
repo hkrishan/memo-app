@@ -127,6 +127,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 12,

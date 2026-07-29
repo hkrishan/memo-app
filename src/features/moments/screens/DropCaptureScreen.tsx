@@ -16,6 +16,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -26,6 +27,7 @@ import {
   StyleSheet,
   Text,
   View,
+  StatusBar,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
@@ -48,6 +50,43 @@ import {
 import { dismissDropTakeover } from "../hooks/useDropTakeover";
 import { LATE_WINDOW_MS } from "../types/moment.types";
 import { formatMmSs, useNow } from "../utils/time";
+
+/**
+ * The 1 Hz countdown label, isolated so its tick re-renders ONLY this
+ * pill. It used to live in the screen body — every second re-rendered
+ * the entire 700-line capture screen, pushing fresh props onto two live
+ * native camera views.
+ */
+const DropCountdownPill: React.FC<{
+  deadlineMs: number;
+  lateWindowMs: number;
+  active: boolean;
+}> = ({ deadlineMs, lateWindowMs, active }) => {
+  const now = useNow(1000, active);
+  const remainingMs = deadlineMs - now;
+  const isLate = remainingMs <= 0;
+  const missed = remainingMs + lateWindowMs <= 0;
+  const urgent = !isLate && remainingMs < 60 * 1000;
+  if (missed) return null;
+  return (
+    <View style={styles.countdownRow}>
+      {isLate && (
+        <View style={styles.lateBadge}>
+          <Text style={styles.lateBadgeLabel}>LATE</Text>
+        </View>
+      )}
+      <Text
+        style={[
+          styles.countdown,
+          urgent && styles.countdownUrgent,
+          isLate && styles.countdownLate,
+        ]}
+      >
+        {formatMmSs(isLate ? remainingMs + lateWindowMs : remainingMs)}
+      </Text>
+    </View>
+  );
+};
 
 const URGENT = "#FF3B30";
 const LATE_ACCENT = "#FF9500";
@@ -107,12 +146,44 @@ const DropCaptureScreen: React.FC = () => {
     () => (deadlineAt ? new Date(deadlineAt).getTime() : null),
     [deadlineAt],
   );
-  const now = useNow(1000, deadlineMs != null && phase !== "sent");
-  const remainingMs = deadlineMs != null ? deadlineMs - now : null;
+  // Boundary-exact phase flags WITHOUT ticking the whole screen every
+  // second: one timeout per upcoming boundary (late, missed) forces a
+  // render exactly when a flag flips. The visible countdown ticks inside
+  // DropCountdownPill only.
+  const [, forcePhaseTick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (deadlineMs == null || phase === "sent") return;
+    const scheduledAt = Date.now();
+    const timers = [deadlineMs, deadlineMs + LATE_WINDOW_MS]
+      .filter((t) => t > scheduledAt)
+      .map((t) => setTimeout(forcePhaseTick, t - scheduledAt + 20));
+    return () => timers.forEach(clearTimeout);
+  }, [deadlineMs, phase]);
+  const nowMs = Date.now();
+  const remainingMs = deadlineMs != null ? deadlineMs - nowMs : null;
   const isLate = remainingMs != null && remainingMs <= 0;
   const missed = remainingMs != null && remainingMs + LATE_WINDOW_MS <= 0;
-  const urgent =
-    remainingMs != null && !isLate && remainingMs < 60 * 1000;
+
+  // Identity-stable native camera callbacks (fresh inline arrows used to
+  // be diffed onto the live camera views on every render)
+  const handleBackInitialized = useCallback(() => {
+    initializedRef.current.back = true;
+  }, []);
+  const handleBackStarted = useCallback(() => {
+    streamingRef.current.back = true;
+  }, []);
+  const handleBackStopped = useCallback(() => {
+    streamingRef.current.back = false;
+  }, []);
+  const handleFrontInitialized = useCallback(() => {
+    initializedRef.current.front = true;
+  }, []);
+  const handleFrontStarted = useCallback(() => {
+    streamingRef.current.front = true;
+  }, []);
+  const handleFrontStopped = useCallback(() => {
+    streamingRef.current.front = false;
+  }, []);
 
   // Ask for camera access as soon as the takeover lands
   useEffect(() => {
@@ -370,15 +441,9 @@ const DropCaptureScreen: React.FC = () => {
             device={backDevice}
             isActive={position === "back" && !showPreview}
             photo={true}
-            onInitialized={() => {
-              initializedRef.current.back = true;
-            }}
-            onStarted={() => {
-              streamingRef.current.back = true;
-            }}
-            onStopped={() => {
-              streamingRef.current.back = false;
-            }}
+            onInitialized={handleBackInitialized}
+            onStarted={handleBackStarted}
+            onStopped={handleBackStopped}
           />
         )}
         {frontDevice && (
@@ -391,15 +456,9 @@ const DropCaptureScreen: React.FC = () => {
             device={frontDevice}
             isActive={position === "front" && !showPreview}
             photo={true}
-            onInitialized={() => {
-              initializedRef.current.front = true;
-            }}
-            onStarted={() => {
-              streamingRef.current.front = true;
-            }}
-            onStopped={() => {
-              streamingRef.current.front = false;
-            }}
+            onInitialized={handleFrontInitialized}
+            onStarted={handleFrontStarted}
+            onStopped={handleFrontStopped}
           />
         )}
 
@@ -506,6 +565,7 @@ const DropCaptureScreen: React.FC = () => {
 
   return (
     <View style={styles.screen}>
+      <StatusBar barStyle="light-content" />
       {content}
 
       {/* Header stays above every state */}
@@ -522,25 +582,12 @@ const DropCaptureScreen: React.FC = () => {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {albumTitle || "Drop"}
           </Text>
-          {remainingMs != null && !missed && (
-            <View style={styles.countdownRow}>
-              {isLate && (
-                <View style={styles.lateBadge}>
-                  <Text style={styles.lateBadgeLabel}>LATE</Text>
-                </View>
-              )}
-              <Text
-                style={[
-                  styles.countdown,
-                  urgent && styles.countdownUrgent,
-                  isLate && styles.countdownLate,
-                ]}
-              >
-                {formatMmSs(
-                  isLate ? remainingMs + LATE_WINDOW_MS : remainingMs,
-                )}
-              </Text>
-            </View>
+          {deadlineMs != null && !missed && (
+            <DropCountdownPill
+              deadlineMs={deadlineMs}
+              lateWindowMs={LATE_WINDOW_MS}
+              active={phase !== "sent"}
+            />
           )}
         </View>
         <View style={styles.closeButton} />
@@ -579,6 +626,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     textShadowColor: "rgba(0, 0, 0, 0.4)",
     textShadowRadius: 6,
@@ -591,6 +639,7 @@ const styles = StyleSheet.create({
   countdown: {
     color: "#fff",
     fontSize: 34,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
     letterSpacing: 1,
@@ -612,7 +661,8 @@ const styles = StyleSheet.create({
   lateBadgeLabel: {
     color: "#fff",
     fontSize: 11,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     letterSpacing: 0.8,
   },
   betweenShade: {
@@ -624,6 +674,7 @@ const styles = StyleSheet.create({
   betweenDots: {
     color: "#fff",
     fontSize: 40,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   captureControls: {
@@ -696,6 +747,7 @@ const styles = StyleSheet.create({
   retakeLabel: {
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   sendButton: {
@@ -714,6 +766,7 @@ const styles = StyleSheet.create({
   sendLabel: {
     color: "#000",
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   sentBanner: {
@@ -731,6 +784,7 @@ const styles = StyleSheet.create({
   sentLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   centerState: {
@@ -743,6 +797,7 @@ const styles = StyleSheet.create({
   centerTitle: {
     color: "#fff",
     fontSize: 20,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     marginTop: 6,
   },
@@ -762,6 +817,7 @@ const styles = StyleSheet.create({
   centerButtonLabel: {
     color: "#000",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

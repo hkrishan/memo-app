@@ -133,6 +133,7 @@ const styles = StyleSheet.create({
   name: {
     color: "#fff",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     flexShrink: 1,
   },

@@ -16,6 +16,7 @@ export { LastCaptureThumbnail } from './LastCaptureThumbnail';
 export { CaptureDestinationButton } from './CaptureDestinationButton';
 export { DestinationPickerSheet } from './DestinationPickerSheet';
 export { CaptureExtrasSheet } from './CaptureExtrasSheet';
+export { default as LocationPrimerSheet } from './LocationPrimerSheet';
 export { DualCameraPreview } from './DualCameraPreview';
 export { DualLayoutPicker } from './DualLayoutPicker';
 export { DualLayoutGlyph } from './DualLayoutGlyph';

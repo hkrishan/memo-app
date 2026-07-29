@@ -355,6 +355,7 @@ const styles = StyleSheet.create({
   },
   unavailableText: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#333",
   },
@@ -368,6 +369,7 @@ const styles = StyleSheet.create({
   retryText: {
     color: "#fff",
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   headerSection: {
@@ -421,12 +423,14 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     fontSize: 20,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginBottom: 4,
   },
   pageHandle: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },
@@ -483,6 +487,7 @@ const styles = StyleSheet.create({
   },
   followText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },

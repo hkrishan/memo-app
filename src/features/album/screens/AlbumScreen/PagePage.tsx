@@ -173,6 +173,7 @@ const NoPage = ({ albumId }: { albumId: string }) => {
         <Text
           style={{
             fontSize: 22,
+            fontFamily: "InstrumentSans_600SemiBold",
             fontWeight: "600",
             textAlign: "center",
           }}
@@ -397,12 +398,14 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     fontSize: 20,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginBottom: 4,
   },
   pageHandle: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },

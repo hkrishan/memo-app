@@ -87,7 +87,7 @@ const useAuth = () => {
     } catch (error: any) {
       if (__DEV__) console.error("Google login error:", error);
       notify.error(
-        "Login Failed",
+        "Login failed",
         error.message || "Failed to sign in with Google",
       );
       throw error;
@@ -119,7 +119,7 @@ const useAuth = () => {
     } catch (error: any) {
       if (__DEV__) console.error("Apple login error:", error);
       notify.error(
-        "Login Failed",
+        "Login failed",
         error.message || "Failed to sign in with Apple",
       );
       throw error;
@@ -147,7 +147,7 @@ const useAuth = () => {
     } catch (error: any) {
       if (__DEV__) console.error("Facebook login error:", error);
       notify.error(
-        "Login Failed",
+        "Login failed",
         error.message || "Failed to sign in with Facebook",
       );
       throw error;
@@ -171,7 +171,7 @@ const useAuth = () => {
       } catch (error: any) {
         if (__DEV__) console.error("Email login error:", error);
         notify.error(
-          "Login Failed",
+          "Login failed",
           error.message || "Invalid email or password",
         );
         throw error;
@@ -193,7 +193,7 @@ const useAuth = () => {
         const response = await authApi.emailRegister({ email, password, name });
         await handleAuthSuccess(response);
 
-        notify.success("Account Created", "Welcome to Memo!");
+        notify.success("Account created", "Welcome to Memo!");
       } catch (error: any) {
         if (__DEV__) console.error("Email register error:", error);
         notify.error(
@@ -246,7 +246,7 @@ const useAuth = () => {
         await handleAuthSuccess(response, options);
       } catch (error: any) {
         if (__DEV__) console.error("Test login error:", error);
-        notify.error("Login Failed", error.message || "Test login failed");
+        notify.error("Login failed", error.message || "Test login failed");
         throw error;
       } finally {
         setLoading(false);
@@ -311,7 +311,7 @@ const useAuth = () => {
       if (__DEV__) console.error("Delete account error:", error);
       notify.error(
         "Couldn't Delete Account",
-        error.message || "Please try again.",
+        error.message || "Please try again",
       );
       throw error;
     } finally {

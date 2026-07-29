@@ -314,6 +314,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

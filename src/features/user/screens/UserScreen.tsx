@@ -23,6 +23,7 @@ import {
   useUpdateAvatarMutation,
   useUpdateProfileMutation,
 } from "../api/user.queries";
+import { color, type } from "@/lib/tokens";
 
 const AVATAR_SIZE = 140;
 
@@ -70,7 +71,7 @@ const UserScreen = () => {
     // Permanently denied — the OS won't show the prompt again, so the only
     // way forward is the system settings screen
     Alert.alert(
-      "Permission Required",
+      "Permission required",
       `${what} access has been disabled. You can enable it in Settings.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -86,7 +87,7 @@ const UserScreen = () => {
         showPermissionDeniedAlert("Camera");
       } else {
         notify.error(
-          "Permission Required",
+          "Permission required",
           "Camera access is needed to take a photo",
         );
       }
@@ -109,7 +110,7 @@ const UserScreen = () => {
         showPermissionDeniedAlert("Photo library");
       } else {
         notify.error(
-          "Permission Required",
+          "Permission required",
           "Photo library access is needed to choose a photo",
         );
       }
@@ -166,7 +167,7 @@ const UserScreen = () => {
           setNameDraft("");
         },
         onError: () => {
-          notify.error("Couldn't Save", "Please try again");
+          notify.error("Couldn't save", "Please try again");
         },
       },
     );
@@ -199,7 +200,7 @@ const UserScreen = () => {
                   pressed && styles.rowPressed,
                 ]}
               >
-                <Ionicons name="chevron-down" size={26} color="#000" />
+                <Ionicons name="chevron-down" size={26} color={color.textPrimary} />
               </Pressable>
               <Text style={styles.headerTitle}>Account</Text>
             </View>
@@ -240,13 +241,11 @@ const UserScreen = () => {
             </View>
 
             {/* Details */}
-            <Text style={styles.sectionLabel}>DETAILS</Text>
-            <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>Details</Text>
+            <View>
               {isEditingName ? (
                 <View style={styles.row}>
-                  <View style={styles.rowIconContainer}>
-                    <Ionicons name="person-outline" size={18} color="#000" />
-                  </View>
+                  <Ionicons name="person-outline" size={22} color={color.textPrimary} />
                   <TextInput
                     mode="outlined"
                     value={nameDraft}
@@ -304,9 +303,7 @@ const UserScreen = () => {
                     pressed && styles.rowPressed,
                   ]}
                 >
-                  <View style={styles.rowIconContainer}>
-                    <Ionicons name="person-outline" size={18} color="#000" />
-                  </View>
+                  <Ionicons name="person-outline" size={22} color={color.textPrimary} />
                   <Text style={styles.rowTitle}>Name</Text>
                   <Text style={styles.rowValue} numberOfLines={1}>
                     {user?.name ?? ""}
@@ -316,9 +313,7 @@ const UserScreen = () => {
               )}
               <View style={styles.rowDivider} />
               <View style={styles.row}>
-                <View style={styles.rowIconContainer}>
-                  <Ionicons name="mail-outline" size={18} color="#000" />
-                </View>
+                <Ionicons name="mail-outline" size={22} color={color.textPrimary} />
                 <Text style={styles.rowTitle}>Email</Text>
                 <Text
                   style={[styles.rowValue, !user?.email && styles.rowValueMuted]}
@@ -327,6 +322,7 @@ const UserScreen = () => {
                   {user?.email ?? "Not set"}
                 </Text>
               </View>
+              <View style={styles.rowDivider} />
             </View>
           </SafeAreaView>
       </ScrollView>
@@ -339,14 +335,14 @@ export default UserScreen;
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: color.bg,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
   },
   safeArea: {
     flexGrow: 1,
@@ -365,9 +361,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#000",
+    ...type.title,
+    color: color.textPrimary,
   },
   avatarSection: {
     alignItems: "center",
@@ -398,67 +393,51 @@ const styles = StyleSheet.create({
     borderColor: "#fff",
   },
   name: {
-    fontSize: 24,
+    fontSize: 26,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
-    marginTop: 10,
-    color: "#000",
+    letterSpacing: -0.4,
+    marginTop: 12,
+    color: color.textPrimary,
   },
   memberSince: {
     fontSize: 13,
-    color: "#999",
+    color: color.textTertiary,
     marginTop: 4,
   },
   sectionLabel: {
-    fontSize: 12,
-    color: "#999",
-    letterSpacing: 1.2,
-    fontWeight: "600",
-    marginTop: 28,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  sectionCard: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 16,
-    overflow: "hidden",
+    ...type.overline,
+    color: color.textTertiary,
+    marginTop: 36,
+    marginBottom: 4,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    paddingVertical: 16,
+    gap: 14,
     // Same height in display and edit mode so rows don't jump
     minHeight: 64,
   },
   rowPressed: {
-    opacity: 0.6,
-  },
-  rowIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#e9e9e9",
-    alignItems: "center",
-    justifyContent: "center",
+    opacity: 0.5,
   },
   rowTitle: {
-    fontSize: 15,
-    color: "#000",
+    fontSize: 16,
+    color: color.textPrimary,
   },
   rowValue: {
     flex: 1,
     fontSize: 15,
-    color: "#999",
+    color: color.textTertiary,
     textAlign: "right",
   },
   rowValueMuted: {
-    color: "#bbb",
+    color: color.textTertiary,
   },
   rowDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#e0e0e0",
-    marginLeft: 64,
+    backgroundColor: color.separator,
   },
   nameInput: {
     flex: 1,

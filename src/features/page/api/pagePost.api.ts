@@ -108,6 +108,16 @@ const pagePostApi = () => {
     );
   };
 
+  const deletePost = async (
+    albumId: string,
+    pageId: string,
+    postId: string
+  ): Promise<void> => {
+    return httpClient.delete(
+      endpoints.album.page.posts.delete(albumId, pageId, postId)
+    );
+  };
+
   return {
     createPost,
     listPosts,
@@ -116,6 +126,7 @@ const pagePostApi = () => {
     getComments,
     addComment,
     deleteComment,
+    deletePost,
   };
 };
 

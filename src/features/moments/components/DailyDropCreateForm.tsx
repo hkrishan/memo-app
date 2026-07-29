@@ -49,7 +49,7 @@ const DailyDropCreateForm: React.FC<MomentCreateFormProps> = ({
           onClose();
         },
         onError: () => {
-          notify.error("Couldn't start the moment", "Please try again.");
+          notify.error("Couldn't start the moment", "Please try again");
         },
       },
     );
@@ -142,6 +142,8 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   titleInput: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -151,6 +153,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   footnote: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     color: "rgba(255, 255, 255, 0.45)",
     fontSize: 12,
     textAlign: "center",

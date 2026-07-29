@@ -283,6 +283,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 22,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -318,6 +319,7 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   rowTitleUnread: {
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   rowBody: {
@@ -352,6 +354,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

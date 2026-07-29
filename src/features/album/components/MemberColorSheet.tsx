@@ -253,6 +253,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 22,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
     textAlign: "center",
@@ -294,6 +295,7 @@ const styles = StyleSheet.create({
   },
   error: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#E5484D",
     textAlign: "center",
@@ -316,6 +318,7 @@ const styles = StyleSheet.create({
   confirmLabel: {
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   notNowButton: {
@@ -330,6 +333,7 @@ const styles = StyleSheet.create({
   notNowLabel: {
     color: "#8E8E93",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

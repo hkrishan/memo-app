@@ -42,7 +42,7 @@ const formatDateSeparator = (date: Date): string => {
   if (isSameDay(date, now)) return "Today";
   if (isSameDay(date, yesterday)) return "Yesterday";
 
-  return date.toLocaleDateString("en-US", {
+  return date.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -97,13 +97,20 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       );
       if (exists) return state;
 
-      return {
-        ...state,
-        messages: [...state.messages, action.message].sort(
-          (a, b) =>
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        ),
-      };
+      // Messages arrive (nearly) in order — insert at the sorted position
+      // instead of re-sorting the whole array with two Date allocations
+      // per comparison on every incoming message
+      const incomingTs = new Date(action.message.createdAt).getTime();
+      const messages = [...state.messages];
+      let insertAt = messages.length;
+      while (
+        insertAt > 0 &&
+        new Date(messages[insertAt - 1].createdAt).getTime() > incomingTs
+      ) {
+        insertAt -= 1;
+      }
+      messages.splice(insertAt, 0, action.message);
+      return { ...state, messages };
     }
 
     case "UPDATE_MESSAGE": {
@@ -463,19 +470,18 @@ export function useChatController({
       });
     }
 
-    // Add typing indicator if users are typing
-    if (visibleTypingUsers.length > 0) {
-      items.push({
-        type: "typing",
-        id: "typing-indicator",
-      });
-    }
-
     // Normal order (oldest → newest): the list renders from the bottom via
     // maintainVisibleContentPosition.startRenderingFromBottom, so the day
     // separators lead their day and the typing indicator sits last (bottom)
     return items;
-  }, [visibleMessages, visibleTypingUsers, currentUser.userId]);
+  }, [visibleMessages, currentUser.userId]);
+
+  // Typing indicator appended in its own memo: keystroke-frequency typing
+  // events must not rebuild (and re-identity) every message row above
+  const listItemsWithTyping = useMemo((): MessageListItem[] => {
+    if (visibleTypingUsers.length === 0) return listItems;
+    return [...listItems, { type: "typing", id: "typing-indicator" }];
+  }, [listItems, visibleTypingUsers.length]);
 
   // Check if we should show load more
   const showLoadMore = state.hasOlderMessages && !state.isLoadingOlder;
@@ -484,7 +490,7 @@ export function useChatController({
   return {
     // State
     messages: visibleMessages,
-    listItems,
+    listItems: listItemsWithTyping,
     isLoadingOlder: state.isLoadingOlder,
     hasOlderMessages: state.hasOlderMessages,
     showLoadMore,

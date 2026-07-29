@@ -29,6 +29,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#888",
     paddingHorizontal: 12,

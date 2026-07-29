@@ -4,6 +4,8 @@ import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import * as Haptics from "expo-haptics";
+import { notify } from "@/components/global";
 import {
   useAlbumNotificationSettingsQuery,
   useUpdateAlbumNotificationSettingsMutation,
@@ -65,7 +67,17 @@ const AlbumNotificationSettingsScreen = () => {
   };
 
   const handleToggle = (key: ToggleKey, value: boolean) => {
-    updateSettings.mutate({ [key]: value });
+    Haptics.selectionAsync();
+    updateSettings.mutate(
+      { [key]: value },
+      {
+        // A silently-failed toggle leaves the user believing notifications
+        // are off when they're on — always say so
+        onError: () => {
+          notify.error("Couldn't update", "Please try again");
+        },
+      },
+    );
   };
 
   return (
@@ -138,6 +150,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -150,6 +163,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
     textTransform: "uppercase",

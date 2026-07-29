@@ -202,6 +202,7 @@ const styles = StyleSheet.create({
   extraText: {
     color: "#fff",
     fontSize: 20,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

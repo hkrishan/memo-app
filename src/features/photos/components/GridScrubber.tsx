@@ -459,6 +459,7 @@ const styles = StyleSheet.create({
   bubbleText: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

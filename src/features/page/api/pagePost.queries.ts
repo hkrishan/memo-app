@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/api";
+import { notify } from "@/components/global";
 import type { FeedResponse, PagePost } from "@/features/feed/types/feed.types";
 import pagePostApi from "./pagePost.api";
 import {
@@ -248,6 +249,79 @@ export const useTogglePostLikeMutation = (
     onSettled: () => {
       // The rollback itself can be stale, and success responses carry no
       // counts — let the server settle both surfaces
+      invalidateBothSurfaces(queryClient, albumId, pageId);
+    },
+  });
+};
+
+/**
+ * Delete a post (author or album owner — the server enforces it). The post
+ * is optimistically removed from BOTH the page-posts list and the home-feed
+ * caches; unlike the like toggle, deletion is structural, so the rollback
+ * restores whole-cache snapshots (a one-shot destructive action can't race
+ * itself the way rapid heart taps can).
+ */
+export const useDeletePostMutation = (albumId: string, pageId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ postId }: { postId: string }) =>
+      pagePostApi().deletePost(albumId, pageId, postId),
+    onMutate: async ({ postId }) => {
+      // An in-flight GET resolving after the removal would resurrect the post
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: pagePostKeys.list(albumId, pageId),
+          exact: true,
+        }),
+        queryClient.cancelQueries({ queryKey: queryKeys.feed.list }),
+      ]);
+
+      const previousList = queryClient.getQueryData<
+        InfiniteData<AlbumPagePostsResponse>
+      >(pagePostKeys.list(albumId, pageId));
+      const previousFeed = queryClient.getQueryData<FeedResponse>(
+        queryKeys.feed.list,
+      );
+
+      queryClient.setQueryData<InfiniteData<AlbumPagePostsResponse>>(
+        pagePostKeys.list(albumId, pageId),
+        (old) =>
+          old && {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              posts: page.posts.filter((post) => post.postId !== postId),
+            })),
+          },
+      );
+      queryClient.setQueryData<FeedResponse>(
+        queryKeys.feed.list,
+        (old) =>
+          old && {
+            ...old,
+            items: old.items.filter(
+              (item) =>
+                !(item.type === "page_post" && item.post.postId === postId),
+            ),
+          },
+      );
+
+      return { previousList, previousFeed };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousList) {
+        queryClient.setQueryData(
+          pagePostKeys.list(albumId, pageId),
+          context.previousList,
+        );
+      }
+      if (context?.previousFeed) {
+        queryClient.setQueryData(queryKeys.feed.list, context.previousFeed);
+      }
+      notify.error("Couldn't delete post", "Please try again");
+    },
+    onSettled: () => {
       invalidateBothSurfaces(queryClient, albumId, pageId);
     },
   });

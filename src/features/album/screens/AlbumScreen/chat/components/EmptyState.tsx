@@ -39,12 +39,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginBottom: 8,
     textAlign: "center",
   },
   subtitle: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 15,
     color: "#666",
     textAlign: "center",

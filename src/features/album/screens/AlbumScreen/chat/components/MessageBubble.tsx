@@ -38,7 +38,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const formatTime = (dateString: string): string => {
   const date = new Date(dateString);
-  return date.toLocaleTimeString("en-US", {
+  return date.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -92,11 +92,17 @@ const MessageBubble = memo<MessageBubbleProps>(
       transform: [{ scale: scale.value }],
     }));
 
+    // Replaying entering springs on RECYCLED cells made scrolling history
+    // run an animation per row; animate only genuinely-new messages
+    const isFresh =
+      message.status === "sending" ||
+      Date.now() - new Date(message.createdAt).getTime() < 5_000;
+
     // System message style
     if (message.type === "system") {
       return (
         <Animated.View
-          entering={FadeIn.duration(200)}
+          entering={isFresh ? FadeIn.duration(200) : undefined}
           style={styles.systemContainer}
         >
           <Text style={styles.systemText}>{message.text}</Text>
@@ -109,7 +115,7 @@ const MessageBubble = memo<MessageBubbleProps>(
 
     return (
       <Animated.View
-        entering={FadeInDown.duration(200).springify()}
+        entering={isFresh ? FadeInDown.duration(200).springify() : undefined}
         style={[
           styles.container,
           isOwnMessage ? styles.containerOwn : styles.containerOther,
@@ -284,6 +290,7 @@ const styles = StyleSheet.create({
   },
   avatarInitial: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },
@@ -302,6 +309,7 @@ const styles = StyleSheet.create({
   },
   senderName: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
     marginBottom: 2,

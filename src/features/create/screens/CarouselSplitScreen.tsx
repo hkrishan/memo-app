@@ -333,6 +333,7 @@ const styles = StyleSheet.create({
   },
   navTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -356,6 +357,7 @@ const styles = StyleSheet.create({
   saveText: {
     color: "#fff",
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   body: {
@@ -392,6 +394,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginHorizontal: STRIP_MARGIN,
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#8E8E93",
     textTransform: "uppercase",
@@ -420,6 +423,7 @@ const styles = StyleSheet.create({
   },
   pageBadgeText: {
     fontSize: 10,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     fontVariant: ["tabular-nums"],
@@ -443,6 +447,7 @@ const styles = StyleSheet.create({
   },
   segmentText: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#3C3C43",
     fontVariant: ["tabular-nums"],

@@ -6,7 +6,7 @@
  * posting, flagged as late.
  */
 
-import React from "react";
+import React, { useEffect, useReducer } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -138,6 +138,34 @@ const SubmittersRow: React.FC<{ submissions: MomentSubmission[] }> = ({
   );
 };
 
+/** 1 Hz countdown leaf — isolates the tick from the card tree. */
+const LiveCountdown: React.FC<{ deadlineAt: string }> = ({ deadlineAt }) => {
+  const now = useNow(1000, true);
+  const remainingMs = new Date(deadlineAt).getTime() - now;
+  const isLate = remainingMs <= 0;
+  const urgent = !isLate && remainingMs < 60 * 1000;
+  const countdownMs = isLate ? remainingMs + LATE_WINDOW_MS : remainingMs;
+  return (
+    <>
+      <View style={styles.liveHeader}>
+        <View style={[styles.liveDot, isLate && styles.liveDotLate]} />
+        <Text style={[styles.liveLabel, isLate && styles.liveLabelLate]}>
+          {isLate ? "Late window — you can still sneak one in" : "Drop is live!"}
+        </Text>
+      </View>
+      <Text
+        style={[
+          styles.countdown,
+          urgent && styles.countdownUrgent,
+          isLate && styles.countdownLate,
+        ]}
+      >
+        {formatMmSs(countdownMs)}
+      </Text>
+    </>
+  );
+};
+
 const DailyDropCard: React.FC<MomentCardProps> = ({
   moment,
   currentUserId,
@@ -148,9 +176,28 @@ const DailyDropCard: React.FC<MomentCardProps> = ({
 }) => {
   const config = moment.config as DailyDropConfig;
 
-  // Tick every second only while a drop could be live
   const hasOpen = moment.events.some((event) => event.status === "open");
-  const now = useNow(1000, hasOpen);
+  // Boundary-exact re-render (deadline / late-window end) instead of the
+  // old 1 Hz tick that re-rendered this whole card — avatars and all —
+  // every second while a drop was live. The visible countdown ticks in
+  // the LiveCountdown leaf below.
+  const [, forceBoundaryTick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!hasOpen) return;
+    const nowMs = Date.now();
+    const boundaries = moment.events
+      .filter((event) => event.status === "open")
+      .flatMap((event) => {
+        const deadline = new Date(event.deadlineAt).getTime();
+        return [deadline, deadline + LATE_WINDOW_MS];
+      })
+      .filter((t) => t > nowMs);
+    const timers = boundaries.map((t) =>
+      setTimeout(forceBoundaryTick, t - nowMs + 20),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [hasOpen, moment.events]);
+  const now = Date.now();
   const openEvent = hasOpen ? findPostableEvent(moment.events, now) : undefined;
 
   const firedCount = moment.events.filter((e) => e.firedAt != null).length;
@@ -165,28 +212,9 @@ const DailyDropCard: React.FC<MomentCardProps> = ({
 
   let body: React.ReactNode;
   if (openEvent) {
-    const remainingMs = new Date(openEvent.deadlineAt).getTime() - now;
-    const isLate = remainingMs <= 0;
-    const urgent = !isLate && remainingMs < 60 * 1000;
-    const countdownMs = isLate ? remainingMs + LATE_WINDOW_MS : remainingMs;
-
     body = (
       <View style={styles.liveArea}>
-        <View style={styles.liveHeader}>
-          <View style={[styles.liveDot, isLate && styles.liveDotLate]} />
-          <Text style={[styles.liveLabel, isLate && styles.liveLabelLate]}>
-            {isLate ? "Late window — you can still sneak one in" : "Drop is live!"}
-          </Text>
-        </View>
-        <Text
-          style={[
-            styles.countdown,
-            urgent && styles.countdownUrgent,
-            isLate && styles.countdownLate,
-          ]}
-        >
-          {formatMmSs(countdownMs)}
-        </Text>
+        <LiveCountdown deadlineAt={openEvent.deadlineAt} />
         {alreadyPosted ? (
           <View style={[styles.postButton, styles.postedButton]}>
             <Ionicons name="checkmark-circle" size={18} color="#34C759" />
@@ -194,7 +222,7 @@ const DailyDropCard: React.FC<MomentCardProps> = ({
           </View>
         ) : (
           <Pressable
-            style={[styles.postButton, urgent && styles.postButtonUrgent]}
+            style={styles.postButton}
             onPress={() => onPostNow(openEvent)}
             accessibilityRole="button"
             accessibilityLabel="Post now"
@@ -268,6 +296,7 @@ const styles = StyleSheet.create({
   },
   liveLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: URGENT,
   },
@@ -276,6 +305,7 @@ const styles = StyleSheet.create({
   },
   countdown: {
     fontSize: 44,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
     fontVariant: ["tabular-nums"],
@@ -305,6 +335,7 @@ const styles = StyleSheet.create({
   postButtonLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   postedButton: {
@@ -313,6 +344,7 @@ const styles = StyleSheet.create({
   postedLabel: {
     color: "#000",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   submittersRow: {
@@ -369,14 +401,19 @@ const styles = StyleSheet.create({
   },
   thumbMoreText: {
     fontSize: 9,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#666",
   },
   submittersText: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#8E8E93",
   },
   nobodyText: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#8E8E93",
     marginTop: 14,
@@ -404,10 +441,13 @@ const styles = StyleSheet.create({
   },
   surpriseTitle: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
   surpriseHint: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 12,
     color: "#8E8E93",
     marginTop: 2,

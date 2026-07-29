@@ -103,6 +103,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

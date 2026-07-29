@@ -28,6 +28,7 @@ import { MediaAsset } from "@/features/album/hooks";
 import { CameraRollGrid, CameraRollGridHandle } from "./CameraRollGrid";
 import { PhotoViewer } from "./PhotoViewer";
 import { Frame } from "./types";
+import { retryAllFailedUploads } from "@/features/photos/uploadRetry";
 
 /** Viewer session: the tapped index plus the grid cell it expands from. */
 interface ViewerSession {
@@ -74,6 +75,11 @@ export interface PhotoBrowserProps {
   onDoubleTapAsset?: (asset: MediaAsset) => void;
   /** Asset ids mid-deletion — their grid cells pop away. */
   poppingIds?: string[];
+  /**
+   * Deep link: open the viewer on this asset as soon as it appears in
+   * `assets` (once per mount). No origin frame — the viewer fades in.
+   */
+  autoOpenAssetId?: string;
 }
 
 export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
@@ -94,6 +100,7 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
   renderPageAttribution,
   onDoubleTapAsset,
   poppingIds,
+  autoOpenAssetId,
 }) => {
   const gridRef = useRef<CameraRollGridHandle>(null);
 
@@ -203,6 +210,11 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
   const handlePressItem = useCallback(
     (index: number, originFrame: Frame | null) => {
       const current = assetsRef.current;
+      // Tapping a failed upload IS the retry (Snapchat's tap-to-retry)
+      if (current[index]?.uploadFailed) {
+        retryAllFailedUploads();
+        return;
+      }
       setViewerSession({ index, originFrame });
       setViewerBase(current);
       pendingViewedIdRef.current = current[index]?.id ?? null;
@@ -216,6 +228,18 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
       pendingViewedIdRef.current = null;
     }
   }, []);
+
+  // Deep-linked photo (e.g. a "added a new photo" notification tap): open
+  // the viewer once the asset is present — once per mount, and never over
+  // a viewer the user already opened themselves.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!autoOpenAssetId || autoOpenedRef.current || viewerSession) return;
+    const index = assets.findIndex((asset) => asset.id === autoOpenAssetId);
+    if (index < 0) return;
+    autoOpenedRef.current = true;
+    handlePressItem(index, null);
+  }, [autoOpenAssetId, assets, viewerSession, handlePressItem]);
 
   const handleCloseViewer = useCallback(() => {
     pendingViewedIdRef.current = null;

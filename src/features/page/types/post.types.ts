@@ -22,6 +22,8 @@ export type AlbumPagePost = {
   likeCount: number;
   commentCount: number;
   likedByCurrentUser?: boolean;
+  /** Server-computed: the viewer is the post author or the album owner. */
+  canDelete?: boolean;
 };
 
 export type NewAlbumPagePostInput = {

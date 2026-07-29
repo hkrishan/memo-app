@@ -75,6 +75,7 @@ const styles = StyleSheet.create({
   },
   unreadBadgeText: {
     fontSize: 10,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     lineHeight: 12,

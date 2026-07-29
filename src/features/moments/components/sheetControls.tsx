@@ -109,9 +109,12 @@ const styles = StyleSheet.create({
   rowLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   rowHint: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     color: "rgba(255, 255, 255, 0.5)",
     fontSize: 12,
     marginTop: 2,
@@ -135,6 +138,7 @@ const styles = StyleSheet.create({
   stepperValue: {
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     minWidth: 58,
     textAlign: "center",
@@ -151,6 +155,7 @@ const styles = StyleSheet.create({
   chipLabel: {
     color: "rgba(255, 255, 255, 0.85)",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   chipLabelSelected: {
@@ -169,6 +174,7 @@ const styles = StyleSheet.create({
   submitLabel: {
     color: "#000",
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

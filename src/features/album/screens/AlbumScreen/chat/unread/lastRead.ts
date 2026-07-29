@@ -50,6 +50,12 @@ export function getLastRead(albumId: string): Promise<number> {
  * older timestamp are ignored. Updates the cache synchronously, notifies
  * subscribers, and persists best-effort in the background.
  */
+/** Debounced disk writes: reading an active chat bumps last-read on every
+ *  incoming message — one AsyncStorage write per message added up. The
+ *  in-memory value (which unread badges read) stays synchronous. */
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const PERSIST_DEBOUNCE_MS = 2_000;
+
 export function setLastRead(albumId: string, timestampMs: number): void {
   const previous = cache.get(albumId) ?? 0;
   if (timestampMs <= previous) return;
@@ -64,9 +70,19 @@ export function setLastRead(albumId: string, timestampMs: number): void {
     }
   });
 
-  AsyncStorage.setItem(storageKey(albumId), String(timestampMs)).catch(() => {
-    // Persistence is best-effort; the in-memory value still applies.
-  });
+  const existing = persistTimers.get(albumId);
+  if (existing) clearTimeout(existing);
+  persistTimers.set(
+    albumId,
+    setTimeout(() => {
+      persistTimers.delete(albumId);
+      const latest = cache.get(albumId);
+      if (latest == null) return;
+      AsyncStorage.setItem(storageKey(albumId), String(latest)).catch(() => {
+        // Persistence is best-effort; the in-memory value still applies.
+      });
+    }, PERSIST_DEBOUNCE_MS),
+  );
 }
 
 /**

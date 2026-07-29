@@ -417,6 +417,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -446,6 +447,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     textAlign: "center",
@@ -471,6 +473,7 @@ const styles = StyleSheet.create({
   },
   sectionDate: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#8E8E93",
     textTransform: "uppercase",
@@ -493,6 +496,7 @@ const styles = StyleSheet.create({
   },
   liveTagText: {
     fontSize: 11,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: LIVE_RED,
     letterSpacing: 0.5,
@@ -516,6 +520,7 @@ const styles = StyleSheet.create({
   },
   postAuthor: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -535,6 +540,7 @@ const styles = StyleSheet.create({
   },
   lateTagText: {
     fontSize: 10,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     letterSpacing: 0.5,
@@ -575,6 +581,7 @@ const styles = StyleSheet.create({
   },
   lockedCaption: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "rgba(255, 255, 255, 0.65)",
   },
@@ -617,6 +624,7 @@ const styles = StyleSheet.create({
   ctaLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

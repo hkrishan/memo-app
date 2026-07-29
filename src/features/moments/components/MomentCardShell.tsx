@@ -93,10 +93,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
   subtitle: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 12,
     color: "#8E8E93",
     marginTop: 1,

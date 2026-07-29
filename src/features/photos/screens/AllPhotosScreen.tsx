@@ -31,6 +31,7 @@ const AllPhotosScreen = () => {
   const {
     photos,
     isLoading,
+    isError,
     isRefetching,
     fetchNextPage,
     hasNextPage,
@@ -98,6 +99,25 @@ const AllPhotosScreen = () => {
         <View style={styles.centered}>
           {isLoading ? (
             <ActivityIndicator size="small" color="#999" />
+          ) : isError ? (
+            // A failed fetch must never masquerade as an empty library
+            <>
+              <Ionicons name="cloud-offline-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyTitle}>Couldn't load your photos</Text>
+              <Text style={styles.emptyText}>
+                Check your connection and try again.
+              </Text>
+              <Pressable
+                onPress={() => refetch()}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.retryLabel}>Try again</Text>
+              </Pressable>
+            </>
           ) : (
             <>
               <Ionicons name="images-outline" size={48} color="#ccc" />
@@ -155,6 +175,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: 22,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -167,6 +188,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
     marginTop: 16,
@@ -177,5 +199,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 6,
     lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: "#111",
+  },
+  retryLabel: {
+    color: "#fff",
+    fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
   },
 });

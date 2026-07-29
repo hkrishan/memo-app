@@ -203,6 +203,7 @@ const styles = StyleSheet.create({
   count: {
     color: "#fff",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

@@ -45,7 +45,8 @@ const styles = StyleSheet.create({
   number: {
     color: '#fff',
     fontSize: 120,
-    fontWeight: '700',
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     fontVariant: ['tabular-nums'],
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 0, height: 2 },
@@ -56,7 +57,8 @@ const styles = StyleSheet.create({
     bottom: 180,
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
   },
 });
 

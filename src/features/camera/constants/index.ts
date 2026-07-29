@@ -168,6 +168,14 @@ export const RECORDING_CONFIG = {
   // Video codec
   VIDEO_CODEC: 'h264' as const,
 
+  // Encoder bit-rate cap in Mbps. Without this, iOS encodes the selected
+  // (4K) format at its default ~30-50 Mbps — a 20s clip came out at ~90MB,
+  // which then streams back from R2 at that same bitrate and takes forever
+  // to start playing on any real-world connection. 10 Mbps is visually
+  // fine for social clips and cuts file size (and playback start time,
+  // and upload time) by roughly 3-4x.
+  VIDEO_BIT_RATE_MBPS: 10,
+
   // File type
   FILE_TYPE: 'mp4' as const,
 } as const;
@@ -218,7 +226,8 @@ export const CAMERA_UI_CONFIG = {
   // Control button sizes
   CONTROL_BUTTON: {
     SIZE: 44,
-    ICON_SIZE: 24,
+    // Glyph only — SIZE stays 44 so the touch target never shrinks
+    ICON_SIZE: 21,
     BACKGROUND: 'rgba(0, 0, 0, 0.3)',
     ACTIVE_BACKGROUND: 'rgba(255, 255, 255, 0.3)',
   },

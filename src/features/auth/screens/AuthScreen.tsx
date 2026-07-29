@@ -11,6 +11,7 @@ import {
 import { Text, ActivityIndicator } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { Video, ResizeMode } from "expo-av";
+import { StatusBar } from "react-native";
 import { useRouter } from "expo-router";
 import { BlurView } from "expo-blur";
 import Animated, {
@@ -196,6 +197,7 @@ export default function AuthScreen({ redirect }: AuthScreenProps) {
 
   return (
     <Animated.View style={[styles.container, screenAnimatedStyle]}>
+      <StatusBar barStyle="light-content" />
       <Video
         source={require("../../../../assets/memo-background-vid.mp4")}
         style={StyleSheet.absoluteFill}
@@ -333,11 +335,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 36,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     color: "#fff",
   },
   subTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     marginTop: 0,
@@ -355,6 +359,7 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     textAlign: "center",
@@ -373,6 +378,7 @@ const styles = StyleSheet.create({
   },
   testTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     marginBottom: 12,
@@ -417,6 +423,7 @@ const styles = StyleSheet.create({
   },
   testLoginButtonText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

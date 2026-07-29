@@ -84,8 +84,16 @@ const videoPosterUri = (asset: MediaAsset): string | null => {
 interface VideoPageProps {
   asset: MediaAsset;
   isActive: boolean;
-  /** Per-page uploader pill — travels with this page while swiping. */
-  attribution?: React.ReactNode;
+  /**
+   * One page either side of the active one. Adjacent video pages get a
+   * real (paused) player so AVPlayer pulls the moov atom and its first
+   * buffer BEFORE the swipe lands — arriving on a cold video was the
+   * whole time-to-first-frame users felt.
+   */
+  isAdjacent?: boolean;
+  /** Per-page uploader pill — see PhotoPageProps.renderAttribution for why
+   *  this is a render function and not a prebuilt element. */
+  renderAttribution?: (asset: MediaAsset) => React.ReactNode;
   /** Chrome-synced fade for the attribution (intro x visibility). */
   attributionOpacity?: SharedValue<number>;
   pageWidth: number;
@@ -123,7 +131,8 @@ export const VideoPage = memo<VideoPageProps>(
   ({
     asset,
     isActive,
-    attribution,
+    isAdjacent = false,
+    renderAttribution,
     attributionOpacity,
     pageWidth,
     pageHeight,
@@ -143,18 +152,31 @@ export const VideoPage = memo<VideoPageProps>(
     const { resolvedUri } = useResolvedAssetUri({
       assetId: asset.id,
       uri: asset.uri,
-      enabled: isActive,
+      enabled: isActive || isAdjacent,
     });
 
-    // Only the active page gets a real source; inactive pages hold a null
-    // source so nothing plays (and the player is released on unmount)
-    const player = useVideoPlayer(isActive ? resolvedUri : null, (p) => {
-      p.loop = false;
-      // Start playback after a small forward buffer instead of AVPlayer's
-      // conservative automatic target — these are short social clips, not
-      // long-form streams, and time-to-first-frame is what users feel
-      p.bufferOptions = { preferredForwardBufferDuration: 2 };
-    });
+    // Active AND adjacent pages get a real source — the adjacent player
+    // sits paused, pre-buffering, so the swipe lands on warm bytes. Pages
+    // further out hold a null source so nothing loads or plays (and the
+    // player is released on unmount). Remote sources cache to disk:
+    // re-watching (or re-entering the viewer) must not re-download a
+    // multi-MB clip. The cache keys on the full URL, so a hit lasts as
+    // long as the signed URL's 24h signing window — good enough.
+    const player = useVideoPlayer(
+      isActive || isAdjacent
+        ? {
+            uri: resolvedUri,
+            useCaching: resolvedUri.startsWith("http"),
+          }
+        : null,
+      (p) => {
+        p.loop = false;
+        // Start playback after a small forward buffer instead of AVPlayer's
+        // conservative automatic target — these are short social clips, not
+        // long-form streams, and time-to-first-frame is what users feel
+        p.bufferOptions = { preferredForwardBufferDuration: 2 };
+      },
+    );
 
     const { isPlaying } = useEvent(player, "playingChange", {
       isPlaying: player.playing,
@@ -399,6 +421,8 @@ export const VideoPage = memo<VideoPageProps>(
       };
     });
 
+    const attribution = renderAttribution ? renderAttribution(asset) : null;
+
     return (
       <GestureDetector gesture={dismissPanGesture}>
       <View style={[styles.page, { width: pageWidth }]}>
@@ -530,10 +554,11 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
     const fillFraction = useSharedValue(0);
     const barWidth = useSharedValue(0);
     const lastSentAt = useSharedValue(0);
+    const scrubbingSv = useSharedValue(false);
 
     useEffect(() => {
       const read = () => {
-        if (scrubbingRef.current) return;
+        if (scrubbingRef.current || scrubbingSv.value) return;
         try {
           const current = player.currentTime;
           const duration = player.duration;
@@ -557,7 +582,7 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
       if (!isPlaying) return;
       const id = setInterval(read, 250);
       return () => clearInterval(id);
-    }, [player, isPlaying, fillFraction]);
+    }, [player, isPlaying, fillFraction, scrubbingSv]);
 
     /** JS-side scrub commit: label + (throttled) live seek. Reached at
      *  most ~6x/s from the drag worklet, never per frame. */
@@ -609,6 +634,10 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
           .onBegin((e) => {
             const w = barWidth.value;
             const fraction = w > 0 ? Math.min(Math.max(e.x / w, 0), 1) : 0;
+            // Set the scrub flag on the UI thread synchronously — the JS
+            // ref flips a beat later, and a 250ms poll tick in that gap
+            // used to stomp the fill
+            scrubbingSv.value = true;
             fillFraction.value = fraction;
             lastSentAt.value = 0;
             runOnJS(beginScrub)(fraction);
@@ -628,10 +657,11 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
           .onFinalize((e) => {
             const w = barWidth.value;
             const fraction = w > 0 ? Math.min(Math.max(e.x / w, 0), 1) : 0;
+            scrubbingSv.value = false;
             fillFraction.value = fraction;
             runOnJS(endScrub)(fraction);
           }),
-      [barWidth, fillFraction, lastSentAt, beginScrub, applyScrub, endScrub],
+      [barWidth, fillFraction, lastSentAt, scrubbingSv, beginScrub, applyScrub, endScrub],
     );
 
     const fillStyle = useAnimatedStyle(() => ({
@@ -766,11 +796,13 @@ const styles = StyleSheet.create({
   playbackErrorText: {
     color: "rgba(255, 255, 255, 0.9)",
     fontSize: 13.5,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   videoTimeText: {
     color: "rgba(255, 255, 255, 0.85)",
     fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
     minWidth: 34,

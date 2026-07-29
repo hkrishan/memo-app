@@ -43,6 +43,7 @@ import type { Frame } from "@/features/photos/components";
 import UploadingBadge from "@/components/ui/UploadingBadge";
 import { MediaTile, VideoPlayBadge } from "@/components/ui/MediaTile";
 import { hasRenderableStill } from "@/lib/mediaStill";
+import { retryAllFailedUploads } from "@/features/photos/uploadRetry";
 
 // Portrait tiles, matching the "My Photos" strip on the My Albums tab
 // (GaleryCarousel: 80 wide, 1.4x tall, same radius and gap) so a photo is
@@ -174,7 +175,7 @@ export interface GallerySectionRowProps {
   poppingIds?: string[];
 }
 
-export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
+const GallerySectionRowInner: React.FC<GallerySectionRowProps> = ({
   title,
   count,
   assets,
@@ -257,6 +258,9 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
     (assetId: string, width: number, height: number) => {
       if (tileSizeCache.has(assetId)) return;
       tileSizeCache.set(assetId, { width, height });
+      // Closed viewer: cache the size but skip the re-render — the
+      // enrichment memo re-reads the cache when the viewer opens
+      if (viewerSessionRef.current === null) return;
       if (bumpScheduledRef.current) return;
       bumpScheduledRef.current = true;
       queueMicrotask(() => {
@@ -310,6 +314,12 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
       const base = assetsRef.current;
       const index = base.findIndex((a) => a.id === assetId);
       if (index < 0) return;
+      // Tapping a failed upload IS the retry (Snapchat's tap-to-retry) —
+      // no hunting for the progress pill
+      if (base[index].uploadFailed) {
+        retryAllFailedUploads();
+        return;
+      }
       pendingViewedIdRef.current = assetId;
       frameForAsset(assetId).then((originFrame) => {
         setViewerSession({ index, originFrame, base });
@@ -444,6 +454,11 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
   );
 };
 
+/** Memoized: GalleryPage renders up to ~9 of these in a ScrollView — an
+ *  unmemoized row meant every page state change re-rendered ~108 tiles. */
+export const GallerySectionRow = memo(GallerySectionRowInner);
+GallerySectionRow.displayName = "GallerySectionRow";
+
 const styles = StyleSheet.create({
   section: {
     marginTop: 24,
@@ -459,6 +474,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     flexShrink: 1,
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#8E8E93",
     textTransform: "uppercase",
@@ -466,6 +482,7 @@ const styles = StyleSheet.create({
   },
   headerCount: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#C7C7CC",
     fontVariant: ["tabular-nums"],
@@ -520,6 +537,7 @@ const styles = StyleSheet.create({
   },
   viewAllCount: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#3C3C43",
     fontVariant: ["tabular-nums"],
@@ -544,6 +562,7 @@ const styles = StyleSheet.create({
   likeBadgeText: {
     color: "#fff",
     fontSize: 10,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },

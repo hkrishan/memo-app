@@ -1233,12 +1233,14 @@ const styles = StyleSheet.create({
   likeBadgeText: {
     color: "#fff",
     fontSize: 10,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
   durationText: {
     color: "#fff",
     fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   dimmedOverlay: {
@@ -1257,6 +1259,7 @@ const styles = StyleSheet.create({
   },
   yearHeaderText: {
     fontSize: 28,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -1271,6 +1274,7 @@ const styles = StyleSheet.create({
   },
   monthHeaderText: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

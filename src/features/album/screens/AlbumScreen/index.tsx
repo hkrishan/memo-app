@@ -11,6 +11,11 @@ import {
   useMarkAlbumViewedMutation,
 } from "../../api/album.queries";
 import { useGetPageQuery } from "@/features/page/api/page.queries";
+import PageIntroSheet from "@/features/page/components/PageIntroSheet";
+import {
+  selectHasSeenPageIntro,
+  useOnboardingStore,
+} from "@/features/onboarding/store/onboardingStore";
 import { AlbumNavBar, AlbumTabs } from "../../components";
 import MemberColorSheet from "../../components/MemberColorSheet";
 import { photoToMediaAsset } from "../../utils/mediaAsset";
@@ -139,6 +144,30 @@ const AlbumScreen = () => {
     [],
   );
 
+  // First time EVER landing on a Page tab that has a page: explain what a
+  // Page is (one-shot, persisted globally — it's a concept, not per-album).
+  // Albums without a page skip this; the create-page hero explains itself.
+  const [activeTabIndex, setActiveTabIndex] = useState(initialTabIndex);
+  const hasSeenPageIntro = useOnboardingStore(selectHasSeenPageIntro);
+  const markPageIntroSeen = useOnboardingStore((s) => s.markPageIntroSeen);
+  const [pageIntroVisible, setPageIntroVisible] = useState(false);
+  const pageIntroScheduledRef = useRef(false);
+  useEffect(() => {
+    if (pageIntroScheduledRef.current || hasSeenPageIntro) return;
+    if (activeTabIndex !== 1 || page == null) return;
+    pageIntroScheduledRef.current = true;
+    // Same iOS constraint as the color sheet above: never present a Modal
+    // mid-transition (here: the pager settle / push animation).
+    const handle = InteractionManager.runAfterInteractions(() => {
+      setPageIntroVisible(true);
+    });
+    return () => handle.cancel();
+  }, [activeTabIndex, hasSeenPageIntro, page]);
+  const handlePageIntroClose = useCallback(() => {
+    setPageIntroVisible(false);
+    markPageIntroSeen();
+  }, [markPageIntroSeen]);
+
   const handleBack = useCallback(() => router.back(), [router]);
 
   const handleOpenSettings = useCallback(() => {
@@ -151,6 +180,7 @@ const AlbumScreen = () => {
     (e: any) => {
       const { position } = e.nativeEvent;
       tabPosition.value = position;
+      setActiveTabIndex(position);
     },
     [tabPosition],
   );
@@ -186,7 +216,7 @@ const AlbumScreen = () => {
   return (
     <View style={styles.container}>
       <AlbumNavBar
-        title={album?.title ?? "Album"}
+        albumId={albumId}
         scrollPosition={tabPosition}
         galleryScrollY={galleryScrollY}
         pageScrollY={pageScrollY}
@@ -245,6 +275,11 @@ const AlbumScreen = () => {
           onClose={handleColorSheetClose}
         />
       )}
+
+      <PageIntroSheet
+        visible={pageIntroVisible}
+        onClose={handlePageIntroClose}
+      />
     </View>
   );
 };

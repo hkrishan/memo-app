@@ -6,6 +6,7 @@ import {
   InteractionManager,
   Platform,
   Pressable,
+  StatusBar,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -99,6 +100,16 @@ export default function SwipeableTabs({
 
   // Memoized: the ROOT pager gesture — rebuilding it per render
   // re-attached the recognizer that owns every horizontal swipe
+  // Camera (1) is the only dark home tab — the status bar flips with it.
+  // The root layout defaults to dark glyphs for the light tabs. Declared
+  // BEFORE the pan gesture whose worklet closure captures it.
+  const applyBarStyleForPage = useCallback((page: number) => {
+    StatusBar.setBarStyle(page === 1 ? "light-content" : "dark-content", true);
+  }, []);
+  useEffect(() => {
+    applyBarStyleForPage(initialPage);
+  }, [applyBarStyleForPage, initialPage]);
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -130,6 +141,7 @@ export default function SwipeableTabs({
 
           targetPage = Math.max(0, Math.min(2, targetPage));
           currentPage.value = targetPage;
+          runOnJS(applyBarStyleForPage)(targetPage);
           scrollPosition.value = withTiming(targetPage, TIMING_CONFIG, () => {
             // Taps stay blocked while the pages settle under the
             // finger-up spot
@@ -144,6 +156,7 @@ export default function SwipeableTabs({
       currentPage,
       setChildTouchesBlocked,
       scheduleUnblockSafety,
+      applyBarStyleForPage,
     ],
   );
 
@@ -151,8 +164,9 @@ export default function SwipeableTabs({
     (index: number) => {
       currentPage.value = index;
       scrollPosition.value = withTiming(index, TIMING_CONFIG);
+      applyBarStyleForPage(index);
     },
-    [scrollPosition, currentPage],
+    [scrollPosition, currentPage, applyBarStyleForPage],
   );
 
   // Side tabs (albums / feed) mount after the first idle beat — see the
@@ -329,17 +343,6 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
     return { color };
   });
 
-  // Search icon visibility - only show on Feed (page 2)
-  const searchIconStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      scrollPosition.value,
-      [1.5, 2],
-      [0, 1],
-      Extrapolation.CLAMP,
-    );
-    return { opacity };
-  });
-
   return (
     <View
       style={[styles.topBar, { paddingTop: topInset }]}
@@ -389,19 +392,6 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
             ) : null,
           )}
         </View>
-
-        {/* Search icon - visible only on Feed page */}
-        <Animated.View style={[styles.topBarSearchIcon, searchIconStyle]}>
-          <Touchable
-            onPress={() => {
-              router.push("/search");
-            }}
-          >
-            <Animated.Text style={iconColorStyle}>
-              <Ionicons name="search" size={22} />
-            </Animated.Text>
-          </Touchable>
-        </Animated.View>
 
         <ActivityBell iconColorStyle={iconColorStyle} />
 
@@ -757,12 +747,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  topBarSearchIcon: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   topBarTitleContainer: {
     flex: 1,
     height: TOP_BAR_HEIGHT,
@@ -775,6 +759,7 @@ const styles = StyleSheet.create({
   },
   topBarTitleText: {
     fontSize: 20,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

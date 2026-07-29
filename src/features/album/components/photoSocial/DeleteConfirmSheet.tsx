@@ -157,6 +157,7 @@ const styles = StyleSheet.create({
   everywhereLabel: {
     color: "#E5484D",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   deleteButtonPressed: {
@@ -168,6 +169,7 @@ const styles = StyleSheet.create({
   deleteLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   cancelButton: {
@@ -183,6 +185,7 @@ const styles = StyleSheet.create({
   cancelLabel: {
     color: "rgba(255, 255, 255, 0.8)",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

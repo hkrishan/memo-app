@@ -55,7 +55,9 @@ const VIEW_SLIDE = 24;
 // ---------------------------------------------------------------------------
 
 const PagesFeedList = memo<{ topInset: number }>(({ topInset }) => {
-  const { data, refetch, isRefetching, isLoading } = useGetFeedQuery();
+  const router = useRouter();
+  const { data, refetch, isRefetching, isLoading, isError } =
+    useGetFeedQuery();
   // The /feed response still mixes in album_activity items; those belong to
   // the Albums view now — Pages shows page posts only
   const items = useMemo(
@@ -84,6 +86,30 @@ const PagesFeedList = memo<{ topInset: number }>(({ topInset }) => {
         </View>
       );
     }
+    if (isError) {
+      // A failed fetch must never read as "you follow nothing"
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="cloud-offline-outline" size={28} color="#8e8e93" />
+          </View>
+          <Text style={styles.emptyTitle}>Couldn't load the feed</Text>
+          <Text style={styles.emptySubtitle}>
+            Check your connection and try again
+          </Text>
+          <Pressable
+            onPress={() => refetch()}
+            style={({ pressed }) => [
+              styles.emptyCta,
+              pressed && styles.emptyCtaPressed,
+            ]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.emptyCtaLabel}>Try again</Text>
+          </Pressable>
+        </View>
+      );
+    }
     return (
       <View style={styles.emptyContainer}>
         <View style={styles.emptyIconWrap}>
@@ -93,9 +119,19 @@ const PagesFeedList = memo<{ topInset: number }>(({ topInset }) => {
         <Text style={styles.emptySubtitle}>
           Posts from pages you follow show up here
         </Text>
+        <Pressable
+          onPress={() => router.push("/search")}
+          style={({ pressed }) => [
+            styles.emptyCta,
+            pressed && styles.emptyCtaPressed,
+          ]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.emptyCtaLabel}>Find pages</Text>
+        </Pressable>
       </View>
     );
-  }, [isLoading]);
+  }, [isLoading, isError, refetch, router]);
 
   const contentStyle = useMemo(
     () => ({ paddingTop: topInset, paddingBottom: 100 }),
@@ -275,6 +311,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: "#111",
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     marginBottom: 6,
   },
@@ -283,5 +320,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
+  },
+  emptyCta: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: "#111",
+  },
+  emptyCtaPressed: {
+    opacity: 0.7,
+  },
+  emptyCtaLabel: {
+    color: "#fff",
+    fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
   },
 });

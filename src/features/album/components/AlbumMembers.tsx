@@ -172,6 +172,7 @@ export const AlbumMembers: React.FC<AlbumMembersProps> = ({
 const styles = StyleSheet.create({
   header: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#9C9C99",
     textTransform: "uppercase",
@@ -210,12 +211,14 @@ const styles = StyleSheet.create({
   inviteText: {
     flex: 1,
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
   memberName: {
     flex: 1,
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -244,6 +247,7 @@ const styles = StyleSheet.create({
   },
   rolePillText: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   rolePillTextFilled: {
@@ -260,10 +264,13 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },
   emptySubtext: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#9C9C99",
     textAlign: "center",

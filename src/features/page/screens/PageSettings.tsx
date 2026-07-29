@@ -18,7 +18,6 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -230,7 +229,7 @@ const PageSettingsForm = ({
               !canSave && styles.saveButtonTextDisabled,
             ]}
           >
-            {isSubmitting ? "Saving..." : "Save"}
+            {isSubmitting ? "Saving…" : "Save"}
           </Text>
         </Pressable>
       </View>
@@ -250,23 +249,18 @@ const PageSettingsForm = ({
         {/* Profile Picture */}
         <View style={styles.avatarSection}>
           <Pressable onPress={() => setIsPickerVisible(true)}>
-            <LinearGradient
-              colors={["#ff00b7ff", "#495bffff", "#9b69ffff"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.avatarGradient}
-            >
-              <View style={styles.avatarInner}>
-                {coverPreviewUrl ? (
-                  <Image
-                    source={{ uri: coverPreviewUrl }}
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <Ionicons name="image-outline" size={32} color="#999" />
-                )}
-              </View>
-            </LinearGradient>
+            {/* Same rounded-square cover shape as the page profile */}
+            <View style={styles.avatarFrame}>
+              {coverPreviewUrl ? (
+                <Image
+                  source={{ uri: coverPreviewUrl }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Ionicons name="image-outline" size={32} color="#999" />
+              )}
+              <View style={styles.avatarEdge} pointerEvents="none" />
+            </View>
             <View style={styles.avatarEditBadge}>
               <Ionicons name="camera" size={14} color="#fff" />
             </View>
@@ -666,6 +660,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -680,6 +675,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
   },
@@ -711,17 +707,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 28,
   },
-  avatarGradient: {
+  avatarFrame: {
     width: 96,
     height: 96,
-    borderRadius: 48,
-    padding: 3,
-  },
-  avatarInner: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 45,
-    backgroundColor: "#f5f5f5",
+    borderRadius: 26,
+    backgroundColor: "#F1F1F3",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
@@ -729,6 +719,12 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: "100%",
     height: "100%",
+  },
+  avatarEdge: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0, 0, 0, 0.08)",
   },
   avatarEditBadge: {
     position: "absolute",
@@ -745,6 +741,7 @@ const styles = StyleSheet.create({
   },
   changePhotoText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -757,6 +754,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginBottom: 8,
@@ -819,6 +817,7 @@ const styles = StyleSheet.create({
   },
   passwordTitle: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -828,6 +827,7 @@ const styles = StyleSheet.create({
   },
   passwordActionText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -846,6 +846,7 @@ const styles = StyleSheet.create({
   },
   passwordCancelText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },
@@ -863,6 +864,7 @@ const styles = StyleSheet.create({
   passwordSaveText: {
     color: "#fff",
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   handleInputContainer: {
@@ -874,6 +876,7 @@ const styles = StyleSheet.create({
   },
   handlePrefix: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginRight: 2,
@@ -921,6 +924,7 @@ const styles = StyleSheet.create({
   },
   visibilityTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#666",
   },

@@ -46,10 +46,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingText: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#666",
   },
   errorText: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#e53935",
   },

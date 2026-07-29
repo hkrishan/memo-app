@@ -94,7 +94,7 @@ const CreatePageScreen = () => {
               (!isValid || isSubmitting) && styles.createButtonTextDisabled,
             ]}
           >
-            {isSubmitting ? "Creating..." : "Create"}
+            {isSubmitting ? "Creating…" : "Create"}
           </Text>
         </Pressable>
       </View>
@@ -251,6 +251,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -265,6 +266,7 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
   },
@@ -282,6 +284,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginBottom: 8,
@@ -310,6 +313,7 @@ const styles = StyleSheet.create({
   },
   handlePrefix: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     marginRight: 2,
@@ -357,6 +361,7 @@ const styles = StyleSheet.create({
   },
   visibilityTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#666",
   },

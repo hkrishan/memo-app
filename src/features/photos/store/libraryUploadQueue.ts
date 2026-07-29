@@ -271,12 +271,33 @@ export type EnqueueCaptureInput = {
   posterUri?: string;
   latitude?: number;
   longitude?: number;
+  /**
+   * A GPS fix still being acquired at shutter time. The capture enqueues
+   * instantly (local-first — never waits on GPS); the background upload
+   * briefly waits for this before building its form data, so the photo
+   * still lands tagged. Kept out of the entry itself: promises don't
+   * persist, and after a restart the fix is simply gone.
+   */
+  locationPromise?: Promise<{ latitude: number; longitude: number } | null>;
   albumId?: string | null;
   albumTitle?: string | null;
   cameraRollSaved?: boolean;
   /** Set when the camera was opened from a moment's "Post now". */
   momentTarget?: QueuedMomentTarget;
 };
+
+/**
+ * In-flight GPS fixes by localId — see EnqueueCaptureInput.locationPromise.
+ * Consumed (and deleted) by processEntry on the entry's first upload
+ * attempt; in-memory only, so a restart just loses the pending fix.
+ */
+const pendingLocations = new Map<
+  string,
+  Promise<{ latitude: number; longitude: number } | null>
+>();
+
+/** Longest the background upload waits on a still-pending GPS fix. */
+const LOCATION_WAIT_MS = 2500;
 
 /**
  * Copies the capture into app storage and enqueues it. Returns the entry's
@@ -286,6 +307,9 @@ export async function enqueueCapture(
   input: EnqueueCaptureInput,
 ): Promise<string> {
   const localId = `cap-${Date.now()}-${captureCounter++}`;
+  if (input.locationPromise && input.latitude === undefined) {
+    pendingLocations.set(localId, input.locationPromise);
+  }
   const mimeType = input.mimeType ?? DEFAULT_MIME_TYPE;
   const mediaType = mimeType.startsWith("video/") ? "video" : "photo";
   // The extension must match the container: the server (and the OS upload
@@ -538,6 +562,27 @@ async function processEntry(localId: string): Promise<void> {
   patchEntry(localId, { status: "uploading" });
 
   try {
+    // A GPS fix from shutter time may still be in flight — the capture never
+    // waits on it, but this background upload can afford a short hold so the
+    // photo lands tagged. Cached fixes resolve in ms; a cold fix in a few
+    // seconds; past the cap the photo simply goes untagged (as before).
+    const pendingLocation = pendingLocations.get(localId);
+    if (pendingLocation) {
+      pendingLocations.delete(localId);
+      const fix = await Promise.race([
+        pendingLocation.catch(() => null),
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), LOCATION_WAIT_MS),
+        ),
+      ]);
+      if (fix && getEntry(localId)?.latitude === undefined) {
+        patchEntry(localId, {
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+        });
+      }
+    }
+
     // Stage 1 — library upload (skipped when resuming after a copy failure)
     let serverPhotoId = entry.serverPhotoId;
     if (!serverPhotoId) {
@@ -546,9 +591,11 @@ async function processEntry(localId: string): Promise<void> {
 
       const base = env.apiUrl.replace(/\/+$/, "");
       const parameters: Record<string, string> = {};
-      if (entry.latitude !== undefined && entry.longitude !== undefined) {
-        parameters.latitude = String(entry.latitude);
-        parameters.longitude = String(entry.longitude);
+      // Re-read: the pending-fix hold above may have just tagged the entry
+      const coords = getEntry(localId) ?? entry;
+      if (coords.latitude !== undefined && coords.longitude !== undefined) {
+        parameters.latitude = String(coords.latitude);
+        parameters.longitude = String(coords.longitude);
       }
 
       const result = await uploadAsync(

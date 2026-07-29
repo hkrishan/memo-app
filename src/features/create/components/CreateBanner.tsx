@@ -10,6 +10,7 @@ import React, { memo, useCallback } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { scriptType } from "@/lib/tokens";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -118,14 +119,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
   },
-  // Pacifico ships one weight; fontWeight would force a fallback font
   titleScript: {
-    fontFamily: "Pacifico_400Regular",
-    fontSize: 17,
-    fontWeight: "400",
+    ...scriptType(16),
     color: "#fff",
   },
   newBadge: {
@@ -138,7 +137,8 @@ const styles = StyleSheet.create({
   },
   newBadgeText: {
     fontSize: 9,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     color: "#fff",
     letterSpacing: 0.6,
   },

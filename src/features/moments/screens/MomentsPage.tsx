@@ -6,7 +6,14 @@
  */
 
 import React, { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
@@ -112,7 +119,12 @@ const MomentsPage: React.FC<MomentsPageProps> = ({ contentTop, albumId }) => {
   const router = useRouter();
   const { user } = useUser();
   const { data: album } = useGetAlbumQuery(albumId ?? "");
-  const { data: moments, isLoading } = useGetMomentsQuery(albumId ?? "");
+  const {
+    data: moments,
+    isLoading,
+    isRefetching,
+    refetch,
+  } = useGetMomentsQuery(albumId ?? "");
   const cancelMutation = useCancelMomentMutation();
 
   const [sheetState, setSheetState] = useState<{
@@ -189,7 +201,7 @@ const MomentsPage: React.FC<MomentsPageProps> = ({ contentTop, albumId }) => {
               { albumId, momentId: moment.momentId },
               {
                 onError: () => {
-                  notify.error("Couldn't cancel the moment", "Please try again.");
+                  notify.error("Couldn't cancel the moment", "Please try again");
                 },
               },
             );
@@ -217,6 +229,13 @@ const MomentsPage: React.FC<MomentsPageProps> = ({ contentTop, albumId }) => {
           paddingHorizontal: 16,
         }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor="#888"
+          />
+        }
       >
         {/* Live moments */}
         {activeMoments.map((moment) => {
@@ -322,6 +341,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 24,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -378,6 +398,7 @@ const styles = StyleSheet.create({
   },
   typeName: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -392,6 +413,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#8E8E93",
     textTransform: "uppercase",
@@ -427,6 +449,7 @@ const styles = StyleSheet.create({
   },
   pastTitle: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

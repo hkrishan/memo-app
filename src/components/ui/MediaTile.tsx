@@ -19,8 +19,10 @@ import { Image, type ImageLoadEventData } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 
 import type { MediaAsset } from "@/features/album/hooks/useMediaLibrary";
+import { useCreationMeta } from "@/features/create/store/createdCoversStore";
 import { stableCacheKey, type ImageSizeBucket } from "@/lib/imageCache";
 import { hasRenderableStill } from "@/lib/mediaStill";
+import { MemoCreateBadge } from "./MemoCreateBadge";
 
 export interface MediaTileProps {
   asset: MediaAsset;
@@ -62,6 +64,15 @@ export const MediaTile = memo<MediaTileProps>(
     style,
     fallbackStyle,
   }) => {
+    // Memo Create covers get a UI badge — the image itself is clean.
+    // Server metadata travels with the media (all members see it); the
+    // local registry covers covers exported before the field existed.
+    const localMeta = useCreationMeta(asset.id);
+    const serverMeta = asset.metadata?.memoCreate;
+    const creationMeta = serverMeta
+      ? { pageCount: serverMeta.pageCount ?? 1 }
+      : localMeta;
+
     // A video with no paintable still (remote URL, or an iOS file://
     // recording) gets the dark tile + glyph rather than a blank cell
     if (asset.mediaType === "video" && !hasRenderableStill(asset)) {
@@ -77,7 +88,7 @@ export const MediaTile = memo<MediaTileProps>(
     }
 
     const uri = asset.thumbnailUrl ?? asset.uri;
-    return (
+    const image = (
       <Image
         source={{ uri, cacheKey: stableCacheKey(uri, sizeBucket) }}
         // A just-uploaded photo keeps its local original underneath while
@@ -97,6 +108,16 @@ export const MediaTile = memo<MediaTileProps>(
         {...(priority && { priority })}
         {...(onLoad && { onLoad })}
       />
+    );
+
+    // Only creations pay for the wrapper view; every other tile keeps the
+    // bare image (the hot path across the whole app)
+    if (!creationMeta) return image;
+    return (
+      <View style={styles.fill}>
+        {image}
+        <MemoCreateBadge multi={creationMeta.pageCount > 1} />
+      </View>
     );
   },
 );

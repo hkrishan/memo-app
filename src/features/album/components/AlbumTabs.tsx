@@ -217,6 +217,7 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 10,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#000",
   },

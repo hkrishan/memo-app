@@ -97,6 +97,8 @@ const endpoints = {
       get: (albumId: string) => `/album/${albumId}/page`,
       view: (albumId: string, pageId: string) =>
         `/album/${albumId}/page/${pageId}/view`,
+      members: (albumId: string, pageId: string) =>
+        `/album/${albumId}/page/${pageId}/members`,
       update: (albumId: string, pageId: string) =>
         `/album/${albumId}/page/${pageId}`,
       webPassword: (albumId: string, pageId: string) =>
@@ -119,6 +121,8 @@ const endpoints = {
           commentId: string,
         ) =>
           `/album/${albumId}/page/${pageId}/posts/${postId}/comments/${commentId}`,
+        delete: (albumId: string, pageId: string, postId: string) =>
+          `/album/${albumId}/page/${pageId}/posts/${postId}`,
       },
     },
   },

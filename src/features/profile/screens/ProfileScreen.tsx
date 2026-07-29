@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { Button, Dialog, Portal, Text, TextInput } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import * as Application from "expo-application";
@@ -26,7 +25,7 @@ import {
   useJoinAlbumMutation,
 } from "@/features/album/api/album.queries";
 import { notify } from "@/components/global";
-import { theme } from "@/lib/theme";
+import { color, radius, scriptType, type } from "@/lib/tokens";
 
 const FEEDBACK_URL = "mailto:hugo@pollflow.io?subject=Memo%20Feedback";
 
@@ -38,6 +37,8 @@ type SectionRowProps = {
   showChevron?: boolean;
 };
 
+// The list language: bare outline icon, title, hairline underneath —
+// no card fills or icon tiles.
 const SectionRow = ({
   icon,
   title,
@@ -50,13 +51,11 @@ const SectionRow = ({
     disabled={!onPress}
     style={({ pressed }) => [styles.row, pressed && onPress && styles.rowPressed]}
   >
-    <View style={styles.rowIconContainer}>
-      <Ionicons name={icon} size={18} color="#000" />
-    </View>
+    <Ionicons name={icon} size={22} color={color.textPrimary} />
     <Text style={styles.rowTitle}>{title}</Text>
     {right ??
       (showChevron && onPress ? (
-        <Ionicons name="chevron-forward" size={18} color="#999" />
+        <Ionicons name="chevron-forward" size={18} color={color.textTertiary} />
       ) : null)}
   </Pressable>
 );
@@ -129,12 +128,12 @@ const ProfileScreen = () => {
         setJoinDialogVisible(false);
         setJoinCode("");
         notify.success(
-          "Request Sent",
+          "Request sent",
           "The album owner will review your request",
         );
       },
       onError: () => {
-        notify.error("Couldn't Join", "Check the code and try again");
+        notify.error("Couldn't join", "Check the code and try again");
       },
     });
   }, [joinAlbum, joinCode]);
@@ -156,9 +155,9 @@ const ProfileScreen = () => {
             try {
               await Image.clearDiskCache();
               await Image.clearMemoryCache();
-              notify.success("Cache Cleared", "Freed up local storage");
+              notify.success("Cache cleared", "Freed up local storage");
             } catch {
-              notify.error("Couldn't Clear Cache", "Please try again");
+              notify.error("Couldn't clear cache", "Please try again");
             }
           },
         },
@@ -170,7 +169,7 @@ const ProfileScreen = () => {
     try {
       await Linking.openURL(FEEDBACK_URL);
     } catch {
-      notify.error("Couldn't Open Mail", "Please try again");
+      notify.error("Couldn't open mail", "Please try again");
     }
   }, []);
 
@@ -240,16 +239,17 @@ const ProfileScreen = () => {
                 pressed && styles.rowPressed,
               ]}
             >
-              <Ionicons name="chevron-down" size={26} color="#000" />
+              <Ionicons name="chevron-down" size={26} color={color.textPrimary} />
             </Pressable>
             <Text style={styles.headerTitle}>Profile</Text>
           </View>
+          <View style={styles.rule} />
 
-          {/* Profile card */}
+          {/* Profile row — flat, bounded by rules */}
           <Pressable
             onPress={handleOpenUser}
             style={({ pressed }) => [
-              styles.profileCard,
+              styles.profileRow,
               pressed && styles.rowPressed,
             ]}
           >
@@ -268,30 +268,33 @@ const ProfileScreen = () => {
                 {user?.email ?? "Add your email"}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#999" />
+            <Ionicons name="chevron-forward" size={18} color={color.textTertiary} />
           </Pressable>
+          <View style={styles.rule} />
 
           {/* Stats */}
           <View style={styles.statsRow}>
-            <View style={styles.statTile}>
+            <View style={styles.statCell}>
               {albumsQuery.isLoading ? (
-                <ActivityIndicator size="small" color="#999" style={styles.statSpinner} />
+                <ActivityIndicator size="small" color={color.textTertiary} style={styles.statSpinner} />
               ) : (
                 <Text style={styles.statNumber}>{albumCount ?? "–"}</Text>
               )}
               <Text style={styles.statLabel}>Albums</Text>
             </View>
-            <View style={styles.statTile}>
+            <View style={styles.statRule} />
+            <View style={styles.statCell}>
               {albumsQuery.isLoading ? (
-                <ActivityIndicator size="small" color="#999" style={styles.statSpinner} />
+                <ActivityIndicator size="small" color={color.textTertiary} style={styles.statSpinner} />
               ) : (
                 <Text style={styles.statNumber}>{friendCount ?? "–"}</Text>
               )}
               <Text style={styles.statLabel}>Friends</Text>
             </View>
           </View>
+          <View style={styles.rule} />
 
-          {/* Upgrade — dark banner mirroring the paywall's look */}
+          {/* Upgrade — the one dark, floating moment on the page */}
           <Pressable
             onPress={handleOpenPremium}
             style={({ pressed }) => [
@@ -301,19 +304,11 @@ const ProfileScreen = () => {
             accessibilityRole="button"
             accessibilityLabel="Upgrade to Memo Premium"
           >
-            <LinearGradient
-              colors={["#1c1c1e", "#000000"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.premiumIconTile}>
-              <Ionicons name="sparkles" size={18} color="#fff" />
-            </View>
+            <Ionicons name="sparkles" size={20} color="#fff" />
             <View style={styles.premiumText}>
-              {/* Wordmark: "Memo" in the app face, "Premium" in script */}
+              {/* Wordmark: "Memo" in the app face, "Premium" in serif italic */}
               <Text style={styles.premiumTitle}>
-                Memo <Text style={styles.premiumTitleScript}>Premium</Text>
+                Memo <Text style={styles.premiumTitleAccent}>Premium</Text>
               </Text>
               <Text style={styles.premiumSubtitle}>
                 Unlock full access — upgrade now
@@ -321,62 +316,59 @@ const ProfileScreen = () => {
             </View>
             <Ionicons
               name="chevron-forward"
-              size={20}
+              size={18}
               color="rgba(255,255,255,0.55)"
             />
           </Pressable>
 
           {/* Memories */}
-          <Text style={styles.sectionLabel}>MEMORIES</Text>
-          <View style={styles.sectionCard}>
-            <SectionRow
-              icon="add-circle-outline"
-              title="New album"
-              onPress={handleNewAlbum}
-            />
-            <View style={styles.rowDivider} />
-            <SectionRow
-              icon="key-outline"
-              title="Join with code"
-              onPress={handleOpenJoinDialog}
-            />
-          </View>
+          <Text style={styles.sectionLabel}>Memories</Text>
+          <SectionRow
+            icon="add-circle-outline"
+            title="New album"
+            onPress={handleNewAlbum}
+          />
+          <View style={styles.rule} />
+          <SectionRow
+            icon="key-outline"
+            title="Join with code"
+            onPress={handleOpenJoinDialog}
+          />
+          <View style={styles.rule} />
 
           {/* Privacy */}
-          <Text style={styles.sectionLabel}>PRIVACY</Text>
-          <View style={styles.sectionCard}>
-            <SectionRow
-              icon="ban-outline"
-              title="Blocked users"
-              onPress={handleOpenBlockedUsers}
-            />
-          </View>
+          <Text style={styles.sectionLabel}>Privacy</Text>
+          <SectionRow
+            icon="ban-outline"
+            title="Blocked users"
+            onPress={handleOpenBlockedUsers}
+          />
+          <View style={styles.rule} />
 
           {/* App */}
-          <Text style={styles.sectionLabel}>APP</Text>
-          <View style={styles.sectionCard}>
-            <SectionRow
-              icon="trash-outline"
-              title="Clear image cache"
-              onPress={handleClearCache}
-            />
-            <View style={styles.rowDivider} />
-            <SectionRow
-              icon="mail-outline"
-              title="Send feedback"
-              onPress={handleSendFeedback}
-            />
-            <View style={styles.rowDivider} />
-            <SectionRow
-              icon="information-circle-outline"
-              title="Version"
-              right={
-                <Text style={styles.versionText}>
-                  {Application.nativeApplicationVersion ?? "dev"}
-                </Text>
-              }
-            />
-          </View>
+          <Text style={styles.sectionLabel}>App</Text>
+          <SectionRow
+            icon="trash-outline"
+            title="Clear image cache"
+            onPress={handleClearCache}
+          />
+          <View style={styles.rule} />
+          <SectionRow
+            icon="mail-outline"
+            title="Send feedback"
+            onPress={handleSendFeedback}
+          />
+          <View style={styles.rule} />
+          <SectionRow
+            icon="information-circle-outline"
+            title="Version"
+            right={
+              <Text style={styles.versionText}>
+                {Application.nativeApplicationVersion ?? "dev"}
+              </Text>
+            }
+          />
+          <View style={styles.rule} />
 
           {/* Push sign-out to the bottom on tall screens */}
           <View style={styles.spacer} />
@@ -391,12 +383,12 @@ const ProfileScreen = () => {
             ]}
           >
             {auth.isLoading ? (
-              <ActivityIndicator size="small" color={theme.colors.error} />
+              <ActivityIndicator size="small" color={color.danger} />
             ) : (
               <Ionicons
                 name="log-out-outline"
                 size={20}
-                color={theme.colors.error}
+                color={color.danger}
               />
             )}
             <Text style={styles.signOutText}>Sign out</Text>
@@ -413,7 +405,7 @@ const ProfileScreen = () => {
             accessibilityRole="button"
           >
             {deletingAccount ? (
-              <ActivityIndicator size="small" color="#999" />
+              <ActivityIndicator size="small" color={color.textTertiary} />
             ) : (
               <Text style={styles.deleteAccountText}>Delete account</Text>
             )}
@@ -449,7 +441,7 @@ const ProfileScreen = () => {
               </Text>
             </Dialog.Content>
             <Dialog.Actions>
-              <Button onPress={handleCloseJoinDialog} textColor="#666">
+              <Button onPress={handleCloseJoinDialog} textColor={color.textSecondary}>
                 Cancel
               </Button>
               <Button
@@ -469,17 +461,19 @@ const ProfileScreen = () => {
 
 export default ProfileScreen;
 
+const GUTTER = 24;
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: color.bg,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: GUTTER,
   },
   safeArea: {
     flexGrow: 1,
@@ -487,12 +481,17 @@ const styles = StyleSheet.create({
   spacer: {
     flexGrow: 1,
   },
+  // The structural device of the page: one hairline, everywhere
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: color.separator,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     paddingTop: 12,
-    marginBottom: 20,
+    paddingBottom: 12,
   },
   closeButton: {
     width: 36,
@@ -501,141 +500,123 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#000",
+    ...type.title,
+    color: color.textPrimary,
   },
-  profileCard: {
+  profileRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
+    paddingVertical: 20,
+    gap: 16,
   },
   profileInfo: {
     flex: 1,
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 24,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
-    color: "#000",
+    letterSpacing: -0.4,
+    color: color.textPrimary,
   },
   profileEmail: {
     fontSize: 14,
-    color: "#666",
-    marginTop: 2,
+    color: color.textSecondary,
+    marginTop: 3,
   },
   profileEmailMuted: {
-    color: "#999",
+    color: color.textTertiary,
   },
   statsRow: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 12,
+    alignItems: "center",
+    paddingVertical: 18,
   },
-  statTile: {
+  statCell: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 16,
-    padding: 16,
     alignItems: "center",
   },
+  statRule: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: "stretch",
+    backgroundColor: color.separator,
+  },
   statNumber: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#000",
+    fontSize: 26,
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
+    letterSpacing: -0.5,
+    color: color.textPrimary,
   },
   statSpinner: {
-    height: 29,
+    height: 31,
   },
   statLabel: {
-    fontSize: 13,
-    color: "#666",
-    marginTop: 2,
+    fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    letterSpacing: 1.8,
+    textTransform: "uppercase",
+    color: color.textTertiary,
+    marginTop: 6,
   },
   premiumBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    marginTop: 12,
-    padding: 14,
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  premiumIconTile: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.14)",
-    alignItems: "center",
-    justifyContent: "center",
+    marginTop: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: radius.xl,
+    backgroundColor: color.bgDark,
+    // Only element on the page that floats
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
   premiumText: {
     flex: 1,
   },
   premiumTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
   },
-  // Pacifico ships one weight; fontWeight would force a fallback font
-  premiumTitleScript: {
-    fontFamily: "Pacifico_400Regular",
-    fontSize: 17,
-    fontWeight: "400",
+  premiumTitleAccent: {
+    ...scriptType(16),
     color: "#fff",
   },
   premiumSubtitle: {
     fontSize: 12.5,
-    color: "rgba(255, 255, 255, 0.6)",
+    color: color.onDarkSecondary,
     marginTop: 2,
   },
   sectionLabel: {
-    fontSize: 12,
-    color: "#999",
-    letterSpacing: 1.2,
-    fontWeight: "600",
-    marginTop: 28,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  sectionCard: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 16,
-    overflow: "hidden",
+    ...type.overline,
+    color: color.textTertiary,
+    marginTop: 36,
+    marginBottom: 4,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    paddingVertical: 16,
+    gap: 14,
   },
   rowPressed: {
-    opacity: 0.6,
-  },
-  rowIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#e9e9e9",
-    alignItems: "center",
-    justifyContent: "center",
+    opacity: 0.5,
   },
   rowTitle: {
     flex: 1,
-    fontSize: 15,
-    color: "#000",
-  },
-  rowDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "#e0e0e0",
-    marginLeft: 64,
+    fontSize: 16,
+    color: color.textPrimary,
   },
   versionText: {
     fontSize: 15,
-    color: "#999",
+    color: color.textTertiary,
   },
   signOutRow: {
     flexDirection: "row",
@@ -643,15 +624,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     marginTop: 32,
-    marginBottom: 12,
+    marginBottom: 4,
     paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: "#f5f5f5",
   },
   signOutText: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
-    color: theme.colors.error,
+    color: color.danger,
   },
   deleteAccountRow: {
     alignSelf: "center",
@@ -663,12 +643,12 @@ const styles = StyleSheet.create({
   },
   deleteAccountText: {
     fontSize: 13,
-    color: "#999",
+    color: color.textTertiary,
     textDecorationLine: "underline",
   },
   dialog: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    backgroundColor: color.bg,
+    borderRadius: radius.lg,
   },
   dialogKeyboardAvoider: {
     flex: 1,
@@ -676,7 +656,7 @@ const styles = StyleSheet.create({
   },
   dialogHelper: {
     fontSize: 12,
-    color: "#999",
+    color: color.textTertiary,
     marginTop: 6,
   },
 });

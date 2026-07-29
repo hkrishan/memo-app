@@ -111,7 +111,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ contentTop, albumId }) => {
               router.replace("/");
             },
             onError: () => {
-              notify.error("Couldn't leave the album", "Please try again.");
+              notify.error("Couldn't leave the album", "Please try again");
             },
           });
         },
@@ -139,7 +139,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ contentTop, albumId }) => {
               router.replace("/");
             },
             onError: () => {
-              notify.error("Couldn't delete the album", "Please try again.");
+              notify.error("Couldn't delete the album", "Please try again");
             },
           });
         },
@@ -246,6 +246,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
     textTransform: "uppercase",
@@ -279,6 +280,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingsLabel: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 16,
     color: "#000",
   },

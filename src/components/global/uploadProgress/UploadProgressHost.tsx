@@ -281,6 +281,7 @@ const styles = StyleSheet.create({
   },
   pillCount: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     fontVariant: ["tabular-nums"],
@@ -298,6 +299,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
   },
@@ -319,6 +321,7 @@ const styles = StyleSheet.create({
   },
   sheetPercent: {
     fontSize: 32,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
     fontVariant: ["tabular-nums"],
@@ -327,15 +330,20 @@ const styles = StyleSheet.create({
   sheetStatus: {
     marginTop: 14,
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
   sheetCount: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 14,
     color: "#98989e",
     fontVariant: ["tabular-nums"],
   },
   sheetAlbum: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 14,
     color: "#98989e",
     maxWidth: "80%",
@@ -355,6 +363,7 @@ const styles = StyleSheet.create({
   },
   failedText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#b91c1c",
     flexShrink: 1,
@@ -375,6 +384,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
   },
@@ -384,6 +394,7 @@ const styles = StyleSheet.create({
   },
   dismissText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#98989e",
   },

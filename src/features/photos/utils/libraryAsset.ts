@@ -27,5 +27,6 @@ export const libraryPhotoToAsset = (photo: LibraryPhoto): MediaAsset => {
     duration: 0,
     creationTime: createdAt,
     modificationTime: createdAt,
+    metadata: photo.metadata ?? null,
   };
 };

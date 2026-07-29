@@ -338,6 +338,7 @@ const styles = StyleSheet.create({
   countText: {
     color: "#fff",
     fontSize: 11,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   avatarRow: {
@@ -367,6 +368,7 @@ const styles = StyleSheet.create({
   avatarMoreText: {
     color: "#fff",
     fontSize: 8,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   emptyContainer: {
@@ -379,6 +381,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#333",
   },

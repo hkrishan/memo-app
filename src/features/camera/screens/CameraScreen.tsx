@@ -18,8 +18,10 @@ import {
   TouchableOpacity,
   Dimensions,
   Pressable,
+  InteractionManager,
 } from "react-native";
 import * as MediaLibrary from "expo-media-library";
+import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { notify } from "@/components/global";
@@ -58,6 +60,10 @@ import {
   CaptureExtras,
 } from "@/features/camera/store/captureDestinationStore";
 import { enqueueCapture } from "@/features/photos/store/libraryUploadQueue";
+import {
+  selectHasSeenLocationPrimer,
+  useOnboardingStore,
+} from "@/features/onboarding/store/onboardingStore";
 import { useLibraryViewerSession } from "@/features/photos/hooks/useLibraryViewerSession";
 import { PhotoViewer, type Frame } from "@/features/photos/components";
 
@@ -93,6 +99,7 @@ import {
   CaptureExtrasSheet,
   DualCameraPreview,
   DualLayoutPicker,
+  LocationPrimerSheet,
 } from "../components";
 
 const ReanimatedCamera = Animated.createAnimatedComponent(Camera);
@@ -341,7 +348,7 @@ export default function CameraScreen({
       setShowPreview(true);
     },
     onError: (error) => {
-      notify.error("Recording Failed", error.message);
+      notify.error("Recording failed", error.message);
     },
   });
 
@@ -381,6 +388,65 @@ export default function CameraScreen({
     },
     [pageIndex],
   );
+
+  // First time the camera is actually on screen with location still
+  // undetermined: present the location primer, which owns the OS prompt
+  // (useCaptureLocation only READS permission — see its header). One-shot,
+  // persisted. The delay lets the tab swipe settle, and runAfterInteractions
+  // is the usual iOS guard against a Modal presented mid-transition.
+  const hasSeenLocationPrimer = useOnboardingStore(selectHasSeenLocationPrimer);
+  const markLocationPrimerSeen = useOnboardingStore(
+    (s) => s.markLocationPrimerSeen,
+  );
+  const [showLocationPrimer, setShowLocationPrimer] = useState(false);
+  const locationPrimerAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (hasSeenLocationPrimer || locationPrimerAttemptedRef.current) return;
+    if (!isCameraVisible || showPreview) return;
+    locationPrimerAttemptedRef.current = true;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const { status, canAskAgain } =
+          await Location.getForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (status === "granted" || !canAskAgain) {
+          // Nothing to prime (already granted, or the OS won't ask again)
+          markLocationPrimerSeen();
+          return;
+        }
+        InteractionManager.runAfterInteractions(() => {
+          if (!cancelled) setShowLocationPrimer(true);
+        });
+      } catch {
+        // Can't read the status — skip the primer rather than mis-ask
+      }
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasSeenLocationPrimer, isCameraVisible, showPreview, markLocationPrimerSeen]);
+
+  const handleLocationPrimerAllow = useCallback(async () => {
+    markLocationPrimerSeen();
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        ).catch(() => {});
+      }
+    } catch {
+      // Declined or unavailable — captures simply go untagged
+    }
+    setShowLocationPrimer(false);
+  }, [markLocationPrimerSeen]);
+
+  const handleLocationPrimerDismiss = useCallback(() => {
+    markLocationPrimerSeen();
+    setShowLocationPrimer(false);
+  }, [markLocationPrimerSeen]);
 
   // Album data
   const { data: albums } = useGetAlbumsQuery();
@@ -624,9 +690,12 @@ export default function CameraScreen({
     (path: string) => {
       const fileUri = path.startsWith("file://") ? path : `file://${path}`;
 
-      // Fetch where this was taken (best-effort; the enqueue below reads
-      // the last-known position)
-      captureCurrentLocation();
+      // Fetch where this was taken. The fix is a PROMISE handed to the
+      // queue, not a ref read: reading the ref here was a race — the fetch
+      // clears it synchronously and resolves after the enqueue, so instant
+      // captures were never tagged. The background upload waits briefly on
+      // the promise instead; the capture itself still never waits on GPS.
+      const locationPromise = captureCurrentLocation();
 
       const extras = resolvedExtrasRef.current;
       const targetAlbumId = albumId ?? extras.alsoAlbumId ?? null;
@@ -636,16 +705,12 @@ export default function CameraScreen({
       // Camera-roll extra only applies on the main tab (album mode has no
       // sticky prefs UI)
       const alsoRoll = albumId ? false : extras.alsoDeviceGallery;
-      const location = captureLocationRef.current;
       if (alsoRoll) {
         void saveToCameraRoll(fileUri);
       }
       void enqueueCapture({
         tempFileUri: fileUri,
-        ...(location && {
-          latitude: location.latitude,
-          longitude: location.longitude,
-        }),
+        locationPromise,
         albumId: targetAlbumId,
         albumTitle: targetAlbum?.title ?? (albumId ? "Album" : null),
         cameraRollSaved: alsoRoll,
@@ -712,7 +777,7 @@ export default function CameraScreen({
       deliverCapturedPhoto(photo.path);
     } catch (error) {
       if (__DEV__) console.error("Failed to take photo:", error);
-      notify.error("Capture Failed", "Could not take photo. Please try again.");
+      notify.error("Capture failed", "Could not take photo. Please try again.");
     } finally {
       setScreenFlashOn(false);
     }
@@ -890,10 +955,15 @@ export default function CameraScreen({
   }, [resetRecording, dualCamera]);
 
   // The video/preview flow captures via the recording hook — fetch the
-  // location as soon as its media lands, mirroring the photo path
+  // location as soon as its media lands, mirroring the photo path. The
+  // promise is kept so a fast confirm (ref still empty) can still hand the
+  // in-flight fix to the upload queue.
+  const pendingLocationRef = useRef<ReturnType<
+    typeof captureCurrentLocation
+  > | null>(null);
   useEffect(() => {
     if (capturedMedia) {
-      captureCurrentLocation();
+      pendingLocationRef.current = captureCurrentLocation();
     }
   }, [capturedMedia, captureCurrentLocation]);
 
@@ -936,7 +1006,7 @@ export default function CameraScreen({
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status !== "granted") {
           notify.error(
-            "Permission Required",
+            "Permission required",
             "Please allow access to save media to your gallery",
           );
           Linking.openSettings();
@@ -964,6 +1034,8 @@ export default function CameraScreen({
           // Same local-first queue the photo shutter uses: the album shows
           // this capture from its local file (with an uploading badge)
           // straight away, and the transfer survives leaving the camera.
+          // Resolved fix tags directly; otherwise the still-pending promise
+          // rides along and the background upload waits briefly for it
           const location = captureLocationRef.current;
           await enqueueCapture({
             tempFileUri: fileUri,
@@ -974,6 +1046,9 @@ export default function CameraScreen({
             ...(location && {
               latitude: location.latitude,
               longitude: location.longitude,
+            }),
+            ...(pendingLocationRef.current && {
+              locationPromise: pendingLocationRef.current,
             }),
             albumId: targetAlbumId,
             albumTitle: title,
@@ -999,7 +1074,7 @@ export default function CameraScreen({
         handleClosePreview();
       } catch (error) {
         if (__DEV__) console.error("Failed to save media:", error);
-        notify.error("Save Failed", "Could not save media to gallery");
+        notify.error("Save failed", "Could not save media to gallery");
       } finally {
         setIsSavingMedia(false);
       }
@@ -1111,6 +1186,7 @@ export default function CameraScreen({
                 }
                 photo={true}
                 video={true}
+                videoBitRate={RECORDING_CONFIG.VIDEO_BIT_RATE_MBPS}
                 audio={hasMicPermission}
                 animatedProps={backAnimatedProps}
                 enableZoomGesture={false}
@@ -1137,6 +1213,7 @@ export default function CameraScreen({
                 }
                 photo={true}
                 video={true}
+                videoBitRate={RECORDING_CONFIG.VIDEO_BIT_RATE_MBPS}
                 audio={hasMicPermission}
                 animatedProps={frontAnimatedProps}
                 enableZoomGesture={false}
@@ -1362,11 +1439,6 @@ export default function CameraScreen({
                 disabled={countdown != null}
               />
             </View>
-            <Text style={styles.captureHint}>
-              {captureMode === CaptureMode.PHOTO
-                ? "Hold for video"
-                : "Tap to record"}
-            </Text>
           </>
         )}
       </Animated.View>
@@ -1415,6 +1487,13 @@ export default function CameraScreen({
         <PhotoViewer {...libraryViewer.viewerProps} />
       )}
 
+      {/* One-shot location priming — owns the OS location prompt */}
+      <LocationPrimerSheet
+        visible={showLocationPrimer}
+        onAllow={handleLocationPrimerAllow}
+        onDismiss={handleLocationPrimerDismiss}
+      />
+
       {/* Sticky capture-extras preferences (main-tab camera only) */}
       {!albumId && (
         <CaptureExtrasSheet
@@ -1461,6 +1540,7 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 18,
     marginTop: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   permissionSubtext: {
@@ -1479,6 +1559,7 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: "#000",
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   toolbarContainer: {
@@ -1526,6 +1607,7 @@ const styles = StyleSheet.create({
   destinationAlbumText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   zoomPresetContainer: {
@@ -1559,6 +1641,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: "rgba(255, 255, 255, 0.55)",
     fontSize: 12,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   screenFlash: {

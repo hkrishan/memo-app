@@ -54,7 +54,7 @@ export type GalleryFilter =
 const FullGalleryScreen = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { albumId, filter, memberId, momentId, tag, activityId, title } =
+  const { albumId, filter, memberId, momentId, tag, activityId, title, photoId } =
     useLocalSearchParams<{
       albumId: string;
       filter?: GalleryFilter;
@@ -63,9 +63,11 @@ const FullGalleryScreen = () => {
       tag?: string;
       activityId?: string;
       title?: string;
+      /** Deep link (photo notifications): auto-open this photo's viewer */
+      photoId?: string;
     }>();
 
-  const { data: photos, isLoading } = useGetPhotosQuery(albumId!);
+  const { data: photos, isLoading, refetch } = useGetPhotosQuery(albumId!);
   // Moments are only needed to resolve a moment filter's photo set —
   // an empty id keeps the query (and its polling) disabled otherwise
   const { data: moments } = useGetMomentsQuery(
@@ -183,6 +185,7 @@ const FullGalleryScreen = () => {
 
       <PhotoBrowser
         assets={assets}
+        autoOpenAssetId={photoId}
         numColumns={NUM_COLUMNS}
         ListEmptyComponent={isLoading ? null : EmptyFilteredGallery}
         contentBottomPadding={LIST_BOTTOM_PADDING}
@@ -190,6 +193,8 @@ const FullGalleryScreen = () => {
         renderPageAttribution={renderPageAttribution}
         onDoubleTapAsset={onDoubleTapAsset}
         poppingIds={poppingIds}
+        // Pull-to-refresh parity with AllPhotosScreen (same browser)
+        onRefresh={refetch}
       />
       {/* No camera/add-photos FABs here — capture entry points live on
           the Gallery tab only; these filtered views are for browsing */}
@@ -232,6 +237,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },

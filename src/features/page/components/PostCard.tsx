@@ -1,4 +1,5 @@
-import React, { memo, useCallback, useMemo, useState } from "react";
+import React, { memo, useCallback, useMemo, useRef, useState } from "react";
+import { formatRelativeTime } from "@/features/album/components/photoSocial/socialUtils";
 import {
   View,
   StyleSheet,
@@ -14,9 +15,13 @@ import { stableCacheKey } from "@/lib/imageCache";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated from "react-native-reanimated";
+import Animated, { runOnJS } from "react-native-reanimated";
 import { AlbumPagePost, AlbumPagePostMedia } from "../types/post.types";
-import { useTogglePostLikeMutation } from "../api/pagePost.queries";
+import {
+  useDeletePostMutation,
+  useTogglePostLikeMutation,
+} from "../api/pagePost.queries";
+import { confirmDeletePost } from "./confirmDeletePost";
 
 const AnimatedScrollView = Animated.ScrollView;
 
@@ -40,24 +45,6 @@ const formatCount = (count: number): string => {
   return count.toString();
 };
 
-const formatTimeAgo = (date: Date | string): string => {
-  const now = Date.now();
-  const postTime = new Date(date).getTime();
-  const diffMs = now - postTime;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m`;
-  if (diffHours < 24) return `${diffHours}h`;
-  if (diffDays < 7) return `${diffDays}d`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-};
 
 const MediaItem = memo<{
   media: AlbumPagePostMedia;
@@ -101,6 +88,7 @@ const MediaCarousel = memo<{
   onDoubleTap: () => void;
 }>(({ media, onDoubleTap }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
 
   const sortedMedia = useMemo(
     () => [...media].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
@@ -111,6 +99,9 @@ const MediaCarousel = memo<{
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetX = event.nativeEvent.contentOffset.x;
       const index = Math.round(offsetX / MEDIA_SIZE);
+      // Commit only on page change — this fired per scroll frame
+      if (index === currentIndexRef.current) return;
+      currentIndexRef.current = index;
       setCurrentIndex(index);
     },
     []
@@ -121,9 +112,10 @@ const MediaCarousel = memo<{
       Gesture.Tap()
         .numberOfTaps(2)
         .onEnd(() => {
-          onDoubleTap();
-        })
-        .runOnJS(true),
+          // One JS hop at recognition — .runOnJS(true) forced the whole
+          // recognizer through the JS thread for every touch on the cell
+          runOnJS(onDoubleTap)();
+        }),
     [onDoubleTap]
   );
 
@@ -195,6 +187,12 @@ const PostCard = memo<PostCardProps>(
       onCommentsPress?.(post.postId);
     }, [post.postId, onCommentsPress]);
 
+    // Delete (author or page owner — the server sets canDelete accordingly)
+    const deleteMutation = useDeletePostMutation(albumId, pageId);
+    const handleDeletePress = useCallback(() => {
+      confirmDeletePost(() => deleteMutation.mutate({ postId: post.postId }));
+    }, [deleteMutation, post.postId]);
+
     const handleDoubleTap = useCallback(() => {
       if (!isLiked) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -235,6 +233,18 @@ const PostCard = memo<PostCardProps>(
           >
             <Ionicons name="paper-plane-outline" size={24} color="#000" />
           </Pressable>
+
+          {post.canDelete && (
+            <Pressable
+              onPress={handleDeletePress}
+              style={[styles.actionButton, styles.moreButton]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Delete post"
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#000" />
+            </Pressable>
+          )}
         </View>
 
         {/* Like count */}
@@ -261,7 +271,7 @@ const PostCard = memo<PostCardProps>(
         )}
 
         {/* Timestamp */}
-        <Text style={styles.timestamp}>{formatTimeAgo(post.createdAt)}</Text>
+        <Text style={styles.timestamp}>{formatRelativeTime(post.createdAt)}</Text>
       </View>
     );
   }
@@ -322,6 +332,7 @@ const styles = StyleSheet.create({
   counterText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   actionsRow: {
@@ -333,8 +344,12 @@ const styles = StyleSheet.create({
   actionButton: {
     padding: 4,
   },
+  moreButton: {
+    marginLeft: "auto",
+  },
   likeCount: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     paddingHorizontal: 16,

@@ -56,7 +56,7 @@ const CreateAlbumScreen: React.FC = () => {
 
       router.back();
       notify.success(
-        "Request Sent",
+        "Request sent",
         "The album owner will review your request",
       );
     } catch (error) {
@@ -276,7 +276,7 @@ const CreateAlbumScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: "#fff",
   },
   inner: {
     flex: 1,
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#fff",
+    backgroundColor: "#F2F2F7",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -304,6 +304,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
   },
@@ -318,7 +319,7 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: "#F2F2F7",
     borderRadius: 16,
     padding: 16,
     gap: 14,
@@ -342,6 +343,7 @@ const styles = StyleSheet.create({
   },
   optionTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -354,6 +356,7 @@ const styles = StyleSheet.create({
   },
   stepTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
   },
@@ -383,6 +386,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 4,
     textAlign: "center",
+    // Album codes stay monospace — not part of the Instrument Sans sweep
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   helper: {
@@ -407,6 +411,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: "#fff",
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontSize: 16,
   },

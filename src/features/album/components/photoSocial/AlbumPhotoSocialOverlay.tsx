@@ -322,7 +322,7 @@ export const AlbumPhotoSocialOverlay = forwardRef<
         onError: () => {
           // Pop the cell back in and say why
           onDeleteFailed?.(target.photoId);
-          notify.error("Couldn't delete photo", "Please try again.");
+          notify.error("Couldn't delete photo", "Please try again");
         },
       },
     );

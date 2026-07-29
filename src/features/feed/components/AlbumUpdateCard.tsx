@@ -260,6 +260,7 @@ const styles = StyleSheet.create({
   },
   name: {
     color: "#111",
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   metaRow: {
@@ -281,6 +282,7 @@ const styles = StyleSheet.create({
   albumChipText: {
     color: "#6e6e73",
     fontSize: 11.5,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   time: {
@@ -318,6 +320,7 @@ const styles = StyleSheet.create({
   momentTitle: {
     color: "#1c1c1e",
     fontSize: 14,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     lineHeight: 19,
   },

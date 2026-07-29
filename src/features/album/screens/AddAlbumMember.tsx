@@ -153,7 +153,7 @@ const AddAlbumMemberScreen = () => {
                 refetchInviteLink();
               },
               onError: () => {
-                notify.error("Couldn't reset the link", "Please try again.");
+                notify.error("Couldn't reset the link", "Please try again");
               },
             },
           );
@@ -411,7 +411,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     color: "#111",
     letterSpacing: -0.4,
   },
@@ -448,6 +449,7 @@ const styles = StyleSheet.create({
   },
   sharePillText: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
   },
@@ -466,6 +468,7 @@ const styles = StyleSheet.create({
   },
   copyPillText: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -491,6 +494,7 @@ const styles = StyleSheet.create({
   },
   resetLinkText: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#9C9C99",
     textDecorationLine: "underline",
@@ -503,6 +507,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#9C9C99",
     textTransform: "uppercase",
@@ -531,6 +536,7 @@ const styles = StyleSheet.create({
   },
   requestName: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },

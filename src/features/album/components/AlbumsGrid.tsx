@@ -39,6 +39,11 @@ const ALBUM_CARD_SIZE = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 interface AlbumsGridProps {
   albums: Album[] | undefined;
   isLoading?: boolean;
+  /** The fetch failed — never show "no albums" for a network error. */
+  isError?: boolean;
+  onRetry?: () => void;
+  /** Wired into the empty state's CTA. */
+  onCreateAlbum?: () => void;
   onAlbumPress?: (album: Album) => void;
 }
 
@@ -125,6 +130,9 @@ AlbumCard.displayName = "AlbumCard";
 export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
   albums,
   isLoading = false,
+  isError = false,
+  onRetry,
+  onCreateAlbum,
   onAlbumPress,
 }) => {
   const router = useRouter();
@@ -176,11 +184,47 @@ export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
     );
   }
 
+  if (isError && (!albums || albums.length === 0)) {
+    return (
+      <View style={styles.placeholder}>
+        <Ionicons name="cloud-offline-outline" size={48} color="#ccc" />
+        <Text style={styles.placeholderText}>Couldn't load your albums</Text>
+        {onRetry && (
+          <Pressable
+            onPress={onRetry}
+            style={({ pressed }) => [
+              styles.emptyCta,
+              pressed && styles.emptyCtaPressed,
+            ]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.emptyCtaLabel}>Try again</Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  }
+
   if (!albums || albums.length === 0) {
     return (
       <View style={styles.placeholder}>
         <Ionicons name="albums-outline" size={48} color="#ccc" />
         <Text style={styles.placeholderText}>No albums yet</Text>
+        <Text style={styles.placeholderSubtext}>
+          Create one and invite the people you share moments with.
+        </Text>
+        {onCreateAlbum && (
+          <Pressable
+            onPress={onCreateAlbum}
+            style={({ pressed }) => [
+              styles.emptyCta,
+              pressed && styles.emptyCtaPressed,
+            ]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.emptyCtaLabel}>Create your first album</Text>
+          </Pressable>
+        )}
       </View>
     );
   }
@@ -234,7 +278,8 @@ const styles = StyleSheet.create({
   newBadgeLabel: {
     color: "#fff",
     fontSize: 10,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     letterSpacing: 0.4,
   },
   countBadge: {
@@ -252,6 +297,7 @@ const styles = StyleSheet.create({
   countBadgeLabel: {
     color: "#fff",
     fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
@@ -270,7 +316,8 @@ const styles = StyleSheet.create({
   liveBadgeLabel: {
     color: "#fff",
     fontSize: 10,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     letterSpacing: 0.8,
   },
   caption: {
@@ -280,6 +327,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -296,9 +344,35 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   placeholderText: {
-    fontSize: 14,
-    color: "#999",
+    fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#111",
     marginTop: 12,
+  },
+  placeholderSubtext: {
+    fontSize: 13,
+    color: "#6e6e73",
+    textAlign: "center",
+    marginTop: 4,
+    paddingHorizontal: 24,
+    lineHeight: 18,
+  },
+  emptyCta: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: "#111",
+  },
+  emptyCtaPressed: {
+    opacity: 0.7,
+  },
+  emptyCtaLabel: {
+    color: "#fff",
+    fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
   },
 });
 

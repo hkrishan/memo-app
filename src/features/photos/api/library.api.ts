@@ -5,7 +5,7 @@
  */
 
 import { endpoints, httpClient } from "@/lib/api";
-import { Photo } from "@/features/album/types/album.types";
+import { Photo, type MediaMetadata } from "@/features/album/types/album.types";
 
 /** A single photo/video in the Memo library (server response shape). */
 export interface LibraryPhoto {
@@ -25,6 +25,9 @@ export interface LibraryPhoto {
    *  `photoId` is the album COPY's id — what removing from that album
    *  deletes. Empty for a pending capture whose copy isn't made yet. */
   albums?: { albumId: string; title: string; photoId: string }[];
+  /** Custom media metadata (lives on the media object, so album copies
+   *  share it) — e.g. { memoCreate: { pageCount } }. */
+  metadata?: MediaMetadata | null;
 }
 
 /** One page of the library feed (newest first, cursor-paginated). */
@@ -40,6 +43,8 @@ export interface UploadLibraryPhotoParams {
   /** GPS position the photo was taken at, when known. */
   latitude?: number;
   longitude?: number;
+  /** Custom metadata stored on the media object (JSON, server-capped). */
+  metadata?: MediaMetadata;
 }
 
 /** Query key for the library feed — lives here (not in the queries module)
@@ -64,6 +69,7 @@ const libraryApi = {
     mimeType,
     latitude,
     longitude,
+    metadata,
   }: UploadLibraryPhotoParams): Promise<LibraryPhoto> => {
     const formData = new FormData();
     formData.append("photo", {
@@ -75,6 +81,9 @@ const libraryApi = {
     if (latitude !== undefined && longitude !== undefined) {
       formData.append("latitude", String(latitude));
       formData.append("longitude", String(longitude));
+    }
+    if (metadata !== undefined) {
+      formData.append("metadata", JSON.stringify(metadata));
     }
 
     return httpClient.upload<LibraryPhoto>(endpoints.user.photos, formData);

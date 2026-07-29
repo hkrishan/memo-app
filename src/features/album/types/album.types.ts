@@ -1,5 +1,14 @@
 export type Role = "owner" | "contributor" | "viewer";
 
+/**
+ * Custom media metadata, stored on the media OBJECT server-side — album
+ * copies of a library photo share it. Open-ended by design; known keys
+ * are typed. `memoCreate` marks a Memo Create creation cover.
+ */
+export type MediaMetadata = {
+  memoCreate?: { pageCount?: number };
+} & Record<string, unknown>;
+
 export type AlbumMember = {
   userId: string;
   name: string;
@@ -51,6 +60,8 @@ export type Photo = {
   mediaType?: "photo" | "video";
   latitude?: number | null;
   longitude?: number | null;
+  /** See MediaMetadata — e.g. { memoCreate } for Memo Create covers. */
+  metadata?: MediaMetadata | null;
 };
 
 export type AlbumPhoto = {

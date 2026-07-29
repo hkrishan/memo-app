@@ -96,6 +96,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#888",
   },
   typingText: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 12,
     color: "#888",
     marginLeft: 8,

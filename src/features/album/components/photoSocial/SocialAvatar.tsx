@@ -68,6 +68,7 @@ const styles = StyleSheet.create({
   },
   initials: {
     color: "#fff",
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

@@ -74,7 +74,8 @@ export const flowStyles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     color: "#fff",
     letterSpacing: -0.4,
   },
@@ -118,6 +119,7 @@ export const flowStyles = StyleSheet.create({
   },
   primaryButtonText: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },

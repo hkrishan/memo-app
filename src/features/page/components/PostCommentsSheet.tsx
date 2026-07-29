@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { notify } from "@/components/global";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -181,7 +182,14 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
     (commentId: string) => {
       if (!postId) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      deleteComment.mutate({ postId, commentId });
+      deleteComment.mutate(
+        { postId, commentId },
+        {
+          onError: () => {
+            notify.error("Couldn't delete comment", "Please try again");
+          },
+        },
+      );
       setConfirmingId(null);
     },
     [postId, deleteComment],
@@ -251,7 +259,7 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
           style={styles.input}
           value={draft}
           onChangeText={setDraft}
-          placeholder="Add a comment..."
+          placeholder="Add a comment…"
           placeholderTextColor="rgba(255, 255, 255, 0.4)"
           multiline
           maxLength={MAX_COMMENT_LENGTH}
@@ -303,6 +311,7 @@ const styles = StyleSheet.create({
   authorName: {
     color: "#fff",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     flexShrink: 1,
   },
@@ -334,6 +343,7 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   cancelButton: {

@@ -6,6 +6,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
+import { formatRelativeTime } from "../../components/photoSocial/socialUtils";
 import {
   View,
   StyleSheet,
@@ -66,26 +67,6 @@ const getActivityIcon = (type: string): keyof typeof Ionicons.glyphMap => {
   return type === "photos_added" ? "images" : "ellipsis-horizontal";
 };
 
-// Format relative time - memoized per activity via the component
-const formatRelativeTime = (date: Date): string => {
-  const now = Date.now();
-  const activityTime = new Date(date).getTime();
-  const diffMs = now - activityTime;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-};
 
 // Photo thumbnail - individually memoized
 const Thumbnail = memo<{
@@ -395,6 +376,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
     textTransform: "uppercase",
@@ -448,6 +430,7 @@ const styles = StyleSheet.create({
   },
   userName: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -485,6 +468,7 @@ const styles = StyleSheet.create({
   thumbnailOverlayText: {
     color: "#fff",
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   emptyState: {
@@ -495,6 +479,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

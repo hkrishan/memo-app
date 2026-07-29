@@ -266,6 +266,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
   },
@@ -280,6 +281,7 @@ const styles = StyleSheet.create({
   },
   addMoreText: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -335,6 +337,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: "#fff",
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontSize: 16,
   },

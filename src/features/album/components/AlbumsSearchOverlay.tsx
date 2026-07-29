@@ -180,6 +180,7 @@ const styles = StyleSheet.create({
   cancel: {
     color: "#111",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   grid: {
@@ -202,6 +203,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 15,
     color: "#8E8E93",
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
 });

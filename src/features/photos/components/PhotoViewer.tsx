@@ -1502,14 +1502,12 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     ({ item, index }: ListRenderItemInfo<MediaAsset>) => {
       const isActive = index === activeIndex;
       const isAdjacent = Math.abs(index - activeIndex) === 1;
-      const attribution = renderPageAttribution
-        ? renderPageAttribution(item)
-        : null;
       if (item.mediaType === "video") {
         return (
           <VideoPage
             asset={item}
-            attribution={attribution}
+            isAdjacent={isAdjacent}
+            renderAttribution={renderPageAttribution}
             attributionOpacity={pageAttributionOpacity}
             // A dismissing viewer pauses the active video before its poster
             // flies home in the overlay
@@ -1533,7 +1531,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       return (
         <PhotoPage
           asset={item}
-          attribution={attribution}
+          renderAttribution={renderPageAttribution}
           attributionOpacity={pageAttributionOpacity}
           isActive={isActive}
           isAdjacent={isAdjacent}
@@ -2114,6 +2112,7 @@ const styles = StyleSheet.create({
   chromeDate: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   chromeCounter: {

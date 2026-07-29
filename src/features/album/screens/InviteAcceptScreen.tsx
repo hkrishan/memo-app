@@ -84,7 +84,7 @@ const InviteAcceptScreen = () => {
         setExpiredOnAccept(true);
         return;
       }
-      notify.error("Couldn't join album", "Please try again.");
+      notify.error("Couldn't join album", "Please try again");
     }
   }, [invite, inviteId, acceptMutation, router]);
 
@@ -277,6 +277,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#888",
     marginBottom: 16,
@@ -310,6 +311,7 @@ const styles = StyleSheet.create({
   },
   albumTitle: {
     fontSize: 24,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
     letterSpacing: -0.3,
@@ -340,6 +342,7 @@ const styles = StyleSheet.create({
   inviterText: {
     flex: 1,
     fontSize: 14,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#444",
   },
@@ -360,6 +363,7 @@ const styles = StyleSheet.create({
   joinButtonText: {
     color: "#fff",
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   notNowButton: {
@@ -369,6 +373,7 @@ const styles = StyleSheet.create({
   },
   notNowText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#999",
   },
@@ -389,6 +394,7 @@ const styles = StyleSheet.create({
   },
   invalidTitle: {
     fontSize: 22,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
     textAlign: "center",

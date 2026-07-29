@@ -81,6 +81,7 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#9C9C99",
     textTransform: "uppercase",
@@ -99,12 +100,15 @@ const styles = StyleSheet.create({
   },
   code: {
     fontSize: 24,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
     letterSpacing: 8,
     fontVariant: ["tabular-nums"],
   },
   hint: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 12,
     color: "#9C9C99",
     marginTop: 2,

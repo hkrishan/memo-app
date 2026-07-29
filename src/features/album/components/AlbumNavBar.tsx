@@ -1,14 +1,16 @@
 /**
  * AlbumNavBar Component
- * Transparent over the gallery header; the white background, hairline and
- * album title fade in as the header scrolls under the bar. Other tabs
- * always show an opaque bar with their title.
+ * Transparent over the gallery header; the white background and hairline
+ * fade in as the header scrolls under the bar. On the gallery tab the
+ * bar's center holds the activity / chat / map actions (the header below
+ * keeps the album title full-width); other tabs show their title.
  */
 
-import React, { memo } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import React, { memo, useCallback } from "react";
+import { View, StyleSheet, Pressable, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   SharedValue,
@@ -17,8 +19,14 @@ import Animated, {
   Extrapolation,
 } from "react-native-reanimated";
 
+import { GlassCircleButton } from "@/components/ui/GlassCircleButton";
+import {
+  useAlbumChatUnread,
+  UNREAD_CAP,
+} from "../screens/AlbumScreen/chat/unread/useAlbumChatUnread";
+
 interface AlbumNavBarProps {
-  title: string;
+  albumId: string | undefined;
   scrollPosition: SharedValue<number>;
   galleryScrollY: SharedValue<number>;
   /** Page tab's scroll offset — same fade contract as the gallery */
@@ -35,7 +43,7 @@ interface AlbumNavBarProps {
 
 export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
   ({
-    title,
+    albumId,
     scrollPosition,
     galleryScrollY,
     pageScrollY,
@@ -44,6 +52,28 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
     pageExists = true,
   }) => {
     const insets = useSafeAreaInsets();
+    const router = useRouter();
+
+    // Unread chat messages badge on the chat action; clears when the user
+    // opens chat (the chat screen advances the last-read watermark).
+    const chatUnreadCount = useAlbumChatUnread(albumId);
+
+    // The action cluster fades with the gallery tab, but the Pressables
+    // underneath would still catch taps — gate the handlers on actually
+    // being on the gallery tab (reading the shared value at press time).
+    const onGalleryTab = useCallback(
+      () => scrollPosition.value < 0.5,
+      [scrollPosition],
+    );
+    const handleOpenActivity = useCallback(() => {
+      if (albumId && onGalleryTab()) router.push(`/album/${albumId}/activity`);
+    }, [router, albumId, onGalleryTab]);
+    const handleOpenChat = useCallback(() => {
+      if (albumId && onGalleryTab()) router.push(`/album/${albumId}/chat`);
+    }, [router, albumId, onGalleryTab]);
+    const handleOpenMap = useCallback(() => {
+      if (albumId && onGalleryTab()) router.push(`/album/${albumId}/map`);
+    }, [router, albumId, onGalleryTab]);
 
     // White background + hairline — on the gallery AND page tabs it fades
     // in as that tab's content scrolls under the bar (same contract);
@@ -77,22 +107,20 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
       return { opacity: pageBg * (1 - pagePresence) };
     });
 
-    // Gallery title (index 0) - visible once the header title scrolls away
-    const galleryTitleStyle = useAnimatedStyle(() => {
+    // Gallery actions (index 0) — pinned to the bar's center on the
+    // gallery tab at every scroll depth (the glass buttons float over the
+    // header backdrop and the frosted bar alike); they fade out as the
+    // pager moves toward the Page tab, handing the center to its title.
+    const galleryActionsStyle = useAnimatedStyle(() => {
       "worklet";
-      const pageOpacity = interpolate(
-        scrollPosition.value,
-        [0, 0.5],
-        [1, 0],
-        Extrapolation.CLAMP,
-      );
-      const scrollOpacity = interpolate(
-        galleryScrollY.value,
-        [60, 130],
-        [0, 1],
-        Extrapolation.CLAMP,
-      );
-      return { opacity: pageOpacity * scrollOpacity };
+      return {
+        opacity: interpolate(
+          scrollPosition.value,
+          [0, 0.5],
+          [1, 0],
+          Extrapolation.CLAMP,
+        ),
+      };
     });
 
     // Page title (index 1) — like the gallery title, it only appears once
@@ -153,16 +181,43 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
             <Ionicons name="chevron-back" size={26} color="#000" />
           </Pressable>
 
-          <View style={styles.titleContainer} pointerEvents="none">
-            <Animated.Text
-              style={[styles.titleDark, galleryTitleStyle]}
-              numberOfLines={1}
+          <View style={styles.titleContainer} pointerEvents="box-none">
+            <Animated.View
+              style={[styles.actionsRow, galleryActionsStyle]}
+              pointerEvents="box-none"
             >
-              {title}
-            </Animated.Text>
+              <GlassCircleButton
+                onPress={handleOpenActivity}
+                label="Album activity"
+              >
+                <Ionicons name="pulse-outline" size={17} color="#111" />
+              </GlassCircleButton>
+              <View>
+                <GlassCircleButton onPress={handleOpenChat} label="Album chat">
+                  <Ionicons
+                    name="chatbubble-ellipses-outline"
+                    size={17}
+                    color="#111"
+                  />
+                </GlassCircleButton>
+                {chatUnreadCount > 0 && (
+                  <View style={styles.unreadBadge} pointerEvents="none">
+                    <Text style={styles.unreadBadgeText}>
+                      {chatUnreadCount >= UNREAD_CAP
+                        ? `${UNREAD_CAP}+`
+                        : chatUnreadCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <GlassCircleButton onPress={handleOpenMap} label="Album map">
+                <Ionicons name="map-outline" size={17} color="#111" />
+              </GlassCircleButton>
+            </Animated.View>
             <Animated.Text
               style={[styles.titleDark, styles.titleAbsolute, pageTitleStyle]}
               numberOfLines={1}
+              pointerEvents="none"
             >
               Page
             </Animated.Text>
@@ -173,6 +228,7 @@ export const AlbumNavBar: React.FC<AlbumNavBarProps> = memo(
                 momentsTitleStyle,
               ]}
               numberOfLines={1}
+              pointerEvents="none"
             >
               Moments
             </Animated.Text>
@@ -225,11 +281,40 @@ const styles = StyleSheet.create({
   },
   titleDark: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
   titleAbsolute: {
     position: "absolute",
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  // Same visual language as the AlbumTabs live dot, but sized for a count
+  unreadBadge: {
+    position: "absolute",
+    top: -5,
+    right: -6,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    paddingHorizontal: 4,
+    backgroundColor: "#FF3B30",
+    borderWidth: 1.5,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  unreadBadgeText: {
+    fontSize: 10,
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
+    color: "#fff",
+    lineHeight: 12,
   },
 });
 

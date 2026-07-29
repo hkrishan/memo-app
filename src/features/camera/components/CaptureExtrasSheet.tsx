@@ -146,6 +146,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: "rgba(255, 255, 255, 0.5)",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     marginTop: 10,
     marginBottom: 2,
@@ -190,6 +191,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   rowSubtitle: {

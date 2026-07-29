@@ -319,7 +319,7 @@ const CreatePostScreen = () => {
           style={styles.captionInput}
           value={caption}
           onChangeText={setCaption}
-          placeholder="Write a caption..."
+          placeholder="Write a caption…"
           placeholderTextColor="#999"
           multiline
           maxLength={2200}
@@ -380,6 +380,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -396,6 +397,7 @@ const styles = StyleSheet.create({
   },
   shareButtonText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
   },
@@ -448,6 +450,7 @@ const styles = StyleSheet.create({
   },
   orderBadgeText: {
     fontSize: 11,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
   },
@@ -473,6 +476,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     paddingHorizontal: 16,
@@ -524,6 +528,7 @@ const styles = StyleSheet.create({
   },
   selectedBadgeText: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
   },

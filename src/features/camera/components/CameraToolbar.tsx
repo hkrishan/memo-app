@@ -256,7 +256,8 @@ const styles = StyleSheet.create({
   badgeText: {
     color: '#000',
     fontSize: 9,
-    fontWeight: '700',
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
   },
   frontIndicator: {
     width: 6,

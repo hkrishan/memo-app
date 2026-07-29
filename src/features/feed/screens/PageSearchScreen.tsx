@@ -21,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 import SafeAreaView from "@/components/layout/SafeAreaView";
+import { notify } from "@/components/global";
 import { stableCacheKey } from "@/lib/imageCache";
 import {
   useFollowPageMutation,
@@ -59,7 +60,13 @@ const PageSearchScreen: React.FC = () => {
       };
       switch (page.myStatus) {
         case "none":
-          follow.mutate(vars);
+          follow.mutate(vars,
+        {
+          onError: () => {
+            notify.error("Couldn't update follow", "Please try again");
+          },
+        },
+      );
           break;
         case "accepted":
           Alert.alert("Unfollow page?", `Stop following @${page.pageHandle}?`, [
@@ -67,7 +74,14 @@ const PageSearchScreen: React.FC = () => {
             {
               text: "Unfollow",
               style: "destructive",
-              onPress: () => unfollow.mutate(vars),
+              onPress: () =>
+                unfollow.mutate(vars,
+        {
+          onError: () => {
+            notify.error("Couldn't update follow", "Please try again");
+          },
+        },
+      ),
             },
           ]);
           break;
@@ -80,7 +94,14 @@ const PageSearchScreen: React.FC = () => {
               {
                 text: "Cancel request",
                 style: "destructive",
-                onPress: () => unfollow.mutate(vars),
+                onPress: () =>
+                unfollow.mutate(vars,
+        {
+          onError: () => {
+            notify.error("Couldn't update follow", "Please try again");
+          },
+        },
+      ),
               },
             ],
           );
@@ -124,7 +145,7 @@ const PageSearchScreen: React.FC = () => {
       return (
         <View style={styles.stateWrap}>
           <View style={styles.stateIcon}>
-            <Ionicons name="search" size={26} color="#9a9aa0" />
+            <Ionicons name="search" size={26} color="#8e8e93" />
           </View>
           <Text style={styles.stateTitle}>Find pages</Text>
           <Text style={styles.stateBody}>
@@ -136,7 +157,7 @@ const PageSearchScreen: React.FC = () => {
     if (isLoading) {
       return (
         <View style={styles.stateWrap}>
-          <ActivityIndicator color="#9a9aa0" />
+          <ActivityIndicator color="#8e8e93" />
         </View>
       );
     }
@@ -165,7 +186,7 @@ const PageSearchScreen: React.FC = () => {
     >
       <View style={styles.header}>
         <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color="#9a9aa0" />
+          <Ionicons name="search" size={18} color="#8e8e93" />
           <TextInput
             style={styles.input}
             value={input}
@@ -179,7 +200,7 @@ const PageSearchScreen: React.FC = () => {
           />
           {input.length > 0 && (
             <Pressable onPress={() => setInput("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={18} color="#9a9aa0" />
+              <Ionicons name="close-circle" size={18} color="#8e8e93" />
             </Pressable>
           )}
         </View>
@@ -237,7 +258,7 @@ const PageRow = React.memo<{
         />
       ) : (
         <View style={[styles.cover, styles.coverFallback]}>
-          <Ionicons name="albums" size={20} color="#77777c" />
+          <Ionicons name="albums" size={20} color="#8e8e93" />
         </View>
       )}
 
@@ -251,7 +272,7 @@ const PageRow = React.memo<{
         <View style={styles.metaRow}>
           {!item.isPublic && (
             <View style={styles.privateTag}>
-              <Ionicons name="lock-closed" size={10} color="#c9c9cf" />
+              <Ionicons name="lock-closed" size={10} color="#8e8e93" />
               <Text style={styles.privateLabel}>Private</Text>
             </View>
           )}
@@ -289,7 +310,7 @@ PageRow.displayName = "PageRow";
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#fff",
   },
   header: {
     flexDirection: "row",
@@ -304,20 +325,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#262628",
+    backgroundColor: "#F1F1F3",
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 40,
   },
   input: {
     flex: 1,
-    color: "#fff",
+    color: "#111",
     fontSize: 16,
     padding: 0,
   },
   cancel: {
-    color: "#c9c9cf",
+    color: "#6e6e73",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   listContent: {
@@ -337,7 +359,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 12,
-    backgroundColor: "#262628",
+    backgroundColor: "#F1F1F3",
   },
   coverFallback: {
     alignItems: "center",
@@ -348,12 +370,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   rowTitle: {
-    color: "#fff",
+    color: "#111",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   rowHandle: {
-    color: "#9a9aa0",
+    color: "#8e8e93",
     fontSize: 13,
     marginTop: 1,
   },
@@ -369,12 +392,13 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   privateLabel: {
-    color: "#c9c9cf",
+    color: "#6e6e73",
     fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   followers: {
-    color: "#77777c",
+    color: "#8e8e93",
     fontSize: 12,
   },
   actionBtn: {
@@ -386,25 +410,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   actionPrimary: {
-    backgroundColor: "#fff",
+    backgroundColor: "#111",
   },
   actionSecondary: {
-    backgroundColor: "#2f2f31",
+    backgroundColor: "#E9E9EB",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#3a3a3c",
+    borderColor: "rgba(0, 0, 0, 0.08)",
   },
   actionDisabled: {
     opacity: 0.6,
   },
   actionLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   actionLabelPrimary: {
-    color: "#000",
+    color: "#fff",
   },
   actionLabelSec: {
-    color: "#e6e6ea",
+    color: "#111",
   },
   stateWrap: {
     flex: 1,
@@ -417,19 +442,20 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#232325",
+    backgroundColor: "#F1F1F3",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
   },
   stateTitle: {
-    color: "#fff",
+    color: "#111",
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     marginBottom: 6,
   },
   stateBody: {
-    color: "#9a9aa0",
+    color: "#8e8e93",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
@@ -439,11 +465,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 9,
     borderRadius: 18,
-    backgroundColor: "#2f2f31",
+    backgroundColor: "#E9E9EB",
   },
   retryLabel: {
-    color: "#e6e6ea",
+    color: "#111",
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

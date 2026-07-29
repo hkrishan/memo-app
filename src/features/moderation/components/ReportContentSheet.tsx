@@ -90,7 +90,7 @@ export const ReportContentSheet: React.FC<ReportContentSheetProps> = ({
         },
         onError: () => {
           // Native alert: visible even when the sheet sits above a modal
-          Alert.alert("Couldn't send report", "Please try again.");
+          Alert.alert("Couldn't send report", "Please try again");
         },
       },
     );
@@ -218,6 +218,7 @@ const styles = StyleSheet.create({
   },
   reasonLabelSelected: {
     color: "#fff",
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   detailsInput: {
@@ -248,6 +249,7 @@ const styles = StyleSheet.create({
   submitLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

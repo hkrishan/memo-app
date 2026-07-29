@@ -106,13 +106,15 @@ const styles = StyleSheet.create({
   timeText: {
     color: CAMERA_UI_CONFIG.COLORS.TEXT,
     fontSize: CAMERA_UI_CONFIG.TYPOGRAPHY.TIMER_SIZE,
-    fontWeight: '600',
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
     fontVariant: ['tabular-nums'],
   },
   maxTimeText: {
     color: CAMERA_UI_CONFIG.COLORS.TEXT_SECONDARY,
     fontSize: CAMERA_UI_CONFIG.TYPOGRAPHY.TIMER_SIZE - 2,
-    fontWeight: '500',
+    fontFamily: "InstrumentSans_500Medium",
+    fontWeight: "500",
     marginLeft: 4,
     fontVariant: ['tabular-nums'],
   },

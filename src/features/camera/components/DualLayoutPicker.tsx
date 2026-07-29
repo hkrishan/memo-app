@@ -119,12 +119,14 @@ const styles = StyleSheet.create({
   title: {
     color: COLORS.TEXT,
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     lineHeight: 22,
   },
   subtitle: {
     color: COLORS.ACCENT,
     fontSize: 13,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     lineHeight: 18,
     marginTop: 1,
@@ -152,6 +154,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
 });

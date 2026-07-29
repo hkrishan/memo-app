@@ -19,13 +19,30 @@ import {
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { scriptType } from "@/lib/tokens";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import dayjs from "dayjs";
 
-import { COLLAGE_TEMPLATES, ratioById } from "../templates";
+import Sheet from "@/components/ui/Sheet";
+import {
+  CANVAS_RATIOS,
+  COLLAGE_TEMPLATES,
+  ratioById,
+  templateById,
+} from "../templates";
 import { TemplatePreview } from "../components/TemplatePreview";
 import {
+  LibraryPickerSheet,
+  type PickedPhoto,
+} from "../components/LibraryPickerSheet";
+import {
+  MAX_PAGES,
+  convertToStudio,
+  projectFromTemplate,
+} from "../engine/document";
+import {
+  newProjectId,
   useCreateProjectsStore,
   type CreateProject,
 } from "../store/createProjectsStore";
@@ -54,38 +71,74 @@ const CreateHomeScreen = () => {
 
   const projects = useCreateProjectsStore((state) => state.projects);
   const removeProject = useCreateProjectsStore((state) => state.remove);
+  const upsertProject = useCreateProjectsStore((state) => state.upsert);
 
   const handleBack = useCallback(() => router.back(), [router]);
 
-  const openTemplate = useCallback(
-    (templateId: string) => {
+  // Templates seed freeform Studio projects — photos first (the picker
+  // caps at the template's slot count), then the editor opens pre-filled
+  const [templateTarget, setTemplateTarget] = useState<string | null>(null);
+
+  const openTemplate = useCallback((templateId: string) => {
+    setTemplateTarget(templateId);
+  }, []);
+
+  const handleTemplatePhotos = useCallback(
+    (photos: PickedPhoto[]) => {
+      const templateId = templateTarget;
+      setTemplateTarget(null);
+      if (!templateId || photos.length === 0) return;
+      const project = projectFromTemplate(
+        newProjectId(),
+        templateId,
+        "square",
+        photos,
+      );
+      upsertProject(project);
       router.push({
-        pathname: "/create/editor",
-        params: { templateId },
+        pathname: "/create/studio",
+        params: { projectId: project.id },
       });
     },
-    [router],
+    [templateTarget, upsertProject, router],
   );
 
   const openCarousel = useCallback(() => {
     router.push("/create/carousel");
   }, [router]);
 
+  // ---- Studio: start-from-scratch sheet (ratio + page count) ----
+  const [scratchOpen, setScratchOpen] = useState(false);
+  const [scratchRatioId, setScratchRatioId] = useState("portrait");
+  const [scratchPages, setScratchPages] = useState(3);
+
+  const startStudio = useCallback(() => {
+    setScratchOpen(false);
+    router.push({
+      pathname: "/create/studio",
+      params: { ratioId: scratchRatioId, pages: String(scratchPages) },
+    });
+  }, [router, scratchRatioId, scratchPages]);
+
   const openProject = useCallback(
     (project: CreateProject) => {
-      if (project.type === "collage") {
-        router.push({
-          pathname: "/create/editor",
-          params: { projectId: project.id },
-        });
-      } else {
+      if (project.type === "carousel") {
         router.push({
           pathname: "/create/carousel",
           params: { projectId: project.id },
         });
+        return;
       }
+      // Collage drafts upgrade to studio in place (same id, lossless)
+      if (project.type === "collage") {
+        upsertProject(convertToStudio(project));
+      }
+      router.push({
+        pathname: "/create/studio",
+        params: { projectId: project.id },
+      });
     },
-    [router],
+    [router, upsertProject],
   );
 
   const confirmDelete = useCallback(
@@ -109,7 +162,9 @@ const CreateHomeScreen = () => {
         title:
           project.type === "collage"
             ? `Collage · ${ratioById(project.ratioId).label}`
-            : `Carousel · ${project.pages} pages`,
+            : project.type === "studio"
+              ? `Studio · ${project.pageCount} page${project.pageCount === 1 ? "" : "s"} · ${ratioById(project.ratioId).label}`
+              : `Carousel · ${project.pages} pages`,
         subtitle: `Edited ${dayjs(project.updatedAt).format("D MMM, HH:mm")}`,
       })),
     [projects],
@@ -168,6 +223,32 @@ const CreateHomeScreen = () => {
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
       >
+        {tab === "collage" && (
+          <>
+            {/* Studio: the freeform, SCRL-style editor */}
+            <Pressable
+              onPress={() => setScratchOpen(true)}
+              style={({ pressed }) => [
+                styles.studioCard,
+                pressed && styles.cardPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Start from scratch in Studio"
+            >
+              <View style={styles.studioIcon}>
+                <Ionicons name="color-wand" size={20} color="#fff" />
+              </View>
+              <View style={styles.studioTextWrap}>
+                <Text style={styles.studioTitle}>Start from scratch</Text>
+                <Text style={styles.studioText}>
+                  Freeform pages — drag photos anywhere, even across pages
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#8E8E93" />
+            </Pressable>
+            <Text style={styles.sectionLabel}>Templates</Text>
+          </>
+        )}
         {tab === "collage" && (
           <View style={styles.templateGrid}>
             {COLLAGE_TEMPLATES.map((template) => (
@@ -262,7 +343,13 @@ const CreateHomeScreen = () => {
                     />
                   ) : (
                     <View style={styles.projectThumbFallback}>
-                      <Ionicons name="albums" size={22} color="#8E8E93" />
+                      <Ionicons
+                        name={
+                          project.type === "studio" ? "color-wand" : "albums"
+                        }
+                        size={22}
+                        color="#8E8E93"
+                      />
                     </View>
                   )}
                   <View style={styles.projectTextWrap}>
@@ -283,6 +370,90 @@ const CreateHomeScreen = () => {
             </View>
           ))}
       </ScrollView>
+
+      {/* Template flow: photos first, then the Studio opens pre-filled */}
+      <LibraryPickerSheet
+        visible={templateTarget != null}
+        maxCount={
+          templateTarget ? templateById(templateTarget).slots.length : 1
+        }
+        allowCameraRoll
+        allowAlbums
+        onConfirm={handleTemplatePhotos}
+        onClose={() => setTemplateTarget(null)}
+      />
+
+      {/* Start-from-scratch: ratio + page count, then into the Studio */}
+      <Sheet
+        visible={scratchOpen}
+        onClose={() => setScratchOpen(false)}
+        title="New Studio project"
+      >
+        <View style={styles.scratchBody}>
+          <Text style={styles.scratchLabel}>Format</Text>
+          <View style={styles.scratchRow}>
+            {CANVAS_RATIOS.map((ratio) => {
+              const active = ratio.id === scratchRatioId;
+              return (
+                <Pressable
+                  key={ratio.id}
+                  onPress={() => setScratchRatioId(ratio.id)}
+                  style={[
+                    styles.scratchSegment,
+                    active && styles.scratchSegmentActive,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text
+                    style={[
+                      styles.scratchSegmentText,
+                      active && styles.scratchSegmentTextActive,
+                    ]}
+                  >
+                    {ratio.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.scratchLabel}>Pages</Text>
+          <View style={styles.scratchRow}>
+            <Pressable
+              onPress={() => setScratchPages((n) => Math.max(n - 1, 1))}
+              style={styles.stepButton}
+              accessibilityRole="button"
+              accessibilityLabel="Fewer pages"
+            >
+              <Ionicons name="remove" size={18} color="#000" />
+            </Pressable>
+            <View style={styles.stepValue}>
+              <Text style={styles.stepValueText}>{scratchPages}</Text>
+            </View>
+            <Pressable
+              onPress={() => setScratchPages((n) => Math.min(n + 1, MAX_PAGES))}
+              style={styles.stepButton}
+              accessibilityRole="button"
+              accessibilityLabel="More pages"
+            >
+              <Ionicons name="add" size={18} color="#000" />
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={startStudio}
+            style={({ pressed }) => [
+              styles.scratchCreate,
+              pressed && styles.cardPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Create project"
+          >
+            <Text style={styles.scratchCreateText}>Create</Text>
+          </Pressable>
+        </View>
+      </Sheet>
     </View>
   );
 };
@@ -310,14 +481,12 @@ const styles = StyleSheet.create({
   },
   navTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
-  // Pacifico ships one weight; fontWeight would force a fallback font
   navTitleScript: {
-    fontFamily: "Pacifico_400Regular",
-    fontSize: 18,
-    fontWeight: "400",
+    ...scriptType(17),
     color: "#000",
   },
   tabBar: {
@@ -344,6 +513,7 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },
@@ -369,6 +539,7 @@ const styles = StyleSheet.create({
   },
   templateName: {
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#3C3C43",
   },
@@ -400,6 +571,7 @@ const styles = StyleSheet.create({
   },
   carouselTitle: {
     fontSize: 20,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
     marginBottom: 8,
@@ -423,6 +595,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   empty: {
@@ -432,6 +605,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#3C3C43",
   },
@@ -464,6 +638,7 @@ const styles = StyleSheet.create({
   },
   projectTitle: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -477,6 +652,122 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: "center",
     justifyContent: "center",
+  },
+  studioCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 18,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "#F9F9FB",
+  },
+  studioIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  studioTextWrap: {
+    flex: 1,
+  },
+  studioTitle: {
+    fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
+    color: "#000",
+  },
+  studioText: {
+    fontSize: 12,
+    color: "#8E8E93",
+    marginTop: 1,
+  },
+  sectionLabel: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#8E8E93",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  scratchBody: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  scratchLabel: {
+    marginTop: 14,
+    marginBottom: 8,
+    fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#8E8E93",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  scratchRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  scratchSegment: {
+    minWidth: 52,
+    height: 34,
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    backgroundColor: "#F2F2F7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scratchSegmentActive: {
+    backgroundColor: "#000",
+  },
+  scratchSegmentText: {
+    fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#3C3C43",
+    fontVariant: ["tabular-nums"],
+  },
+  scratchSegmentTextActive: {
+    color: "#fff",
+  },
+  stepButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#F2F2F7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepValue: {
+    minWidth: 52,
+    alignItems: "center",
+  },
+  stepValueText: {
+    fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
+    color: "#000",
+    fontVariant: ["tabular-nums"],
+  },
+  scratchCreate: {
+    marginTop: 22,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scratchCreateText: {
+    color: "#fff",
+    fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
   },
 });
 

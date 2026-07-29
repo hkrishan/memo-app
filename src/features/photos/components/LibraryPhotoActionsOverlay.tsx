@@ -1,7 +1,9 @@
 /**
- * Per-photo action bar shown over the fullscreen library viewer: Add to
- * album (a checkbox picker that edits the photo's full album membership) and
- * Delete. Fades in lockstep with the viewer chrome.
+ * Per-photo actions shown over the fullscreen library viewer: Add to album
+ * (a checkbox picker that edits the photo's full album membership) and
+ * Delete — icon-only buttons stacked vertically in the top-right corner
+ * (the viewer's top chrome keeps that corner empty as a spacer). Fades in
+ * lockstep with the viewer chrome.
  *
  * Both actions work while a capture is still UPLOADING. Such a photo has no
  * server id yet, so its actions are applied to the upload-queue entry
@@ -18,6 +20,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { notify } from "@/components/global";
 import { MediaAsset } from "@/features/album/hooks";
@@ -52,6 +55,7 @@ export const LibraryPhotoActionsOverlay: React.FC<
   onDeleteStarted,
   onDeleteFailed,
 }) => {
+  const insets = useSafeAreaInsets();
   const { data: albums } = useGetAlbumsQuery();
   const deleteMutation = useDeleteLibraryPhotoMutation();
   const setAlbumsMutation = useSetLibraryPhotoAlbumsMutation();
@@ -139,7 +143,7 @@ export const LibraryPhotoActionsOverlay: React.FC<
         // The queue entry is patched synchronously, so the label re-renders
         // from the merged library on the very next frame
         void setEntryAlbums(asset.id, nextAlbums).catch(() =>
-          notify.error("Couldn't update albums", "Please try again."),
+          notify.error("Couldn't update albums", "Please try again"),
         );
         notify.success("Albums updated", describeResult(albumIds));
         return;
@@ -158,7 +162,7 @@ export const LibraryPhotoActionsOverlay: React.FC<
           onSuccess: () =>
             notify.success("Albums updated", describeResult(albumIds)),
           onError: () =>
-            notify.error("Couldn't update albums", "Please try again."),
+            notify.error("Couldn't update albums", "Please try again"),
         },
       );
     },
@@ -176,7 +180,7 @@ export const LibraryPhotoActionsOverlay: React.FC<
     <>
       {memberAlbums.length > 0 && (
         <Animated.View
-          style={[styles.albumBanner, { bottom: bottomInset + 68 }, barStyle]}
+          style={[styles.albumBanner, { bottom: bottomInset + 16 }, barStyle]}
           pointerEvents="none"
         >
           <Ionicons name="albums" size={12} color="#fff" />
@@ -189,27 +193,29 @@ export const LibraryPhotoActionsOverlay: React.FC<
         </Animated.View>
       )}
 
+      {/* Icon stack in the top-right corner, aligned with the chrome's
+          close button row and growing downward */}
       <Animated.View
-        style={[styles.bar, { bottom: bottomInset + 16 }, barStyle]}
+        style={[styles.stack, { top: insets.top + 4 }, barStyle]}
         pointerEvents={chromeVisible ? "box-none" : "none"}
       >
         <Pressable
           onPress={() => setShowAlbumPicker(true)}
-          style={styles.button}
+          style={styles.iconButton}
+          hitSlop={6}
           accessibilityRole="button"
           accessibilityLabel="Add to album"
         >
           <Ionicons name="albums-outline" size={20} color="#fff" />
-          <Text style={styles.buttonText}>Add to album</Text>
         </Pressable>
         <Pressable
           onPress={handleDelete}
-          style={styles.button}
+          style={styles.iconButton}
+          hitSlop={6}
           accessibilityRole="button"
           accessibilityLabel="Delete photo"
         >
           <Ionicons name="trash-outline" size={20} color="#FF6961" />
-          <Text style={[styles.buttonText, styles.deleteText]}>Delete</Text>
         </Pressable>
       </Animated.View>
 
@@ -226,12 +232,11 @@ export const LibraryPhotoActionsOverlay: React.FC<
 };
 
 const styles = StyleSheet.create({
-  bar: {
+  stack: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "center",
+    right: 12,
+    flexDirection: "column",
+    alignItems: "center",
     gap: 12,
   },
   albumBanner: {
@@ -249,24 +254,16 @@ const styles = StyleSheet.create({
   albumBannerText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
-  button: {
-    flexDirection: "row",
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 24,
+    justifyContent: "center",
     backgroundColor: "rgba(0, 0, 0, 0.55)",
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  deleteText: {
-    color: "#FF6961",
   },
 });
 

@@ -106,7 +106,7 @@ const OtherUserScreen = () => {
         notify.success("Unblocked", `${name} has been unblocked`);
       },
       onError: () => {
-        notify.error("Couldn't Unblock", "Please try again");
+        notify.error("Couldn't unblock", "Please try again");
       },
     });
   }, [unblockUser, userId, name]);
@@ -242,6 +242,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 22,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
   },
@@ -251,6 +252,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 24,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     marginTop: 10,
     color: "#000",
@@ -268,12 +270,14 @@ const styles = StyleSheet.create({
   blockedBadgeText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   sectionLabel: {
     fontSize: 12,
     color: "#999",
     letterSpacing: 1.2,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     marginTop: 28,
     marginBottom: 8,

@@ -143,6 +143,7 @@ const styles = StyleSheet.create({
   },
   segmentLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     letterSpacing: 0.2,
   },

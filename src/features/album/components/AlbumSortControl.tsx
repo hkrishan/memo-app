@@ -118,6 +118,7 @@ const styles = StyleSheet.create({
   },
   buttonLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -155,6 +156,7 @@ const styles = StyleSheet.create({
     color: "#111",
   },
   itemLabelActive: {
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
 });

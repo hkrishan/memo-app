@@ -290,13 +290,8 @@ const AlbumChatScreen = memo<AlbumChatScreenProps>(
       [retryMessage],
     );
 
-    // Handle attachment press (stub)
-    const handleAttachmentPress = useCallback(() => {
-      Keyboard.dismiss();
-      Alert.alert("Attachments", "Attachment functionality coming soon!", [
-        { text: "OK" },
-      ]);
-    }, []);
+    // Attachments intentionally not wired yet — the composer hides the
+    // button when no handler is passed (no shipped "coming soon" alerts)
 
     const showInitialLoading = isInitialLoading && isEmpty;
 
@@ -343,7 +338,6 @@ const AlbumChatScreen = memo<AlbumChatScreenProps>(
         <View style={{ marginBottom: bottomInset }}>
           <ChatComposer
             onSend={handleSend}
-            onAttachmentPress={handleAttachmentPress}
             onTypingChange={setTyping}
           />
         </View>

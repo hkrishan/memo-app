@@ -23,7 +23,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface ChatComposerProps {
   onSend: (text: string) => void;
-  onAttachmentPress: () => void;
+  onAttachmentPress?: () => void;
   /** Called with true while the user has draft text, false when cleared/blurred/sent. */
   onTypingChange?: (typing: boolean) => void;
   disabled?: boolean;
@@ -109,7 +109,7 @@ const ChatComposer = memo<ChatComposerProps>(
 
     const handleAttachmentPress = useCallback(() => {
       Keyboard.dismiss();
-      onAttachmentPress();
+      onAttachmentPress?.();
     }, [onAttachmentPress]);
 
     const inputContainerAnimatedStyle = useAnimatedStyle(() => ({
@@ -134,16 +134,19 @@ const ChatComposer = memo<ChatComposerProps>(
         <Animated.View
           style={[styles.inputContainer, inputContainerAnimatedStyle]}
         >
-          {/* Attachment button */}
-          <Pressable
-            onPress={handleAttachmentPress}
-            style={styles.attachmentButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityRole="button"
-            accessibilityLabel="Add attachment"
-          >
-            <Ionicons name="add-circle" size={28} color="#000" />
-          </Pressable>
+          {/* Attachment button — hidden until a handler exists (a shipped
+              "coming soon" alert is worse than no button) */}
+          {onAttachmentPress && (
+            <Pressable
+              onPress={handleAttachmentPress}
+              style={styles.attachmentButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Add attachment"
+            >
+              <Ionicons name="add-circle" size={28} color="#000" />
+            </Pressable>
+          )}
 
           {/* Text input */}
           <View style={styles.inputWrapper}>
@@ -157,7 +160,7 @@ const ChatComposer = memo<ChatComposerProps>(
               onChangeText={handleChangeText}
               onBlur={handleBlur}
               onContentSizeChange={handleContentSizeChange}
-              placeholder="Message..."
+              placeholder="Message…"
               placeholderTextColor="#999"
               multiline
               maxLength={4000}

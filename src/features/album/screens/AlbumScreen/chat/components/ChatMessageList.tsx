@@ -161,6 +161,9 @@ const ChatMessageList = memo<ChatMessageListProps>(
         const distanceFromBottom =
           contentSize.height - layoutMeasurement.height - contentOffset.y;
         const nearBottom = distanceFromBottom < SCROLL_THRESHOLD;
+        // Commit only on the transition — this ran a setState (bail-out or
+        // not) on every scroll frame at 60Hz
+        if (nearBottom === isNearBottom.current) return;
         isNearBottom.current = nearBottom;
         setShowScrollButton(!nearBottom);
       },

@@ -56,6 +56,24 @@ export const usePageProfileQuery = (albumId: string, pageId: string) => {
   });
 };
 
+/**
+ * The album members behind a page (viewer-accessible — powers the feed's
+ * "who's in this" sheet). `enabled` gates the fetch to when the sheet is
+ * actually open, so scrolling the feed fetches nothing.
+ */
+export const usePageMembersQuery = (
+  albumId: string,
+  pageId: string,
+  enabled: boolean,
+) => {
+  return useQuery({
+    queryKey: ["page", "members", albumId, pageId],
+    queryFn: () => pageApi().getPageMembers(albumId, pageId),
+    staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+};
+
 export const useSetWebPasswordMutation = () => {
   return useMutation({
     mutationFn: ({

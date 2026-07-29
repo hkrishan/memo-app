@@ -4,13 +4,34 @@ import {
   selectIsInitialized,
   useAuthStore,
 } from "@/features/auth/store/authStore";
+import {
+  selectHasCompletedOnboarding,
+  useOnboardingStore,
+} from "@/features/onboarding/store/onboardingStore";
 import { useDropTakeover } from "@/features/moments/hooks/useDropTakeover";
+import { useInAppNotificationBanners } from "@/features/notifications/inApp/useInAppNotificationBanners";
 import { useResumeLibraryUploads } from "@/features/photos/store/libraryUploadQueue";
 import { useResumeAlbumUploads } from "@/features/album/store/uploadManager";
+
+
+// Identity-stable screen options (this layout re-renders on every
+// navigation via usePathname — fresh inline objects made every
+// Stack.Screen reconcile)
+const MODAL_OPTIONS = { headerShown: false, presentation: "modal" } as const;
+const PLAIN_OPTIONS = { headerShown: false, gestureEnabled: true } as const;
+const NO_GESTURE_OPTIONS = { headerShown: false, gestureEnabled: false } as const;
+const TAKEOVER_OPTIONS = {
+  headerShown: false,
+  presentation: "fullScreenModal",
+  gestureEnabled: false,
+} as const;
 
 export default function AppLayout() {
   const isAuthenticated = useAuthStore(selectIsAuthenticated);
   const isInitialized = useAuthStore(selectIsInitialized);
+  const hasCompletedOnboarding = useOnboardingStore(
+    selectHasCompletedOnboarding,
+  );
   const pathname = usePathname();
 
   // BeReal-style takeover: whenever the app opens/foregrounds with an
@@ -18,6 +39,11 @@ export default function AppLayout() {
   // (also keeps the iOS Live Activity countdown in sync, app-wide).
   // Internally a no-op while unauthenticated.
   useDropTakeover();
+
+  // Socket-delivered banners for pushes that arrive while the app is
+  // foregrounded (the OS banner is suppressed in push.ts). No-op while
+  // unauthenticated.
+  useInAppNotificationBanners();
 
   // Resume any captures still waiting to upload to the Memo library
   // (persisted queue survives restarts; retries on foreground/network)
@@ -49,107 +75,88 @@ export default function AppLayout() {
     );
   }
 
+  // One-time intro + permission priming. Sits AFTER the auth guard (the
+  // flow is meaningless logged out) and targets a route OUTSIDE this group
+  // so the redirect can't loop. The MMKV-backed flag hydrates synchronously,
+  // so no isInitialized-style wait is needed. Carries the intended path the
+  // same way the login guard does.
+  if (!hasCompletedOnboarding) {
+    const redirect = pathname && pathname !== "/" ? pathname : undefined;
+    return (
+      <Redirect
+        href={
+          redirect
+            ? { pathname: "/onboarding", params: { redirect } }
+            : "/onboarding"
+        }
+      />
+    );
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen
         name="user"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="user/[userId]"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="profile"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="activity"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="search"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="blocked-users"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="premium"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="album/[albumId]/index"
-        options={{
-          headerShown: false,
-          gestureEnabled: true,
-        }}
+        options={PLAIN_OPTIONS}
       />
       <Stack.Screen
         name="album/create"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="album/[albumId]/add-members"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
       <Stack.Screen
         name="album/[albumId]/add-photos"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
 
       <Stack.Screen
         name="album/[albumId]/page/create"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
+      />
+      {/* Studio editor pans its canvas horizontally — the iOS back-swipe
+          would swallow drags near the left edge */}
+      <Stack.Screen
+        name="create/studio"
+        options={NO_GESTURE_OPTIONS}
       />
       <Stack.Screen
         name="drop/[albumId]/[momentId]/[eventId]"
-        options={{
-          headerShown: false,
-          presentation: "fullScreenModal",
-          gestureEnabled: false,
-        }}
+        options={TAKEOVER_OPTIONS}
       />
       <Stack.Screen
         name="album/[albumId]/page/[pageId]/settings"
-        options={{
-          headerShown: false,
-          presentation: "modal",
-        }}
+        options={MODAL_OPTIONS}
       />
     </Stack>
   );

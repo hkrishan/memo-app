@@ -15,13 +15,8 @@ import { Album } from "../types/album.types";
 import { MediaAsset } from "../hooks";
 import { CachedImage } from "@/components/ui/CachedImage";
 import AvatarListRow from "@/components/ui/AvatarListRow";
-import { GlassCircleButton } from "@/components/ui/GlassCircleButton";
 import useUser from "@/features/user/hooks/useUser";
 import CoverPhotoPicker from "./CoverPhotoPicker";
-import {
-  useAlbumChatUnread,
-  UNREAD_CAP,
-} from "../screens/AlbumScreen/chat/unread/useAlbumChatUnread";
 
 const PICTURE_SIZE = 84;
 
@@ -40,10 +35,6 @@ export const AlbumHeader: React.FC<AlbumHeaderProps> = memo(
 
     const members = album?.members ?? [];
     const isOwner = !!user?.userId && user.userId === album?.ownerId;
-
-    // Unread chat messages badge on the chat button; clears when the user
-    // opens chat (the chat screen advances the last-read watermark).
-    const chatUnreadCount = useAlbumChatUnread(album?.albumId);
 
     // Chosen picture, otherwise the latest photo
     const pictureUri =
@@ -73,18 +64,6 @@ export const AlbumHeader: React.FC<AlbumHeaderProps> = memo(
 
     const handleAddMember = useCallback(() => {
       if (album?.albumId) router.push(`/album/${album.albumId}/add-members`);
-    }, [router, album?.albumId]);
-
-    const handleOpenMap = useCallback(() => {
-      if (album?.albumId) router.push(`/album/${album.albumId}/map`);
-    }, [router, album?.albumId]);
-
-    const handleOpenChat = useCallback(() => {
-      if (album?.albumId) router.push(`/album/${album.albumId}/chat`);
-    }, [router, album?.albumId]);
-
-    const handleOpenActivity = useCallback(() => {
-      if (album?.albumId) router.push(`/album/${album.albumId}/activity`);
     }, [router, album?.albumId]);
 
     return (
@@ -132,33 +111,6 @@ export const AlbumHeader: React.FC<AlbumHeaderProps> = memo(
               {assets.length} {assets.length === 1 ? "photo" : "photos"}
             </Text>
           </View>
-
-          <GlassCircleButton onPress={handleOpenActivity} label="Album activity">
-            <Ionicons name="pulse-outline" size={17} color="#111" />
-          </GlassCircleButton>
-
-          <View>
-            <GlassCircleButton onPress={handleOpenChat} label="Album chat">
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={17}
-                color="#111"
-              />
-            </GlassCircleButton>
-            {chatUnreadCount > 0 && (
-              <View style={styles.unreadBadge} pointerEvents="none">
-                <Text style={styles.unreadBadgeText}>
-                  {chatUnreadCount >= UNREAD_CAP
-                    ? `${UNREAD_CAP}+`
-                    : chatUnreadCount}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <GlassCircleButton onPress={handleOpenMap} label="Album map">
-            <Ionicons name="map-outline" size={17} color="#111" />
-          </GlassCircleButton>
         </View>
 
         {!!album?.description && (
@@ -267,6 +219,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
     lineHeight: 29,
@@ -292,29 +245,8 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: "#666",
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
-  },
-  // Same visual language as the AlbumTabs live dot, but sized for a count
-  unreadBadge: {
-    position: "absolute",
-    top: -5,
-    right: -6,
-    minWidth: 17,
-    height: 17,
-    borderRadius: 8.5,
-    paddingHorizontal: 4,
-    backgroundColor: "#FF3B30",
-    borderWidth: 1.5,
-    borderColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1,
-  },
-  unreadBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#fff",
-    lineHeight: 12,
   },
   addMemberButton: {
     width: 30,

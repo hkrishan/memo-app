@@ -25,6 +25,7 @@ import {
   useBlockedUsers,
   useUnblockUser,
 } from "@/features/moderation";
+import { color, radius, type } from "@/lib/tokens";
 
 const BlockedUsersScreen = () => {
   const router = useRouter();
@@ -47,7 +48,7 @@ const BlockedUsersScreen = () => {
           notify.success("Unblocked", `${user.name || "User"} has been unblocked`);
         },
         onError: () => {
-          notify.error("Couldn't Unblock", "Please try again");
+          notify.error("Couldn't unblock", "Please try again");
         },
         onSettled: () => {
           setUnblockingId(null);
@@ -106,7 +107,7 @@ const BlockedUsersScreen = () => {
               <Text style={styles.emptyText}>You haven't blocked anyone</Text>
             </View>
           ) : (
-            <View style={styles.sectionCard}>
+            <View>
               {blocked.map((user, index) => (
                 <View key={user.userId}>
                   {index > 0 && <View style={styles.rowDivider} />}
@@ -154,14 +155,14 @@ export default BlockedUsersScreen;
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: color.bg,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
   },
   safeArea: {
     flexGrow: 1,
@@ -180,15 +181,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#000",
+    ...type.title,
+    color: color.textPrimary,
   },
   helperText: {
     fontSize: 13,
-    color: "#999",
+    color: color.textTertiary,
     lineHeight: 18,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   centered: {
     alignItems: "center",
@@ -201,49 +201,47 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
     textDecorationLine: "underline",
   },
-  sectionCard: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    paddingVertical: 14,
+    gap: 14,
     minHeight: 64,
   },
   rowPressed: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   rowTitle: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
-    color: "#000",
+    color: color.textPrimary,
   },
   rowDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "#e0e0e0",
-    marginLeft: 72,
+    backgroundColor: color.separator,
   },
   unblockButton: {
     minWidth: 76,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: "#e9e9e9",
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    backgroundColor: color.bg,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
   },
   unblockLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
-    color: "#000",
+    color: color.textPrimary,
   },
 });

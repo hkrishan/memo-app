@@ -153,6 +153,7 @@ const styles = StyleSheet.create({
   },
   welcomeBadgeText: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#34C759",
   },

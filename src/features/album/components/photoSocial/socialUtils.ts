@@ -16,9 +16,14 @@ export const formatCompactCount = (count: number): string => {
   return `${value.toFixed(1).replace(/\.0$/, "")}m`;
 };
 
-/** Short relative timestamp: "now", "5m", "3h", "2d", else "Mar 4" */
-export const formatRelativeTime = (iso: string): string => {
-  const date = dayjs(iso);
+/**
+ * THE app-wide short relative timestamp: "now", "5m", "3h", "2d", "3w",
+ * else "Mar 4" (year added when it differs). Four screens used to ship
+ * their own variants ("Just now" / "5m ago" / missing weeks) — import
+ * this one instead of re-rolling it.
+ */
+export const formatRelativeTime = (input: string | Date): string => {
+  const date = dayjs(input);
   const now = dayjs();
   const minutes = now.diff(date, "minute");
   if (minutes < 1) return "now";
@@ -27,6 +32,7 @@ export const formatRelativeTime = (iso: string): string => {
   if (hours < 24) return `${hours}h`;
   const days = now.diff(date, "day");
   if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
   return date.format(date.year() === now.year() ? "MMM D" : "MMM D, YYYY");
 };
 

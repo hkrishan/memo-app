@@ -80,12 +80,14 @@ const styles = StyleSheet.create({
   eyebrowText: {
     color: "#8e8e93",
     fontSize: 11,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
   actionLabel: {
     color: "#9a9aa0",
+    fontFamily: "InstrumentSans_400Regular",
     fontWeight: "400",
   },
 });

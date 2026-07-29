@@ -301,6 +301,7 @@ const styles = StyleSheet.create({
   chipText: {
     color: "#fff",
     fontSize: 13,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     flexShrink: 1,
   },
@@ -347,6 +348,7 @@ const styles = StyleSheet.create({
   suggestionsLabel: {
     color: "rgba(255, 255, 255, 0.45)",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
@@ -372,10 +374,12 @@ const styles = StyleSheet.create({
   suggestionText: {
     color: "rgba(255, 255, 255, 0.9)",
     fontSize: 13,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   suggestionCount: {
     color: "rgba(255, 255, 255, 0.5)",
+    fontFamily: "InstrumentSans_400Regular",
     fontWeight: "400",
   },
   emptyState: {

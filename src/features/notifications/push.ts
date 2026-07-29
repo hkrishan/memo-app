@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
@@ -178,13 +178,15 @@ export function extractUrlFromNotificationData(
   return null;
 }
 
-function extractUrl(
-  response: Notifications.NotificationResponse,
+/**
+ * The full tap-routing rule, shared by push taps and the socket-delivered
+ * in-app banners: moment payloads with full event coordinates go straight
+ * into the drop capture screen — deliberately ahead of data.url, whose
+ * server value still points at the album's Moments tab.
+ */
+export function routeForNotificationData(
+  data: Record<string, unknown> | null | undefined,
 ): string | null {
-  const data = response.notification.request.content.data;
-  // Moment pushes with full event coordinates go straight into the drop
-  // capture screen — deliberately ahead of data.url, whose server value
-  // still points at the album's Moments tab.
   if (
     data?.type === "moment" &&
     typeof data.albumId === "string" &&
@@ -202,6 +204,12 @@ function extractUrl(
   return extractUrlFromNotificationData(data);
 }
 
+function extractUrl(
+  response: Notifications.NotificationResponse,
+): string | null {
+  return routeForNotificationData(response.notification.request.content.data);
+}
+
 /**
  * Routes notification taps to the URL carried in the notification's
  * `data.url` payload (or derived from typed payloads such as
@@ -212,14 +220,19 @@ export function usePushNotificationRouting(): void {
   const router = useRouter();
 
   useEffect(() => {
-    // Show notifications while the app is foregrounded (banner + sound).
+    // Foregrounded, the socket-delivered in-app banner takes over — the OS
+    // banner/sound would double up, so pushes go fully silent while active.
+    // Backgrounded/inactive keeps the normal OS presentation.
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async () => {
+        const active = AppState.currentState === "active";
+        return {
+          shouldShowBanner: !active,
+          shouldShowList: !active,
+          shouldPlaySound: !active,
+          shouldSetBadge: false,
+        };
+      },
     });
 
     const subscription = Notifications.addNotificationResponseReceivedListener(

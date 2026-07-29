@@ -69,11 +69,14 @@ const styles = StyleSheet.create({
   title: {
     color: "#fff",
     fontSize: 20,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 10,
   },
   subtitle: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 15,
     lineHeight: 21,
@@ -93,6 +96,7 @@ const styles = StyleSheet.create({
   pillLabel: {
     color: "#111",
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

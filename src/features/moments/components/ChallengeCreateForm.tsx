@@ -65,7 +65,7 @@ const ChallengeCreateForm: React.FC<MomentCreateFormProps> = ({
           onClose();
         },
         onError: () => {
-          notify.error("Couldn't start the challenge", "Please try again.");
+          notify.error("Couldn't start the challenge", "Please try again");
         },
       },
     );
@@ -121,6 +121,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     color: "rgba(255, 255, 255, 0.55)",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.6,
@@ -128,6 +129,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   promptInput: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -145,6 +148,8 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   footnote: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     color: "rgba(255, 255, 255, 0.45)",
     fontSize: 12,
     textAlign: "center",

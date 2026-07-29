@@ -15,7 +15,13 @@
  */
 
 import React, { memo, useCallback, useMemo } from "react";
-import { View, StyleSheet, Pressable, ScrollView } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
   SharedValue,
@@ -32,6 +38,7 @@ import {
 } from "../../components/GallerySectionRow";
 import { MediaAsset } from "../../hooks";
 import { useAlbumPhotoViewerExtras } from "../../hooks/useAlbumPhotoViewerExtras";
+import { ImageWarmup, type WarmupItem } from "@/components/ui/ImageWarmup";
 import { useGetPhotosQuery, useAlbumPhotoTagsQuery } from "../../api/photo.queries";
 import { PhotoWithUploader } from "../../types/album.types";
 import { memberColor } from "../../memberColor";
@@ -77,9 +84,25 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
 
   // Same query keys the album screen already holds — cache hits, no new
   // backend surface. Photos carry uploader/social/gps for the sections.
-  const { data: photos } = useGetPhotosQuery(albumId ?? "");
-  const { data: moments } = useGetMomentsQuery(albumId ?? "");
-  const { data: tagCounts } = useAlbumPhotoTagsQuery(albumId ?? "");
+  const {
+    data: photos,
+    refetch: refetchPhotos,
+    isRefetching: isRefetchingPhotos,
+  } = useGetPhotosQuery(albumId ?? "");
+  const { data: moments, refetch: refetchMoments } = useGetMomentsQuery(
+    albumId ?? "",
+  );
+  const { data: tagCounts, refetch: refetchTags } = useAlbumPhotoTagsQuery(
+    albumId ?? "",
+  );
+
+  // Pull-to-refresh on the most-visited screen in the app — every sibling
+  // list already had one
+  const handleRefresh = useCallback(() => {
+    void refetchPhotos();
+    void refetchMoments();
+    void refetchTags();
+  }, [refetchPhotos, refetchMoments, refetchTags]);
 
   // The viewer's album layer (like/comment/tag overlay, double-tap like,
   // delete pop choreography) — shared with the full-gallery screen
@@ -107,6 +130,19 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       });
     },
     [router, albumId],
+  );
+
+  // Snapchat-style prefetch: warm the viewer-size derivatives of the
+  // newest few photos onto disk, so the FIRST fullscreen open paints
+  // sharp instantly instead of blur-upping from the thumbnail
+  const viewerWarmupItems = useMemo<WarmupItem[]>(
+    () =>
+      (photos ?? [])
+        .slice(0, 6)
+        .map((photo) => photo.displayUrl ?? photo.url)
+        .filter((uri): uri is string => !!uri)
+        .map((uri) => ({ uri, bucket: "full" as const })),
+    [photos],
   );
 
   // Newest-first ONCE for the whole page — the sections and the People
@@ -308,6 +344,13 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetchingPhotos}
+            onRefresh={handleRefresh}
+            tintColor="#888"
+          />
+        }
       >
         {/* Profile-style header scrolls away with the sections; topInset
             keeps its content clear of the absolutely-positioned nav bar
@@ -344,6 +387,9 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       </Animated.ScrollView>
 
       <GalleryFabs albumId={albumId} />
+
+      {/* Background disk warmup for the first fullscreen opens */}
+      <ImageWarmup items={viewerWarmupItems} concurrency={2} />
     </View>
   );
 };
@@ -459,6 +505,7 @@ const styles = StyleSheet.create({
   // Same section-header voice as GallerySectionRow
   peopleTitle: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#8E8E93",
     textTransform: "uppercase",
@@ -466,6 +513,7 @@ const styles = StyleSheet.create({
   },
   peopleCount: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#C7C7CC",
     fontVariant: ["tabular-nums"],
@@ -502,6 +550,7 @@ const styles = StyleSheet.create({
   personName: {
     flexShrink: 1,
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#3C3C43",
   },
@@ -519,6 +568,7 @@ const styles = StyleSheet.create({
   },
   personCountText: {
     fontSize: 10,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
     fontVariant: ["tabular-nums"],

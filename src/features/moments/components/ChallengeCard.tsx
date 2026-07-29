@@ -197,6 +197,7 @@ const ChallengeCard: React.FC<MomentCardProps> = ({
 const styles = StyleSheet.create({
   prompt: {
     fontSize: 21,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#000",
     lineHeight: 28,
@@ -210,6 +211,7 @@ const styles = StyleSheet.create({
   },
   deadlineText: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#8E8E93",
   },
@@ -275,6 +277,7 @@ const styles = StyleSheet.create({
   postButtonLabel: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   postedButton: {
@@ -283,6 +286,7 @@ const styles = StyleSheet.create({
   postedLabel: {
     color: "#000",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

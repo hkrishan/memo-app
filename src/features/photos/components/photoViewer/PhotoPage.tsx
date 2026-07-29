@@ -80,8 +80,14 @@ const DISMISS_MIN_SCALE = 0.52;
 interface PhotoPageProps {
   asset: MediaAsset;
   isActive: boolean;
-  /** Per-page uploader pill — travels with this page while swiping. */
-  attribution?: React.ReactNode;
+  /**
+   * Per-page uploader pill — travels with this page while swiping. A render
+   * FUNCTION (stable identity) rather than a prebuilt element: an element
+   * built in the viewer's renderItem was a fresh object every list render,
+   * which broke this component's memo() and re-rendered every mounted page
+   * on each swipe settle.
+   */
+  renderAttribution?: (asset: MediaAsset) => React.ReactNode;
   /** Chrome-synced fade for the attribution (intro x visibility). */
   attributionOpacity?: SharedValue<number>;
   /** One page either side of the active one — preloads its full image. */
@@ -136,7 +142,7 @@ export const PhotoPage = memo<PhotoPageProps>(
   ({
     asset,
     isActive,
-    attribution,
+    renderAttribution,
     attributionOpacity,
     isAdjacent,
     pageWidth,
@@ -682,6 +688,8 @@ export const PhotoPage = memo<PhotoPageProps>(
         ),
       };
     });
+
+    const attribution = renderAttribution ? renderAttribution(asset) : null;
 
     return (
       <GestureDetector gesture={composedGesture}>

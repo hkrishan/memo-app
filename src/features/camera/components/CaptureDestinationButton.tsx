@@ -103,6 +103,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     maxWidth: 64,
     fontSize: 10,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",

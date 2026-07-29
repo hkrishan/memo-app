@@ -16,11 +16,17 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import type { StudioProject } from "../engine/document";
+
 /** One filled slot: how to draw it now, and how to re-resolve it later. */
 export type SlotPhoto = {
   uri: string;
   /** Memo-library photoId when the photo came from there. */
   photoId: string | null;
+  /** Set when the photo was picked from an album instead (photoId stays
+   *  null); healing re-resolves against that album's photo list. */
+  albumId?: string;
+  albumPhotoId?: string;
 };
 
 export type CollageProject = {
@@ -48,7 +54,7 @@ export type CarouselProject = {
   updatedAt: string;
 };
 
-export type CreateProject = CollageProject | CarouselProject;
+export type CreateProject = CollageProject | CarouselProject | StudioProject;
 
 interface CreateProjectsState {
   projects: CreateProject[];

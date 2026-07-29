@@ -21,8 +21,13 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { CachedImage } from "@/components/ui/CachedImage";
 import { useAuthStore } from "@/features/auth/store/authStore";
-import { useTogglePostLikeMutation } from "@/features/page/api/pagePost.queries";
+import {
+  useDeletePostMutation,
+  useTogglePostLikeMutation,
+} from "@/features/page/api/pagePost.queries";
 import PostCommentsSheet from "@/features/page/components/PostCommentsSheet";
+import PageMembersSheet from "@/features/page/components/PageMembersSheet";
+import { confirmDeletePost } from "@/features/page/components/confirmDeletePost";
 import type { PagePostFeedItem, PostMedia } from "../types/feed.types";
 import { FeedCard, FeedCardHeader, MEDIA_WIDTH, H_PADDING } from "./FeedCard";
 import { PhotoViewer } from "@/features/photos/components/PhotoViewer";
@@ -138,6 +143,10 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   // merely scrolling the feed (sheet never opened) fetches nothing, and
   // nulling it at close would blank the sheet mid-dismiss
   const [sheetPostId, setSheetPostId] = useState<string | null>(null);
+  // Members sheet — same mount-at-first-open pattern as the comments sheet
+  // (visible drives open/close so the dismiss animation isn't cut short)
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [membersMounted, setMembersMounted] = useState(false);
   const mediaCount = post.media.length;
   const currentUserId = useAuthStore((state) => state.user?.id);
 
@@ -168,7 +177,8 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   );
 
   const toggleLike = useCallback(() => {
-    Haptics.selectionAsync();
+    // Same haptic as every other like surface (PhotoSocialBar, PostCard)
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     likeMutation.mutate({ like: !liked });
   }, [liked, likeMutation]);
 
@@ -181,6 +191,25 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
     setCommentsOpen(true);
   }, [post.postId]);
   const closeComments = useCallback(() => setCommentsOpen(false), []);
+
+  const openMembers = useCallback(() => {
+    setMembersMounted(true);
+    setMembersOpen(true);
+  }, []);
+  const closeMembers = useCallback(() => setMembersOpen(false), []);
+
+  // FlashList recycles this component across posts — a recycled row must
+  // not inherit the previous post's open/mounted sheet
+  useEffect(() => {
+    setMembersOpen(false);
+    setMembersMounted(false);
+  }, [post.postId]);
+
+  // Delete (author or page owner — the server sets canDelete accordingly)
+  const deleteMutation = useDeletePostMutation(post.albumId, post.pageId);
+  const handleDeletePress = useCallback(() => {
+    confirmDeletePost(() => deleteMutation.mutate({ postId: post.postId }));
+  }, [deleteMutation, post.postId]);
 
   const onScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { x: number } } }) => {
@@ -374,7 +403,23 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
         subtitle={`@${page.pageHandle}`}
         createdAt={post.createdAt}
         onPress={openPage}
-        ring
+        page
+        rightAccessory={
+          post.canDelete ? (
+            <Pressable
+              onPress={handleDeletePress}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.moreBtn,
+                pressed && styles.actionBtnPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Delete post"
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color="#8e8e93" />
+            </Pressable>
+          ) : null
+        }
       />
 
       {/* Full-bleed media carousel */}
@@ -412,7 +457,16 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
 
       {/* Caption + actions */}
       <View style={styles.actions}>
-        <Pressable style={styles.actionBtn} hitSlop={8} onPress={toggleLike}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.actionBtn,
+            pressed && styles.actionBtnPressed,
+          ]}
+          hitSlop={8}
+          onPress={toggleLike}
+          accessibilityRole="button"
+          accessibilityLabel={liked ? "Unlike" : "Like"}
+        >
           <Ionicons
             name={liked ? "heart" : "heart-outline"}
             size={24}
@@ -420,11 +474,33 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           />
           {likeCount > 0 && <Text style={styles.actionCount}>{likeCount}</Text>}
         </Pressable>
-        <Pressable style={styles.actionBtn} hitSlop={8} onPress={openComments}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.actionBtn,
+            pressed && styles.actionBtnPressed,
+          ]}
+          hitSlop={8}
+          onPress={openComments}
+          accessibilityRole="button"
+          accessibilityLabel="Comments"
+        >
           <Ionicons name="chatbubble-outline" size={21} color="#1c1c1e" />
           {post.commentCount > 0 && (
             <Text style={styles.actionCount}>{post.commentCount}</Text>
           )}
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.actionBtn,
+            styles.membersBtn,
+            pressed && styles.actionBtnPressed,
+          ]}
+          hitSlop={8}
+          onPress={openMembers}
+          accessibilityRole="button"
+          accessibilityLabel="See who's in this album"
+        >
+          <Ionicons name="people-outline" size={23} color="#1c1c1e" />
         </Pressable>
       </View>
 
@@ -464,6 +540,16 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           currentUserId={currentUserId}
         />
       )}
+
+      {/* Album members — mounted from first open, never before */}
+      {membersMounted && (
+        <PageMembersSheet
+          albumId={post.albumId}
+          pageId={post.pageId}
+          visible={membersOpen}
+          onClose={closeMembers}
+        />
+      )}
     </FeedCard>
   );
 });
@@ -500,6 +586,7 @@ const styles = StyleSheet.create({
   counterText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
@@ -534,9 +621,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
+  actionBtnPressed: {
+    opacity: 0.5,
+    transform: [{ scale: 0.94 }],
+  },
+  // Pinned to the right edge of the actions row, across from like/comment
+  membersBtn: {
+    marginLeft: "auto",
+  },
+  moreBtn: {
+    marginLeft: 8,
+    padding: 4,
+  },
   actionCount: {
     color: "#1c1c1e",
     fontSize: 13.5,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     fontVariant: ["tabular-nums"],
   },
@@ -548,6 +648,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   captionAuthor: {
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },

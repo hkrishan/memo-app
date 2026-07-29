@@ -91,15 +91,25 @@ export const withTimeoutNull = <T,>(
   ]);
 
 /**
- * The grid's (already painted, so already cached) thumbnail, layered under
- * the full-res image while it streams in — server-backed assets must never
- * show as a black rectangle. Same-URI assets (device library) skip the
- * underlay entirely.
+ * The instantly-paintable image layered under the full-res image while it
+ * streams in — a page must never show as a black rectangle when pixels for
+ * its asset already exist somewhere. Compared against the URI the page
+ * actually paints (the display derivative, not asset.uri): a just-uploaded
+ * photo whose thumbnailUrl is the LOCAL file and whose full image is the
+ * remote derivative still gets its local pixels as the underlay. Falls back
+ * to placeholderUri (the upload queue's staged local copy) for the same
+ * reason. Only a true same-URI case (device library) skips the underlay.
  */
-export const thumbnailUnderlayUri = (asset: MediaAsset): string | undefined =>
-  asset.thumbnailUrl && asset.thumbnailUrl !== asset.uri
-    ? asset.thumbnailUrl
-    : undefined;
+export const thumbnailUnderlayUri = (asset: MediaAsset): string | undefined => {
+  const full = displayUriFor(asset);
+  if (asset.thumbnailUrl && asset.thumbnailUrl !== full) {
+    return asset.thumbnailUrl;
+  }
+  if (asset.placeholderUri && asset.placeholderUri !== full) {
+    return asset.placeholderUri;
+  }
+  return undefined;
+};
 
 /** Remote media is worth keeping on disk; local URIs stay memory-only. */
 export const cachePolicyFor = (uri: string): "memory-disk" | "memory" =>

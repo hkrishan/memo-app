@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { AppState } from "react-native";
 import * as MediaLibrary from "expo-media-library";
 import { perf, PerfInteractions } from "@/lib/performance";
+import type { MediaMetadata } from "@/features/album/types/album.types";
 
 export interface MediaAsset {
   id: string;
@@ -39,6 +40,9 @@ export interface MediaAsset {
    * device-library assets and videos, where `uri` is already right.
    */
   displayUrl?: string | null;
+  /** Server-side custom media metadata (e.g. memoCreate). Device assets
+   *  and older cached responses omit it. */
+  metadata?: MediaMetadata | null;
 }
 
 interface UseMediaLibraryOptions {

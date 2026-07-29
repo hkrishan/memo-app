@@ -156,6 +156,7 @@ const styles = StyleSheet.create({
   counterText: {
     color: "#fff",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },

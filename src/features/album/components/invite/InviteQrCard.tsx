@@ -10,6 +10,7 @@
 import React, { useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { scriptType } from "@/lib/tokens";
 import QRCode from "react-native-qrcode-svg";
 import Animated, {
   useAnimatedStyle,
@@ -138,13 +139,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
   },
+  // Brand accent (BowlbyOneSC is retired from app UI)
   wordmark: {
-    fontFamily: "BowlbyOneSC",
-    fontSize: 11,
-    letterSpacing: 2,
+    ...scriptType(12),
     color: "#000",
     textAlign: "center",
-    paddingTop: 18,
+    paddingTop: 16,
   },
   qrZone: {
     alignItems: "center",
@@ -166,6 +166,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   stateText: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#8A8A87",
   },
@@ -183,6 +185,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#111",
   },
@@ -219,11 +222,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 19,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#111",
     letterSpacing: -0.3,
   },
   caption: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     fontSize: 13,
     color: "#8A8A87",
   },

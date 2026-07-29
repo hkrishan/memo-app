@@ -196,6 +196,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     textAlign: "center",
@@ -218,6 +219,7 @@ const styles = StyleSheet.create({
   },
   primaryLabel: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   cancelButton: {
@@ -234,6 +236,7 @@ const styles = StyleSheet.create({
   cancelLabel: {
     color: "rgba(255, 255, 255, 0.8)",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

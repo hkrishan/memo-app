@@ -111,16 +111,14 @@ export function QueryProvider({ children }: Props) {
       }}
       onSuccess={() => {
         // Restored data is a snapshot from a PAST session — its signed
-        // media URLs may be expired. Refresh ONLY the media-bearing keys,
-        // and only the ones something on screen is actually observing;
-        // an unscoped invalidate here refetched the entire cache at the
-        // exact moment of first paint.
-        for (const root of PERSISTED_ROOTS) {
-          void queryClient.invalidateQueries({
-            queryKey: [root],
-            refetchType: "active",
-          });
-        }
+        // media URLs may be expired. Refresh ONLY the media-bearing keys
+        // (the same predicate that gates persistence, so comment/tag
+        // sub-queries under "photos" are excluded), and only the ones
+        // something on screen is actually observing.
+        void queryClient.invalidateQueries({
+          predicate: (query) => shouldPersistKey(query.queryKey),
+          refetchType: "active",
+        });
       }}
     >
       {children}

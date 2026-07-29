@@ -107,6 +107,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#fff",
   },

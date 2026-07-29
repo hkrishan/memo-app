@@ -1,7 +1,33 @@
-import { MD3LightTheme } from "react-native-paper";
+import { MD3LightTheme, configureFonts } from "react-native-paper";
+import type { MD3Type } from "react-native-paper/lib/typescript/types";
+
+// Every MD3 variant keeps its size/weight but renders in the Instrument
+// Sans face that MATCHES its weight — a mismatched family/weight pair
+// makes iOS fall back to the system font.
+const familyForWeight: Record<string, string> = {
+  "400": "InstrumentSans_400Regular",
+  "500": "InstrumentSans_500Medium",
+  "600": "InstrumentSans_600SemiBold",
+  "700": "InstrumentSans_700Bold",
+};
+
+const fonts = configureFonts({
+  config: Object.fromEntries(
+    Object.entries(MD3LightTheme.fonts).map(([variant, style]) => [
+      variant,
+      {
+        ...style,
+        fontFamily:
+          familyForWeight[String((style as MD3Type).fontWeight ?? "400")] ??
+          "InstrumentSans_400Regular",
+      },
+    ]),
+  ) as Record<string, MD3Type>,
+});
 
 export const theme = {
   ...MD3LightTheme,
+  fonts,
   colors: {
     ...MD3LightTheme.colors,
     primary: "#000000",

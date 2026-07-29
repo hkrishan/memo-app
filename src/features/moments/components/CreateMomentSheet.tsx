@@ -137,9 +137,12 @@ const styles = StyleSheet.create({
   typeName: {
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   typeTagline: {
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
     color: "rgba(255, 255, 255, 0.55)",
     fontSize: 12,
     marginTop: 2,
@@ -157,6 +160,7 @@ const styles = StyleSheet.create({
   backLabel: {
     color: "#8E8E93",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
 });

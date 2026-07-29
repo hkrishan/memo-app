@@ -91,7 +91,7 @@ const EditAlbumScreen = () => {
         router.back();
       },
       onError: () => {
-        notify.error("Couldn't save changes", "Please try again.");
+        notify.error("Couldn't save changes", "Please try again");
       },
     });
   }, [
@@ -265,6 +265,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -276,6 +277,7 @@ const styles = StyleSheet.create({
   },
   saveLabel: {
     fontSize: 16,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#000",
   },
@@ -289,6 +291,7 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
     textTransform: "uppercase",
@@ -333,6 +336,7 @@ const styles = StyleSheet.create({
   },
   coverAutoLabel: {
     fontSize: 11,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     color: "#666",
   },

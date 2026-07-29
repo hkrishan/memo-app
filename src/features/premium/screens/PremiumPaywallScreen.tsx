@@ -9,9 +9,10 @@
  */
 
 import React, { useCallback, useState } from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StatusBar, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import { scriptType } from "@/lib/tokens";
 import { LinearGradient } from "expo-linear-gradient";
 import { Video, ResizeMode } from "expo-av";
 import { useRouter } from "expo-router";
@@ -67,6 +68,7 @@ export default function PremiumPaywallScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
       {/* Brand footage hero — heavily dimmed, its edges smudging into the
           black canvas: a dark wash over the whole clip, then a fade on
           every side so no hard video edge ever shows */}
@@ -257,15 +259,13 @@ const styles = StyleSheet.create({
   title: {
     color: "#fff",
     fontSize: 38,
-    fontWeight: "800",
-    // Pacifico's descenders need the extra line height
-    lineHeight: 52,
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
+    // The serif italic's descenders need the extra line height
+    lineHeight: 48,
   },
-  // Pacifico ships one weight; fontWeight would force a fallback font
   titleScript: {
-    fontFamily: "Pacifico_400Regular",
-    fontSize: 36,
-    fontWeight: "400",
+    ...scriptType(34),
     color: "#fff",
   },
   subtitle: {
@@ -331,6 +331,7 @@ const styles = StyleSheet.create({
   planTitle: {
     color: "#fff",
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   saveBadge: {
@@ -342,7 +343,8 @@ const styles = StyleSheet.create({
   saveBadgeText: {
     color: "#000",
     fontSize: 11,
-    fontWeight: "800",
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
     letterSpacing: 0.3,
   },
   planPrice: {
@@ -364,6 +366,7 @@ const styles = StyleSheet.create({
   subscribeLabel: {
     color: "#000",
     fontSize: 17,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   footnote: {

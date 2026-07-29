@@ -208,6 +208,7 @@ const styles = StyleSheet.create({
   title: {
     color: "#fff",
     fontSize: 20,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   doneButton: {
@@ -225,6 +226,7 @@ const styles = StyleSheet.create({
   doneText: {
     color: "#fff",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   doneTextDisabled: {
@@ -269,6 +271,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   checkbox: {

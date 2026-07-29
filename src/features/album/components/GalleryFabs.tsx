@@ -171,6 +171,7 @@ const styles = StyleSheet.create({
   preparingText: {
     fontSize: 14,
     color: "#333",
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   shutterRing: {

@@ -246,6 +246,7 @@ const PhoneCodeScreen = () => {
 const styles = StyleSheet.create({
   changeLink: {
     color: "#fff",
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
   },
   codeRow: {
@@ -272,6 +273,7 @@ const styles = StyleSheet.create({
   },
   codeDigit: {
     fontSize: 26,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
     fontVariant: ["tabular-nums"],
@@ -309,6 +311,7 @@ const styles = StyleSheet.create({
   },
   resendLink: {
     fontSize: 15,
+    fontFamily: "InstrumentSans_700Bold",
     fontWeight: "700",
     color: "#fff",
   },

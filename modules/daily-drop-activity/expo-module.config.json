@@ -1,6 +1,7 @@
 {
   "platforms": ["apple"],
   "apple": {
+    "podspecPath": "DailyDropActivity.podspec",
     "modules": ["DailyDropActivityModule"]
   }
 }

@@ -32,6 +32,7 @@ import { PhotoComment } from "./photoSocial.types";
 import SocialAvatar from "./SocialAvatar";
 import SocialBottomSheet from "./SocialBottomSheet";
 import { formatRelativeTime } from "./socialUtils";
+import { notify } from "@/components/global";
 
 const MAX_COMMENT_LENGTH = 500;
 
@@ -177,7 +178,14 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
     (commentId: string) => {
       if (!photoId) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      deleteComment.mutate({ photoId, commentId });
+      deleteComment.mutate(
+        { photoId, commentId },
+        {
+          onError: () => {
+            notify.error("Couldn't delete comment", "Please try again");
+          },
+        },
+      );
       setConfirmingId(null);
     },
     [photoId, deleteComment],
@@ -247,7 +255,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
           style={styles.input}
           value={draft}
           onChangeText={setDraft}
-          placeholder="Add a comment..."
+          placeholder="Add a comment…"
           placeholderTextColor="rgba(255, 255, 255, 0.4)"
           multiline
           maxLength={MAX_COMMENT_LENGTH}
@@ -299,6 +307,7 @@ const styles = StyleSheet.create({
   authorName: {
     color: "#fff",
     fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     flexShrink: 1,
   },
@@ -330,6 +339,7 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   cancelButton: {

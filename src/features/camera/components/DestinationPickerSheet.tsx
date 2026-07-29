@@ -181,6 +181,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#fff",
     fontSize: 16,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
   emptyText: {

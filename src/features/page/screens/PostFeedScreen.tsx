@@ -17,6 +17,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { formatRelativeTime } from "@/features/album/components/photoSocial/socialUtils";
 import {
   View,
   StyleSheet,
@@ -38,6 +39,7 @@ import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -53,10 +55,12 @@ import { stableCacheKey } from "@/lib/imageCache";
 import { useAuthStore } from "@/features/auth/store/authStore";
 import { AlbumPagePost, AlbumPagePostMedia } from "../types/post.types";
 import {
+  useDeletePostMutation,
   usePagePostsQuery,
   useTogglePostLikeMutation,
 } from "../api/pagePost.queries";
 import PostCommentsSheet from "../components/PostCommentsSheet";
+import { confirmDeletePost } from "../components/confirmDeletePost";
 
 const formatCount = (count: number): string => {
   if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
@@ -64,21 +68,6 @@ const formatCount = (count: number): string => {
   return count.toString();
 };
 
-const formatTimeAgo = (date: Date | string): string => {
-  const diffMs = Date.now() - new Date(date).getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m`;
-  if (diffHours < 24) return `${diffHours}h`;
-  if (diffDays < 7) return `${diffDays}d`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
-  return new Date(date).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-};
 
 // Double-tap heart burst (mirrors AlbumPhotoSocialOverlay): spring up
 // ~420ms, then fade + drift out — ~700ms total
@@ -105,7 +94,9 @@ const FullScreenMedia = memo<{
   media: AlbumPagePostMedia;
   width: number;
   height: number;
-}>(({ media, width, height }) => {
+  /** Inactive pages show the poster only — no live AVPlayer, no blur. */
+  isActive: boolean;
+}>(({ media, width, height, isActive }) => {
   const [ratio, setRatio] = useState<number | undefined>(() =>
     mediaAspectCache.get(media.mediaId),
   );
@@ -132,13 +123,32 @@ const FullScreenMedia = memo<{
         source={{ uri: backdropUri, cacheKey: stableCacheKey(backdropUri) }}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
-        blurRadius={45}
+        // The 45px blur pass only runs for the on-screen page; offscreen
+        // neighbors keep a plain (dimmed) cover
+        blurRadius={isActive ? 45 : 0}
         transition={200}
         cachePolicy="memory-disk"
       />
       <View style={styles.backdropDim} pointerEvents="none" />
 
-      {media.mediaType === "video" ? (
+      {media.mediaType === "video" && !isActive ? (
+        // Poster stand-in: an offscreen page must not hold an AVPlayer
+        <View
+          style={[
+            styles.mediaCard,
+            { width: stage.width, height: stage.height },
+          ]}
+        >
+          {media.thumbnailUrl && (
+            <Image
+              source={{ uri: media.thumbnailUrl }}
+              style={styles.mediaFill}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+            />
+          )}
+        </View>
+      ) : media.mediaType === "video" ? (
         <View
           style={[
             styles.mediaCard,
@@ -193,9 +203,18 @@ const FullScreenPost = memo<{
   pageHeight: number;
   bottomInset: number;
   onOpenComments: (postId: string) => void;
-}>(({ post, albumId, pageId, pageWidth, pageHeight, bottomInset, onOpenComments }) => {
+  /** Off-screen pages render posters instead of live players/blurs. */
+  isActive: boolean;
+}>(({ post, albumId, pageId, pageWidth, pageHeight, bottomInset, onOpenComments, isActive }) => {
   const toggleLike = useTogglePostLikeMutation(albumId, pageId, post.postId);
   const [mediaIndex, setMediaIndex] = useState(0);
+
+  // Delete (author or page owner — the server sets canDelete accordingly).
+  // The optimistic cache removal reflows the pager to the next post.
+  const deleteMutation = useDeletePostMutation(albumId, pageId);
+  const handleDeletePress = useCallback(() => {
+    confirmDeletePost(() => deleteMutation.mutate({ postId: post.postId }));
+  }, [deleteMutation, post.postId]);
 
   const sortedMedia = useMemo(
     () =>
@@ -281,28 +300,37 @@ const FullScreenPost = memo<{
     onOpenComments(post.postId);
   }, [onOpenComments, post.postId]);
 
+  const handleDoubleTapLike = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (!isLiked) {
+      popHeart();
+      toggleLike.mutate({ like: true });
+    }
+    // The burst plays whether or not the post was already liked
+    playHeartBurst();
+  }, [isLiked, toggleLike, popHeart, playHeartBurst]);
+
   const doubleTapGesture = useMemo(
     () =>
       Gesture.Tap()
         .numberOfTaps(2)
         .onEnd(() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          if (!isLiked) {
-            popHeart();
-            toggleLike.mutate({ like: true });
-          }
-          // The burst plays whether or not the post was already liked
-          playHeartBurst();
-        })
-        .runOnJS(true),
-    [isLiked, toggleLike, popHeart, playHeartBurst],
+          // One JS hop at recognition — .runOnJS(true) forced the whole
+          // recognizer through the JS thread for every touch
+          runOnJS(handleDoubleTapLike)();
+        }),
+    [handleDoubleTapLike],
   );
 
+  const mediaIndexRef = useRef(0);
   const handleMediaScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const index = Math.round(
         event.nativeEvent.contentOffset.x / pageWidth,
       );
+      // Commit only on page change — this fired per scroll frame
+      if (index === mediaIndexRef.current) return;
+      mediaIndexRef.current = index;
       setMediaIndex(index);
     },
     [pageWidth],
@@ -317,6 +345,7 @@ const FullScreenPost = memo<{
               media={sortedMedia[0]}
               width={pageWidth}
               height={pageHeight}
+              isActive={isActive}
             />
           ) : (
             <ScrollView
@@ -326,12 +355,13 @@ const FullScreenPost = memo<{
               onScroll={handleMediaScroll}
               scrollEventThrottle={16}
             >
-              {sortedMedia.map((item) => (
+              {sortedMedia.map((item, mediaItemIndex) => (
                 <FullScreenMedia
                   key={item.mediaId}
                   media={item}
                   width={pageWidth}
                   height={pageHeight}
+                  isActive={isActive && mediaItemIndex === mediaIndex}
                 />
               ))}
             </ScrollView>
@@ -427,6 +457,22 @@ const FullScreenPost = memo<{
             </Text>
           )}
         </Pressable>
+        {post.canDelete && (
+          <Pressable
+            onPress={handleDeletePress}
+            style={styles.railButton}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Delete post"
+          >
+            <Ionicons
+              name="trash-outline"
+              size={26}
+              color="#fff"
+              style={styles.railIcon}
+            />
+          </Pressable>
+        )}
       </View>
 
       {/* Caption + time, bottom-left */}
@@ -439,7 +485,7 @@ const FullScreenPost = memo<{
             {post.caption}
           </Text>
         )}
-        <Text style={styles.timestamp}>{formatTimeAgo(post.createdAt)}</Text>
+        <Text style={styles.timestamp}>{formatRelativeTime(post.createdAt)}</Text>
       </View>
     </View>
   );
@@ -500,8 +546,19 @@ const PostFeedScreen = () => {
     router.back();
   }, [router]);
 
+  // Only the on-screen page should hold a live video player / blur pass —
+  // windowSize keeps neighbors mounted, so gate the heavy layers on this
+  const [activePostIndex, setActivePostIndex] = useState(0);
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const handleViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: { index: number | null }[] }) => {
+      const first = viewableItems[0]?.index;
+      if (first != null) setActivePostIndex(first);
+    },
+  ).current;
+
   const renderItem = useCallback(
-    ({ item }: { item: AlbumPagePost }) => (
+    ({ item, index }: { item: AlbumPagePost; index: number }) => (
       <FullScreenPost
         post={item}
         albumId={albumId ?? ""}
@@ -510,9 +567,18 @@ const PostFeedScreen = () => {
         pageHeight={pageHeight}
         bottomInset={insets.bottom}
         onOpenComments={openComments}
+        isActive={index === activePostIndex}
       />
     ),
-    [albumId, pageId, pageWidth, pageHeight, insets.bottom, openComments],
+    [
+      albumId,
+      pageId,
+      pageWidth,
+      pageHeight,
+      insets.bottom,
+      openComments,
+      activePostIndex,
+    ],
   );
 
   const keyExtractor = useCallback((item: AlbumPagePost) => item.postId, []);
@@ -548,9 +614,12 @@ const PostFeedScreen = () => {
           getItemLayout={getItemLayout}
           pagingEnabled
           showsVerticalScrollIndicator={false}
-          windowSize={5}
-          initialNumToRender={2}
-          maxToRenderPerBatch={3}
+          windowSize={3}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          removeClippedSubviews
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={handleViewableItemsChanged}
         />
       )}
 
@@ -639,6 +708,7 @@ const styles = StyleSheet.create({
   counterText: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   dotsRow: {
@@ -678,6 +748,7 @@ const styles = StyleSheet.create({
   railCount: {
     color: "#fff",
     fontSize: 12,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     textShadowColor: "rgba(0, 0, 0, 0.45)",
     textShadowOffset: { width: 0, height: 1 },
@@ -693,6 +764,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     lineHeight: 21,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     textShadowColor: "rgba(0, 0, 0, 0.4)",
     textShadowOffset: { width: 0, height: 1 },

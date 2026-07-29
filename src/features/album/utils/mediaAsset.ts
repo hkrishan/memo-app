@@ -21,4 +21,5 @@ export const photoToMediaAsset = (photo: PhotoWithUploader): MediaAsset => ({
   creationTime: new Date(photo.createdAt).getTime(),
   modificationTime: new Date(photo.createdAt).getTime(),
   likeCount: photo.social?.likeCount ?? 0,
+  metadata: photo.metadata ?? null,
 });

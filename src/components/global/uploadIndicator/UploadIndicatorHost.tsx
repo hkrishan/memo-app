@@ -139,6 +139,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
     color: "#fff",
     flexShrink: 1,

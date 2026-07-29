@@ -307,7 +307,7 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
             // Album camera: one destination, one button
             <ActionButton
               icon={isUploading ? "hourglass-outline" : "checkmark-circle-outline"}
-              label={isUploading ? "Saving..." : (lockedTitle ?? "Save")}
+              label={isUploading ? "Saving…" : (lockedTitle ?? "Save")}
               onPress={handleSaveToGallery}
               variant="primary"
               disabled={isUploading}
@@ -326,7 +326,7 @@ export const MediaPreview: React.FC<MediaPreviewProps> = ({
                   icon={
                     isUploading ? "hourglass-outline" : "checkmark-circle-outline"
                   }
-                  label={isUploading ? "Saving..." : "Save"}
+                  label={isUploading ? "Saving…" : "Save"}
                   onPress={handleSaveToAlbum}
                   variant={selectedAlbumId ? "primary" : "default"}
                   disabled={!selectedAlbumId || isUploading}
@@ -391,6 +391,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: "#fff",
     fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     marginLeft: 20,
     marginBottom: 12,
@@ -426,6 +427,7 @@ const styles = StyleSheet.create({
   },
   albumTitleSelected: {
     color: "#fff",
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   actionBar: {
@@ -464,6 +466,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     marginTop: 16,
+    fontFamily: "InstrumentSans_500Medium",
     fontWeight: "500",
   },
 });

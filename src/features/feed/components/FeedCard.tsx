@@ -10,7 +10,6 @@
 import React, { memo } from "react";
 import { View, StyleSheet, Dimensions, Pressable } from "react-native";
 import { Text } from "react-native-paper";
-import { LinearGradient } from "expo-linear-gradient";
 import { CachedImage } from "@/components/ui/CachedImage";
 
 const { width: SW } = Dimensions.get("window");
@@ -20,56 +19,31 @@ export const H_PADDING = 16;
 /** Media spans the full screen width */
 export const MEDIA_WIDTH = SW;
 
-/** Same gradient as the public page profile ring */
-export const PAGE_RING_COLORS = [
-  "#ff00b7ff",
-  "#495bffff",
-  "#9b69ffff",
-] as const;
-
-// Intl date formatting on Hermes is expensive and this runs per feed row
-// per render — one shared formatter + a result cache keeps it O(1) after
-// the first format of each timestamp (old dates never re-format anyway)
-const shortDateFormat = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-});
-const shortDateCache = new Map<string, string>();
-
-export function formatRelativeTime(dateStr: string): string {
-  const now = Date.now();
-  const t = new Date(dateStr).getTime();
-  const diffMs = now - t;
-  const mins = Math.floor(diffMs / 60000);
-  const hrs = Math.floor(diffMs / 3600000);
-  const days = Math.floor(diffMs / 86400000);
-
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m`;
-  if (hrs < 24) return `${hrs}h`;
-  if (days < 7) return `${days}d`;
-  let formatted = shortDateCache.get(dateStr);
-  if (!formatted) {
-    formatted = shortDateFormat.format(t);
-    shortDateCache.set(dateStr, formatted);
-  }
-  return formatted;
-}
+// One relative-time format app-wide — imported for local use AND
+// re-exported so existing feed imports keep working
+import { formatRelativeTime } from "@/features/album/components/photoSocial/socialUtils";
+export { formatRelativeTime };
 
 const AVATAR_SIZE = 36;
+/** Page avatars: same rounded-square shape as the page-profile cover. */
+const PAGE_AVATAR_RADIUS = 10;
 
-const AvatarCore = memo<{ name: string; avatarUrl: string | null; size: number }>(
-  ({ name, avatarUrl, size }) => (
-    <View
-      style={[
-        styles.avatarCore,
-        { width: size, height: size, borderRadius: size / 2 },
-      ]}
-    >
+export const FeedAvatar = memo<{
+  name: string;
+  avatarUrl: string | null;
+  /**
+   * Page identity — a rounded square (the page-profile cover shape with a
+   * hairline edge) instead of a person's circle.
+   */
+  page?: boolean;
+}>(({ name, avatarUrl, page }) => {
+  const radius = page ? PAGE_AVATAR_RADIUS : AVATAR_SIZE / 2;
+  return (
+    <View style={[styles.avatarCore, { borderRadius: radius }]}>
       {avatarUrl ? (
         <CachedImage
           uri={avatarUrl}
-          style={{ width: size, height: size }}
+          style={styles.avatarImage}
           showPlaceholder={false}
         />
       ) : (
@@ -77,30 +51,13 @@ const AvatarCore = memo<{ name: string; avatarUrl: string | null; size: number }
           {name.trim().charAt(0).toUpperCase() || "?"}
         </Text>
       )}
+      {page && (
+        <View
+          style={[styles.avatarEdge, { borderRadius: radius }]}
+          pointerEvents="none"
+        />
+      )}
     </View>
-  ),
-);
-
-export const FeedAvatar = memo<{
-  name: string;
-  avatarUrl: string | null;
-  /** Wrap the avatar in the page-identity gradient ring */
-  ring?: boolean;
-}>(({ name, avatarUrl, ring }) => {
-  if (!ring) {
-    return <AvatarCore name={name} avatarUrl={avatarUrl} size={AVATAR_SIZE} />;
-  }
-  return (
-    <LinearGradient
-      colors={[...PAGE_RING_COLORS]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.ringOuter}
-    >
-      <View style={styles.ringInner}>
-        <AvatarCore name={name} avatarUrl={avatarUrl} size={AVATAR_SIZE - 6} />
-      </View>
-    </LinearGradient>
   );
 });
 
@@ -111,17 +68,29 @@ interface FeedCardHeaderProps {
   title: React.ReactNode;
   subtitle: string;
   createdAt: string;
-  /** Page-identity gradient ring around the avatar (page posts) */
-  ring?: boolean;
+  /** Page identity — rounded-square avatar (page posts) */
+  page?: boolean;
   /** Makes the whole header row a tap target (no visual button chrome) */
   onPress?: () => void;
+  /** Trailing slot (e.g. an overflow menu); its own presses don't bubble
+   *  into onPress. */
+  rightAccessory?: React.ReactNode;
 }
 
 export const FeedCardHeader = memo<FeedCardHeaderProps>(
-  ({ avatarName, avatarUrl, title, subtitle, createdAt, ring, onPress }) => {
+  ({
+    avatarName,
+    avatarUrl,
+    title,
+    subtitle,
+    createdAt,
+    page,
+    onPress,
+    rightAccessory,
+  }) => {
     const content = (
       <>
-        <FeedAvatar name={avatarName} avatarUrl={avatarUrl} ring={ring} />
+        <FeedAvatar name={avatarName} avatarUrl={avatarUrl} page={page} />
         <View style={styles.headerText}>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {title}
@@ -134,6 +103,7 @@ export const FeedCardHeader = memo<FeedCardHeaderProps>(
             </Text>
           </Text>
         </View>
+        {rightAccessory}
       </>
     );
 
@@ -168,30 +138,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: H_PADDING,
   },
   avatarCore: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
     overflow: "hidden",
-    backgroundColor: "#d8d8dc",
+    backgroundColor: "#F1F1F3",
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarImage: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
   },
   avatarInitial: {
     color: "rgba(0, 0, 0, 0.6)",
     fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
-  ringOuter: {
-    width: AVATAR_SIZE + 4,
-    height: AVATAR_SIZE + 4,
-    borderRadius: (AVATAR_SIZE + 4) / 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ringInner: {
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
-    borderRadius: AVATAR_SIZE / 2,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
+  avatarEdge: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0, 0, 0, 0.08)",
   },
   headerText: {
     flex: 1,
@@ -200,6 +167,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: "#111",
     fontSize: 14.5,
+    fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },
   headerSubtitle: {
