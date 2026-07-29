@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useMemo } from "react";
 import {
   SharedValue,
   useAnimatedStyle,
@@ -29,10 +29,15 @@ export function SwipeableTabsProvider({
   currentPage: SharedValue<number>;
   pageIndex: number;
 }) {
+  // Memoized: a fresh value object here cascaded a context change through
+  // an entire tab's tree (bypassing every React.memo) whenever the pager
+  // re-rendered — the members are stable shared values + a constant index
+  const value = useMemo(
+    () => ({ scrollPosition, currentPage, pageIndex }),
+    [scrollPosition, currentPage, pageIndex],
+  );
   return (
-    <SwipeableTabsContext.Provider
-      value={{ scrollPosition, currentPage, pageIndex }}
-    >
+    <SwipeableTabsContext.Provider value={value}>
       {children}
     </SwipeableTabsContext.Provider>
   );

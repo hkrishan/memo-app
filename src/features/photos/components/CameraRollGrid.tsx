@@ -942,6 +942,12 @@ export const CameraRollGrid = forwardRef<
       ? containerSize.width / numColumns
       : undefined;
 
+  // Set lookup — O(P) .includes ran per visible cell per render
+  const poppingSet = useMemo(
+    () => new Set(poppingIds ?? []),
+    [poppingIds],
+  );
+
   const renderItem = useCallback(
     ({ item, index }: { item: MediaAsset; index: number }) => (
       <GridCell
@@ -951,7 +957,7 @@ export const CameraRollGrid = forwardRef<
         onPressItem={onPressItem}
         onCellImageLoad={onCellImageLoad}
         dimmed={index === dimmedIndex}
-        popping={poppingIds?.includes(item.id) === true}
+        popping={poppingSet.has(item.id)}
         reflowGeneration={reflow?.generation}
         reflowFromIndex={reflow?.fromIndex}
         cellSize={flatCellSize}
@@ -962,7 +968,7 @@ export const CameraRollGrid = forwardRef<
       onCellImageLoad,
       dimmedIndex,
       numColumns,
-      poppingIds,
+      poppingSet,
       reflow,
       flatCellSize,
     ],

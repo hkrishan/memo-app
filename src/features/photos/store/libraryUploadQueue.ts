@@ -23,7 +23,12 @@
  * so the capture banner can still retarget the album (a move at that point).
  */
 
-import { AppState, Image as RNImage, Platform } from "react-native";
+import {
+  AppState,
+  Image as RNImage,
+  InteractionManager,
+  Platform,
+} from "react-native";
 import NetInfo from "@react-native-community/netinfo";
 import { useEffect } from "react";
 import {
@@ -37,7 +42,7 @@ import {
 } from "expo-file-system/legacy";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createDebouncedStorage } from "@/lib/debouncedStorage";
 
 import { env } from "@/lib/env";
 import { captureException } from "@/lib/sentry";
@@ -134,7 +139,9 @@ interface LibraryUploadQueueState {
 export const useLibraryUploadQueue = create<LibraryUploadQueueState>()(
   persist((): LibraryUploadQueueState => ({ entries: [] }), {
     name: "library-upload-queue",
-    storage: createJSONStorage(() => AsyncStorage),
+    // Debounced: the processor patches entries several times per capture;
+    // per-patch full-queue writes were a bridge storm during uploads
+    storage: createJSONStorage(() => createDebouncedStorage()),
     // A JS-death mid-upload leaves "uploading" — reset to queued on load.
     // Also migrates entries persisted under the single-album shape, and
     // entries from before the queue carried videos (all were JPEGs).
@@ -295,7 +302,14 @@ export async function enqueueCapture(
   // Local file → instant, EXIF-correct display size (no network round-trip).
   // A video file isn't decodable here — its poster stands in when there is
   // one, otherwise the size arrives with the server photo.
-  const sizeSource = mediaType === "video" ? input.posterUri : fileUri;
+  //
+  // RNImage.getSize can only load http(s)/file/data sources — a video's
+  // posterUri is a ph:// Photos-library asset, which RN core has NO loader
+  // for (it redboxes natively). Skip it; the size arrives with the server
+  // photo once the poster is processed there.
+  const candidate = mediaType === "video" ? input.posterUri : fileUri;
+  const sizeSource =
+    candidate && /^(https?|file|data):/.test(candidate) ? candidate : null;
   const size = await new Promise<{ width: number; height: number } | null>(
     (resolve) => {
       if (!sizeSource) {
@@ -422,7 +436,7 @@ export async function setEntryAlbums(
     } else {
       void processQueue();
     }
-    void queryClient.invalidateQueries({ queryKey: ["albums"] });
+    void queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
   } catch (error) {
     if (__DEV__) console.error("Album membership update failed:", error);
     captureException(error, { operation: "libraryQueue.setEntryAlbums" });
@@ -469,7 +483,10 @@ async function teardownEntry(entry: QueuedCapture): Promise<void> {
       await libraryApi.deleteLibraryPhoto(entry.serverPhotoId).catch(() => {});
     }
     if (entry.albumTargets.length > 0) {
-      void queryClient.invalidateQueries({ queryKey: ["albums"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["albums"],
+        exact: true,
+      });
     }
   } catch (error) {
     if (__DEV__) console.error("Cancel teardown failed:", error);
@@ -565,6 +582,7 @@ async function processEntry(localId: string): Promise<void> {
     // Stage 2 — album copies (reads the CURRENT targets: the album picker
     // may have changed them while the upload ran)
     const current = getEntry(localId);
+    let copiesMade = 0;
     for (const target of current?.albumTargets ?? []) {
       if (target.albumPhotoId) continue;
       const copy = await libraryApi.addLibraryPhotoToAlbum(
@@ -575,7 +593,15 @@ async function processEntry(localId: string): Promise<void> {
       void queryClient.invalidateQueries({
         queryKey: photoKeys.byAlbum(target.albumId),
       });
-      void queryClient.invalidateQueries({ queryKey: ["albums"] });
+      copiesMade += 1;
+    }
+    // Albums LIST once per entry (covers/counts), not once per target —
+    // and exact, so it can't fan out to every cached album detail
+    if (copiesMade > 0) {
+      void queryClient.invalidateQueries({
+        queryKey: ["albums"],
+        exact: true,
+      });
     }
 
     // Deleted while the copies were being made — tear the whole thing down
@@ -687,8 +713,12 @@ function scheduleBackoffRetry(attempts: number): void {
  */
 export function useResumeLibraryUploads(): void {
   useEffect(() => {
-    pruneSettled();
-    void processQueue();
+    // Deferred past first interactions: resuming uploads at mount time
+    // put queue IO + network in front of the app's first paint
+    const resumeTask = InteractionManager.runAfterInteractions(() => {
+      pruneSettled();
+      void processQueue();
+    });
 
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state === "active") retryFailedEntries();
@@ -697,6 +727,7 @@ export function useResumeLibraryUploads(): void {
       if (state.isConnected) retryFailedEntries();
     });
     return () => {
+      resumeTask.cancel();
       appStateSub.remove();
       netInfoUnsub();
     };

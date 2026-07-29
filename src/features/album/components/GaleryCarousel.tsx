@@ -300,14 +300,17 @@ const GalleryCarousel: React.FC<GalleryCarouselProps> = ({ limit = 30 }) => {
       </View>
       {/* The SAME session the camera's last-capture thumbnail opens —
           social overlay, pagination and sizing all come with it. Only the
-          return flight is ours: the photo flies back into its strip cell. */}
-      <PhotoViewer
-        {...libraryViewer.viewerProps}
-        onClose={handleCloseViewer}
-        onActiveIndexChange={handleActiveIndexChange}
-        onOpenTransitionStart={handleOpenTransitionStart}
-        gridCornerRadius={ITEM_RADIUS}
-      />
+          return flight is ours: the photo flies back into its strip cell.
+          Mounted only while open (visible clears post-animation). */}
+      {libraryViewer.viewerProps.visible && (
+        <PhotoViewer
+          {...libraryViewer.viewerProps}
+          onClose={handleCloseViewer}
+          onActiveIndexChange={handleActiveIndexChange}
+          onOpenTransitionStart={handleOpenTransitionStart}
+          gridCornerRadius={ITEM_RADIUS}
+        />
+      )}
     </>
   );
 };

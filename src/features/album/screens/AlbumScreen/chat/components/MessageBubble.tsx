@@ -1,6 +1,6 @@
 // Message bubble component with grouping support
 
-import React, { memo, useCallback } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -59,25 +59,23 @@ const MessageBubble = memo<MessageBubbleProps>(
   }) => {
     const scale = useSharedValue(1);
 
-    // Handle long press with gesture handler for better UX
-    const longPressGesture = Gesture.LongPress()
-      .minDuration(400)
-      .onStart(() => {
-        "worklet";
-        scale.value = withTiming(0.95, { duration: 100 });
-      })
-      .onEnd(() => {
-        "worklet";
-        scale.value = withTiming(1, { duration: 100 });
-      })
-      .onFinalize((_event, success) => {
-        "worklet";
-        scale.value = withTiming(1, { duration: 100 });
-        if (success) {
-          // Trigger haptic + action sheet on JS thread
-        }
-      })
-      .runOnJS(true);
+    // Press-scale feedback only (the Pressable below owns the actual long
+    // press). Memoized so the recognizer isn't re-attached per message
+    // render, and WITHOUT .runOnJS(true) — that forced these pure
+    // shared-value writes through the JS thread for every press in the
+    // message list.
+    const longPressGesture = useMemo(
+      () =>
+        Gesture.LongPress()
+          .minDuration(400)
+          .onStart(() => {
+            scale.value = withTiming(0.95, { duration: 100 });
+          })
+          .onFinalize(() => {
+            scale.value = withTiming(1, { duration: 100 });
+          }),
+      [scale],
+    );
 
     const handleLongPress = useCallback(() => {
       // Will open action sheet - for now just trigger copy as example

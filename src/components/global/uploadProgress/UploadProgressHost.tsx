@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   Easing,
@@ -90,13 +90,32 @@ export default function UploadProgressHost() {
     });
   }, [hasBatch, completed, failedCount, total, done, progress]);
 
-  // Live percent for the big ring (mirrors the old AddPhotosScreen overlay)
+  // Live percent for the big ring (mirrors the old AddPhotosScreen
+  // overlay). Only read inside the expanded modal — while it's closed
+  // (99% of the time) the reaction must not commit React state: each
+  // progress tween crossed every integer percent and re-rendered this
+  // always-mounted host per step.
   const [displayPercent, setDisplayPercent] = useState(0);
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const commitPercent = useCallback((percent: number) => {
+    if (expandedRef.current) setDisplayPercent(percent);
+  }, []);
+  const expandedSv = useSharedValue(expanded);
+  useEffect(() => {
+    expandedSv.value = expanded;
+    // Snap the label current the moment the sheet opens
+    if (expanded) {
+      setDisplayPercent(
+        Math.round(Math.min(Math.max(progress.value, 0), 1) * 100),
+      );
+    }
+  }, [expanded, expandedSv, progress]);
   useAnimatedReaction(
     () => Math.round(Math.min(Math.max(progress.value, 0), 1) * 100),
     (percent, previous) => {
-      if (percent !== previous) {
-        runOnJS(setDisplayPercent)(percent);
+      if (percent !== previous && expandedSv.value) {
+        runOnJS(commitPercent)(percent);
       }
     },
   );

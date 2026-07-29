@@ -94,7 +94,9 @@ export async function registerPushToken(): Promise<void> {
       await Notifications.setNotificationChannelAsync("daily-drop", {
         name: "Daily Drop",
         importance: Notifications.AndroidImportance.MAX,
-        sound: "daily-drop.wav",
+        // Underscored: Android resource names forbid hyphens (the channel
+        // ID itself is an arbitrary string, so it keeps its name)
+        sound: "daily_drop.wav",
         vibrationPattern: [0, 160, 120, 160],
       });
     }

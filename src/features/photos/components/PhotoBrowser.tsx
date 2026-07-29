@@ -274,20 +274,23 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
         contentBottomPadding={contentBottomPadding}
         poppingIds={poppingIds}
       />
-      <PhotoViewer
-        visible={viewerSession !== null}
-        assets={enrichedAssets}
-        initialIndex={viewerSession?.index ?? 0}
-        originFrame={viewerSession?.originFrame ?? null}
-        getReturnFrame={getReturnFrame}
-        onClose={handleCloseViewer}
-        onOpenTransitionStart={handleOpenTransitionStart}
-        onEndReached={onEndReached}
-        totalCount={totalCount}
-        renderSocialOverlay={renderSocialOverlay}
-        renderPageAttribution={renderPageAttribution}
-        onDoubleTapAsset={onDoubleTapAsset}
-      />
+      {/* Mounted only while open (onClose fires post-animation) */}
+      {viewerSession !== null && (
+        <PhotoViewer
+          visible
+          assets={enrichedAssets}
+          initialIndex={viewerSession.index}
+          originFrame={viewerSession.originFrame}
+          getReturnFrame={getReturnFrame}
+          onClose={handleCloseViewer}
+          onOpenTransitionStart={handleOpenTransitionStart}
+          onEndReached={onEndReached}
+          totalCount={totalCount}
+          renderSocialOverlay={renderSocialOverlay}
+          renderPageAttribution={renderPageAttribution}
+          onDoubleTapAsset={onDoubleTapAsset}
+        />
+      )}
     </>
   );
 };

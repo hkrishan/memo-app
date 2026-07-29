@@ -22,7 +22,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   FadeIn,
   FadeOut,
-  FadeInDown,
   FadeInUp,
 } from "react-native-reanimated";
 import { Album } from "../types/album.types";
@@ -54,10 +53,14 @@ export const AlbumsSearchOverlay: React.FC<AlbumsSearchOverlayProps> = ({
 
   const trimmed = query.trim().toLowerCase();
   const results = useMemo(() => {
+    // Closed overlay: skip the filtering entirely — this component stays
+    // mounted on the always-mounted Albums tab and re-runs per parent
+    // render otherwise
+    if (!visible) return [];
     const all = albums ?? [];
     if (!trimmed) return all;
     return all.filter((a) => matchesQuery(a, trimmed));
-  }, [albums, trimmed]);
+  }, [albums, trimmed, visible]);
 
   const handleClose = useCallback(() => {
     setQuery("");
@@ -126,15 +129,13 @@ export const AlbumsSearchOverlay: React.FC<AlbumsSearchOverlayProps> = ({
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
-            {results.map((album, i) => (
-              <Animated.View
-                // Re-key on query so the stagger replays as results change
-                key={`${trimmed}:${album.albumId}`}
-                entering={FadeInDown.duration(220).delay(Math.min(i, 8) * 35)}
-                style={styles.cardSlot}
-              >
+            {/* Keyed on the album only: re-keying on the query tore down
+                and rebuilt every card (image decode included) per
+                keystroke just to replay a stagger animation */}
+            {results.map((album) => (
+              <View key={album.albumId} style={styles.cardSlot}>
                 <AlbumCard album={album} onPress={handlePress} />
-              </Animated.View>
+              </View>
             ))}
           </ScrollView>
         )}

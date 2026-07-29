@@ -83,12 +83,15 @@ const AlbumMapScreen = () => {
         )}
       </Pressable>
 
-      <PhotoViewer
-        visible={previewVisible}
-        assets={previewAssets}
-        initialIndex={0}
-        onClose={handleClosePreview}
-      />
+      {/* Mounted only while open (onClose fires post-animation) */}
+      {previewVisible && (
+        <PhotoViewer
+          visible
+          assets={previewAssets}
+          initialIndex={0}
+          onClose={handleClosePreview}
+        />
+      )}
     </View>
   );
 };

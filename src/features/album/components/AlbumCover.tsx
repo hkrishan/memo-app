@@ -17,12 +17,14 @@ import { CachedImage } from "@/components/ui/CachedImage";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 /** The renderable image for a cover candidate: videos use their poster
- *  frame (the raw video URL is not an image). || (not ??) so empty-string
+ *  frame (the raw video URL is not an image), and photos prefer the
+ *  thumbnail — decoding the full-resolution original into a ~180pt tile
+ *  cost a full-size decode per album card. || (not ??) so empty-string
  *  URLs fall through too. */
 const coverImageUri = (photo?: AlbumPhoto | null): string | null => {
   if (!photo) return null;
   if (photo.mediaType === "video") return photo.thumbnailUrl || null;
-  return photo.url || null;
+  return photo.thumbnailUrl || photo.url || null;
 };
 
 interface AlbumCoverProps {

@@ -42,7 +42,9 @@ import Animated, {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const FeedFlashList = FlashList as any;
 
-const ESTIMATED_ITEM_HEIGHT = 420;
+// Header (~46) + media capped at 0.55×screen (~460) + actions + caption +
+// 56 section margin — underestimating made FlashList blank on fast scroll
+const ESTIMATED_ITEM_HEIGHT = 640;
 
 /** How far the inactive view slides while cross-fading (px) */
 const VIEW_SLIDE = 24;

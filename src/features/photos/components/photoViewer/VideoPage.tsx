@@ -64,11 +64,17 @@ const formatPlaybackTime = (seconds: number): string => {
 
 /**
  * The image that stands in for the video before its first frame renders.
- * Remote videos use their poster (thumbnailUrl); local library videos'
- * ph://-style uris render as poster frames directly. A remote video with
- * no poster has NO renderable image — null yields the dark fallback tile.
+ * Remote videos prefer the screen-sized display poster (the 640px grid
+ * thumbnail blown up to fullscreen is visibly pixelated), falling back to
+ * the thumbnail for videos uploaded before display posters existed; local
+ * library videos' ph://-style uris render as poster frames directly. A
+ * remote video with no poster has NO renderable image — null yields the
+ * dark fallback tile.
  */
 const videoPosterUri = (asset: MediaAsset): string | null => {
+  if (asset.displayUrl) {
+    return asset.displayUrl;
+  }
   if (asset.thumbnailUrl && asset.thumbnailUrl !== asset.uri) {
     return asset.thumbnailUrl;
   }
@@ -144,11 +150,32 @@ export const VideoPage = memo<VideoPageProps>(
     // source so nothing plays (and the player is released on unmount)
     const player = useVideoPlayer(isActive ? resolvedUri : null, (p) => {
       p.loop = false;
+      // Start playback after a small forward buffer instead of AVPlayer's
+      // conservative automatic target — these are short social clips, not
+      // long-form streams, and time-to-first-frame is what users feel
+      p.bufferOptions = { preferredForwardBufferDuration: 2 };
     });
 
     const { isPlaying } = useEvent(player, "playingChange", {
       isPlaying: player.playing,
     });
+
+    // A source the native player rejects (unreadable file, unreachable
+    // URL) previously froze on the poster with a dead play button and no
+    // signal anywhere — surface it instead.
+    const playerStatus = useEvent(player, "statusChange", {
+      status: player.status,
+    });
+    const playbackFailed = playerStatus.status === "error";
+    useEffect(() => {
+      if (playerStatus.status === "error" && __DEV__) {
+        console.warn(
+          "Video playback failed:",
+          playerStatus.error?.message ?? "unknown error",
+          resolvedUri,
+        );
+      }
+    }, [playerStatus.status, playerStatus.error, resolvedUri]);
 
     // Mute changes are applied by the chrome's mute button directly on the
     // player; the prop only seeds newly-activated pages — a ref keeps it
@@ -243,7 +270,8 @@ export const VideoPage = memo<VideoPageProps>(
 
     const showPlayer = isActive && !!resolvedUri;
     const posterUri = videoPosterUri(asset);
-    const showCenterButton = showPlayer && (!isPlaying || centerFlash);
+    const showCenterButton =
+      showPlayer && !playbackFailed && (!isPlaying || centerFlash);
 
     // Pan-to-dismiss, same feel as photo pages: vertical activation (so
     // horizontal swipes still page), then the video follows the finger on
@@ -421,7 +449,18 @@ export const VideoPage = memo<VideoPageProps>(
                 <View style={[styles.media, styles.videoPosterFallback]} />
               ))}
             <View style={styles.playOverlay} pointerEvents="box-none">
-              {showCenterButton ? (
+              {playbackFailed ? (
+                <View style={styles.playbackErrorWrap}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={34}
+                    color="rgba(255, 255, 255, 0.9)"
+                  />
+                  <Text style={styles.playbackErrorText}>
+                    Couldn't play this video
+                  </Text>
+                </View>
+              ) : showCenterButton ? (
                 <Pressable
                   onPress={handlePlayPause}
                   style={styles.playPauseButton}
@@ -475,12 +514,22 @@ interface VideoScrubBarProps {
 export const VideoScrubBar = memo<VideoScrubBarProps>(
   ({ player, muted, onToggleMute }) => {
     const [time, setTime] = useState({ current: 0, duration: 0 });
-    // Fraction being scrubbed (null when idle) — drives the bar and the
-    // current-time label while the finger is down
+    // Fraction being scrubbed (null when idle) — drives the current-time
+    // LABEL only; the bar itself tracks on the UI thread
     const [scrubFraction, setScrubFraction] = useState<number | null>(null);
     const scrubbingRef = useRef(false);
-    const barWidthRef = useRef(0);
     const lastSeekAtRef = useRef(0);
+
+    const { isPlaying } = useEvent(player, "playingChange", {
+      isPlaying: player.playing,
+    });
+
+    // UI-thread mirrors: the drag writes these directly. The old shape
+    // round-tripped EVERY pan frame through runOnJS + setState and laid
+    // out a percentage width per frame.
+    const fillFraction = useSharedValue(0);
+    const barWidth = useSharedValue(0);
+    const lastSentAt = useSharedValue(0);
 
     useEffect(() => {
       const read = () => {
@@ -489,6 +538,9 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
           const current = player.currentTime;
           const duration = player.duration;
           if (!Number.isFinite(current) || !Number.isFinite(duration)) return;
+          if (duration > 0) {
+            fillFraction.value = Math.min(current / duration, 1);
+          }
           setTime((prev) =>
             Math.abs(prev.current - current) < 0.2 &&
             prev.duration === duration
@@ -500,19 +552,18 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
         }
       };
       read();
+      // Poll only while playing — a paused position doesn't move, and the
+      // old unconditional interval kept ticking while paused/hidden
+      if (!isPlaying) return;
       const id = setInterval(read, 250);
       return () => clearInterval(id);
-    }, [player]);
+    }, [player, isPlaying, fillFraction]);
 
-    const fractionForX = useCallback((x: number) => {
-      const width = barWidthRef.current;
-      if (width <= 0) return 0;
-      return Math.min(Math.max(x / width, 0), 1);
-    }, []);
-
-    const seekToFraction = useCallback(
+    /** JS-side scrub commit: label + (throttled) live seek. Reached at
+     *  most ~6x/s from the drag worklet, never per frame. */
+    const applyScrub = useCallback(
       (fraction: number, force: boolean) => {
-        // Live-seek while dragging, throttled so the player isn't flooded
+        setScrubFraction(fraction);
         const now = Date.now();
         if (!force && now - lastSeekAtRef.current < 150) return;
         lastSeekAtRef.current = now;
@@ -528,28 +579,14 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
       [player],
     );
 
-    const beginScrub = useCallback(
-      (x: number) => {
-        scrubbingRef.current = true;
-        setScrubFraction(fractionForX(x));
-      },
-      [fractionForX],
-    );
-
-    const moveScrub = useCallback(
-      (x: number) => {
-        const fraction = fractionForX(x);
-        setScrubFraction(fraction);
-        seekToFraction(fraction, false);
-      },
-      [fractionForX, seekToFraction],
-    );
+    const beginScrub = useCallback((fraction: number) => {
+      scrubbingRef.current = true;
+      setScrubFraction(fraction);
+    }, []);
 
     const endScrub = useCallback(
-      (x: number) => {
-        if (!scrubbingRef.current) return;
-        const fraction = fractionForX(x);
-        seekToFraction(fraction, true);
+      (fraction: number) => {
+        applyScrub(fraction, true);
         // Show the landed position immediately — the next poll confirms it
         setTime((prev) => ({
           ...prev,
@@ -558,7 +595,7 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
         setScrubFraction(null);
         scrubbingRef.current = false;
       },
-      [fractionForX, seekToFraction],
+      [applyScrub],
     );
 
     const scrubGesture = useMemo(
@@ -570,21 +607,41 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
           .minDistance(0)
           .hitSlop({ top: 12, bottom: 12 })
           .onBegin((e) => {
-            runOnJS(beginScrub)(e.x);
+            const w = barWidth.value;
+            const fraction = w > 0 ? Math.min(Math.max(e.x / w, 0), 1) : 0;
+            fillFraction.value = fraction;
+            lastSentAt.value = 0;
+            runOnJS(beginScrub)(fraction);
           })
           .onUpdate((e) => {
-            runOnJS(moveScrub)(e.x);
+            const w = barWidth.value;
+            if (w <= 0) return;
+            const fraction = Math.min(Math.max(e.x / w, 0), 1);
+            // The bar/knob follow the finger entirely on the UI thread
+            fillFraction.value = fraction;
+            // JS hop (label + live seek) is throttled, not per-frame
+            const now = Date.now();
+            if (now - lastSentAt.value < 150) return;
+            lastSentAt.value = now;
+            runOnJS(applyScrub)(fraction, false);
           })
           .onFinalize((e) => {
-            runOnJS(endScrub)(e.x);
+            const w = barWidth.value;
+            const fraction = w > 0 ? Math.min(Math.max(e.x / w, 0), 1) : 0;
+            fillFraction.value = fraction;
+            runOnJS(endScrub)(fraction);
           }),
-      [beginScrub, moveScrub, endScrub],
+      [barWidth, fillFraction, lastSentAt, beginScrub, applyScrub, endScrub],
     );
 
+    const fillStyle = useAnimatedStyle(() => ({
+      transform: [{ scaleX: fillFraction.value }],
+    }));
+    const knobStyle = useAnimatedStyle(() => ({
+      transform: [{ translateX: fillFraction.value * barWidth.value }],
+    }));
+
     const duration = time.duration;
-    const fraction =
-      scrubFraction ??
-      (duration > 0 ? Math.min(time.current / duration, 1) : 0);
     const displayCurrent =
       scrubFraction != null ? scrubFraction * duration : time.current;
 
@@ -598,19 +655,14 @@ export const VideoScrubBar = memo<VideoScrubBarProps>(
             style={styles.videoTrackTouch}
             collapsable={false}
             onLayout={(e) => {
-              barWidthRef.current = e.nativeEvent.layout.width;
+              barWidth.value = e.nativeEvent.layout.width;
             }}
           >
             <View style={styles.videoTrack}>
-              <View
-                style={[
-                  styles.videoTrackFill,
-                  { width: `${fraction * 100}%` },
-                ]}
-              />
+              <Animated.View style={[styles.videoTrackFill, fillStyle]} />
             </View>
-            <View
-              style={[styles.videoKnob, { left: `${fraction * 100}%` }]}
+            <Animated.View
+              style={[styles.videoKnob, knobStyle]}
               pointerEvents="none"
             />
           </View>
@@ -684,9 +736,11 @@ const styles = StyleSheet.create({
   videoKnob: {
     position: "absolute",
     top: 10,
+    left: 0,
     width: 11,
     height: 11,
     borderRadius: 5.5,
+    // translateX-driven (UI thread); the margin centers it on the position
     marginLeft: -5.5,
     backgroundColor: "#fff",
   },
@@ -700,6 +754,19 @@ const styles = StyleSheet.create({
   },
   videoPosterFallback: {
     backgroundColor: "#101012",
+  },
+  playbackErrorWrap: {
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+  },
+  playbackErrorText: {
+    color: "rgba(255, 255, 255, 0.9)",
+    fontSize: 13.5,
+    fontWeight: "600",
   },
   videoTimeText: {
     color: "rgba(255, 255, 255, 0.85)",
@@ -717,8 +784,11 @@ const styles = StyleSheet.create({
   },
   videoTrackFill: {
     height: "100%",
+    width: "100%",
     backgroundColor: "#fff",
     borderRadius: 1.5,
+    // scaleX-driven fill (UI thread) — scales from the left edge
+    transformOrigin: "left",
   },
   videoTrackTouch: {
     flex: 1,

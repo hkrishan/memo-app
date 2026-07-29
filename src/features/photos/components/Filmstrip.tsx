@@ -18,7 +18,14 @@
  * snaps to the nearest page.
  */
 
-import React, { memo, useCallback, useMemo, useState } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -206,6 +213,33 @@ export const Filmstrip: React.FC<FilmstripProps> = ({
   const scrubPosition = useSharedValue(0);
   const scrubTickIndex = useSharedValue(0);
 
+  // rAF-coalesced pager dispatch (same pattern as GridScrubber): gesture
+  // events can outrun frames, and each uncoalesced hop issued a native
+  // scrollToOffset — one per frame is all the pager can show anyway
+  const pendingOffsetRef = useRef<number | null>(null);
+  const scrubRafRef = useRef<number | null>(null);
+  const dispatchScrub = useCallback(
+    (offset: number) => {
+      pendingOffsetRef.current = offset;
+      if (scrubRafRef.current != null) return;
+      scrubRafRef.current = requestAnimationFrame(() => {
+        scrubRafRef.current = null;
+        const target = pendingOffsetRef.current;
+        pendingOffsetRef.current = null;
+        if (target != null) onScrub(target);
+      });
+    },
+    [onScrub],
+  );
+  useEffect(
+    () => () => {
+      if (scrubRafRef.current != null) {
+        cancelAnimationFrame(scrubRafRef.current);
+      }
+    },
+    [],
+  );
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -230,7 +264,7 @@ export const Filmstrip: React.FC<FilmstripProps> = ({
             scrubTickIndex.value = index;
             runOnJS(hapticTick)();
           }
-          runOnJS(onScrub)(p * pageWidth);
+          runOnJS(dispatchScrub)(p * pageWidth);
         })
         .onEnd(() => {
           runOnJS(onScrubEnd)(Math.round(scrubPosition.value));
@@ -243,7 +277,7 @@ export const Filmstrip: React.FC<FilmstripProps> = ({
       scrubPosition,
       scrubTickIndex,
       hapticTick,
-      onScrub,
+      dispatchScrub,
       onScrubEnd,
     ],
   );

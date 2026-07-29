@@ -4,14 +4,13 @@
  * with its title (and who's in it) below the cover.
  */
 
-import React, { useCallback, useEffect, memo } from "react";
+import React, { useCallback, useEffect, useMemo, memo } from "react";
 import { View, StyleSheet, Pressable, Dimensions } from "react-native";
 import { Text, ActivityIndicator } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import Animated, {
   ZoomIn,
-  FadeIn,
   LinearTransition,
 } from "react-native-reanimated";
 import { useLiveDropAlbumIds } from "@/features/moments/hooks/useLiveDropAlbumIds";
@@ -30,6 +29,8 @@ const countBadgeLabel = (count: number): string =>
   count > 999 ? "999+" : `${count}`;
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+/** How many album routes to pre-mount for instant navigation. */
+const PREFETCH_COUNT = 6;
 const GRID_GAP = 12;
 const GRID_ROW_GAP = 20;
 const GRID_PADDING = 20;
@@ -130,17 +131,28 @@ export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
   // One shared query for the whole grid — cards get a plain boolean
   const liveDropAlbumIds = useLiveDropAlbumIds();
 
-  // Prefetch album screens so navigation feels instant
+  // Prefetch the first few album screens so the most likely navigations
+  // feel instant. Capped and keyed on the id signature: prefetching EVERY
+  // album re-ran on each refetch (fresh array identity) and mounted one
+  // offscreen AlbumScreen — with its own queries — per album.
+  const prefetchSignature = useMemo(
+    () =>
+      (albums ?? [])
+        .slice(0, PREFETCH_COUNT)
+        .map((album) => album.albumId)
+        .join(","),
+    [albums],
+  );
   useEffect(() => {
     if (!albums || albums.length === 0) return;
-
-    albums.forEach((album) => {
+    for (const album of albums.slice(0, PREFETCH_COUNT)) {
       router.prefetch({
         pathname: `/album/${album.albumId}`,
         params: { title: album.title },
       });
-    });
-  }, [albums, router]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefetchSignature, router]);
 
   const handleAlbumPress = useCallback(
     (album: Album) => {
@@ -179,7 +191,6 @@ export const AlbumsGrid: React.FC<AlbumsGridProps> = ({
         <Animated.View
           key={album.albumId}
           layout={CARD_LAYOUT}
-          entering={FadeIn.duration(220)}
           style={styles.cardSlot}
         >
           <AlbumCard
@@ -219,11 +230,6 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
   },
   newBadgeLabel: {
     color: "#fff",

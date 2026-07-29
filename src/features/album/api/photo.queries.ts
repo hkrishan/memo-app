@@ -55,28 +55,22 @@ const updatePhotoSocial = (
   );
 };
 
-/**
- * Removes the bucket name from R2 URLs
- * e.g., "https://domain.com/memo-media-dev/path/image.jpg" -> "https://domain.com/path/image.jpg"
- */
-const removeBucketFromUrl = (url: string): string => {
-  return url.replace("/memo-media-dev", "");
-};
-
 // Module-level so its identity is stable: TanStack Query only memoizes a
 // select's result while the function identity holds. As an inline arrow
 // this re-ran on every render and handed every subscriber (grid, viewer,
 // filmstrip, social overlay) a freshly-built array, defeating all their
 // downstream memoization.
-const selectPhotosWithCleanUrls = (
+//
+// NOTE: this used to strip "/memo-media-dev" out of photo.url — a relic of
+// legacy path-style R2 URLs. Today's presigned URLs are VIRTUAL-HOST style
+// (https://memo-media-dev.<account>.r2…), where that replace ate the "//"'s
+// second slash plus the bucket subdomain and produced an unresolvable host
+// ("https:/.<account>…"). Photos hid it (they render thumbnailUrl or
+// displayUrl); videos stream photo.url directly and couldn't play. URLs
+// pass through untouched now.
+const selectFlatPhotos = (
   data: InfiniteData<AlbumPhotoPage>,
-): PhotoWithUploader[] =>
-  data.pages.flatMap((page) =>
-    page.photos.map((photo) => ({
-      ...photo,
-      url: removeBucketFromUrl(photo.url),
-    })),
-  );
+): PhotoWithUploader[] => data.pages.flatMap((page) => page.photos);
 
 /** Photos per request. Big enough that most albums are one round-trip. */
 const ALBUM_PAGE_SIZE = 100;
@@ -105,7 +99,7 @@ export const useGetPhotosQuery = (albumId: string) => {
     enabled: !!albumId,
     placeholderData: (previousData) => previousData,
     networkMode: "offlineFirst", // Show cached data first, then update
-    select: selectPhotosWithCleanUrls,
+    select: selectFlatPhotos,
   });
 
   // Keep pulling until the album is whole. Runs after each page settles, so

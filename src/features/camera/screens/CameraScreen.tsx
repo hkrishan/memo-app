@@ -1410,7 +1410,10 @@ export default function CameraScreen({
           the last-capture thumbnail opens the standard carousel + filmstrip
           over the merged library (fresh captures first), with the usual
           delete / add-to-album actions and the zoom-from-thumbnail flight. */}
-      <PhotoViewer {...libraryViewer.viewerProps} />
+      {/* Mounted only while open (visible clears post-animation) */}
+      {libraryViewer.viewerProps.visible && (
+        <PhotoViewer {...libraryViewer.viewerProps} />
+      )}
 
       {/* Sticky capture-extras preferences (main-tab camera only) */}
       {!albumId && (

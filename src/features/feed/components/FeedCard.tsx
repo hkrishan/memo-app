@@ -27,6 +27,15 @@ export const PAGE_RING_COLORS = [
   "#9b69ffff",
 ] as const;
 
+// Intl date formatting on Hermes is expensive and this runs per feed row
+// per render — one shared formatter + a result cache keeps it O(1) after
+// the first format of each timestamp (old dates never re-format anyway)
+const shortDateFormat = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
+const shortDateCache = new Map<string, string>();
+
 export function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
   const t = new Date(dateStr).getTime();
@@ -39,10 +48,12 @@ export function formatRelativeTime(dateStr: string): string {
   if (mins < 60) return `${mins}m`;
   if (hrs < 24) return `${hrs}h`;
   if (days < 7) return `${days}d`;
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  let formatted = shortDateCache.get(dateStr);
+  if (!formatted) {
+    formatted = shortDateFormat.format(t);
+    shortDateCache.set(dateStr, formatted);
+  }
+  return formatted;
 }
 
 const AVATAR_SIZE = 36;

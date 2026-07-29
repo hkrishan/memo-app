@@ -134,8 +134,11 @@ export function useCameraZoom({
         })
         .onUpdate((event) => {
           const newZoom = clampZoom(savedZoom.value * event.scale);
+          // UI-thread only: animatedZoom drives the camera's animated
+          // props directly. The old per-frame runOnJS(setCurrentZoom)
+          // re-rendered the whole camera screen at 60Hz during a pinch —
+          // JS state syncs once, in onEnd.
           animatedZoom.value = newZoom;
-          runOnJS(setCurrentZoom)(newZoom);
         })
         .onEnd(() => {
           savedZoom.value = animatedZoom.value;

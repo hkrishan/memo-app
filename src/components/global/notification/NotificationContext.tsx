@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useCallback, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import {
   Notification,
   NotificationContextValue,
@@ -111,16 +117,31 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     [showToast],
   );
 
-  const value: NotificationContextValue = {
-    notifications,
-    showToast,
-    showPopup,
-    showError,
-    showSuccess,
-    dismiss,
-    dismissAll,
-    remove,
-  };
+  // Memoized: un-memoized, every provider render handed consumers a fresh
+  // object — and since `notifications` changes per toast, every toast
+  // re-rendered every useNotification() consumer app-wide regardless
+  const value: NotificationContextValue = useMemo(
+    () => ({
+      notifications,
+      showToast,
+      showPopup,
+      showError,
+      showSuccess,
+      dismiss,
+      dismissAll,
+      remove,
+    }),
+    [
+      notifications,
+      showToast,
+      showPopup,
+      showError,
+      showSuccess,
+      dismiss,
+      dismissAll,
+      remove,
+    ],
+  );
 
   return (
     <NotificationContext.Provider value={value}>

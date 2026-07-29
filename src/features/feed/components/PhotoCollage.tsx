@@ -6,7 +6,7 @@
  * overlay on the last cell. Video cells get a small play badge.
  */
 
-import React, { memo } from "react";
+import React, { memo, useCallback } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,13 +24,21 @@ const Cell = memo<{
   item: CollageItem;
   width: number;
   height: number;
-  onPress?: () => void;
+  /** Cell index + stable handler — an inline closure per cell defeated
+   *  the memo on every collage render */
+  index: number;
+  onPressItem?: (index: number) => void;
   extra?: number;
-}>(({ item, width, height, onPress, extra }) => (
+}>(({ item, width, height, index, onPressItem, extra }) => {
+  const handlePress = useCallback(
+    () => onPressItem?.(index),
+    [onPressItem, index],
+  );
+  return (
   <Pressable
     style={[styles.cell, { width, height }]}
-    onPress={onPress}
-    disabled={!onPress}
+    onPress={onPressItem ? handlePress : undefined}
+    disabled={!onPressItem}
   >
     <CachedImage
       uri={item.uri}
@@ -48,7 +56,8 @@ const Cell = memo<{
       </View>
     )}
   </Pressable>
-));
+  );
+});
 
 interface PhotoCollageProps {
   items: CollageItem[];
@@ -71,9 +80,6 @@ export const PhotoCollage = memo<PhotoCollageProps>(
 
     const visible = items.slice(0, MAX_VISIBLE);
     const extra = extraCount ?? Math.max(0, count - MAX_VISIBLE);
-    const press = (i: number) =>
-      onPressItem ? () => onPressItem(i) : undefined;
-
     // Single item — full-width square
     if (count === 1) {
       return (
@@ -81,7 +87,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
           item={visible[0]}
           width={width}
           height={width}
-          onPress={press(0)}
+          index={0} onPressItem={onPressItem}
           extra={extra}
         />
       );
@@ -98,7 +104,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
               item={item}
               width={cellW}
               height={cellW}
-              onPress={press(i)}
+              index={i} onPressItem={onPressItem}
               extra={i === 1 ? extra : 0}
             />
           ))}
@@ -117,7 +123,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
             item={visible[0]}
             width={bigW}
             height={bigH}
-            onPress={press(0)}
+            index={0} onPressItem={onPressItem}
           />
           <View style={{ gap: spacing }}>
             {visible.slice(1).map((item, i) => (
@@ -126,7 +132,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
                 item={item}
                 width={smallW}
                 height={smallW}
-                onPress={press(i + 1)}
+                index={i + 1} onPressItem={onPressItem}
                 extra={i === 1 ? extra : 0}
               />
             ))}
@@ -146,7 +152,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
               item={item}
               width={cellW}
               height={cellW}
-              onPress={press(i)}
+              index={i} onPressItem={onPressItem}
             />
           ))}
         </View>
@@ -157,7 +163,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
               item={item}
               width={cellW}
               height={cellW}
-              onPress={press(i + 2)}
+              index={i + 2} onPressItem={onPressItem}
               extra={i === 1 ? extra : 0}
             />
           ))}

@@ -61,6 +61,10 @@ const MAX_TILES = 12;
 // still unknown keeps the viewer's graceful fade fallback.
 const tileSizeCache = new Map<string, { width: number; height: number }>();
 
+/** Stable empty result while the viewer is closed — a fresh array here
+ *  would re-render on every parent pass. */
+const EMPTY_VIEWER_ASSETS: MediaAsset[] = [];
+
 // ---------------------------------------------------------------------------
 // Tile
 // ---------------------------------------------------------------------------
@@ -184,6 +188,8 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
 }) => {
   const tiles = useMemo(() => assets.slice(0, MAX_TILES), [assets]);
   const overflow = count - tiles.length;
+  // Set lookup — O(P) .includes ran per tile per render
+  const poppingSet = useMemo(() => new Set(poppingIds ?? []), [poppingIds]);
   const tilesRef = useRef(tiles);
   tilesRef.current = tiles;
 
@@ -262,13 +268,16 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
   );
   const viewerAssets = useMemo(() => {
     void sizeVersion;
-    const source = viewerSession?.base ?? assets;
+    // Closed viewer: skip the enrichment. For the Recents row `assets` is
+    // the whole album, and this re-mapped it on every tile-size bump.
+    if (viewerSession === null) return EMPTY_VIEWER_ASSETS;
+    const source = viewerSession.base;
     return source.map((asset) => {
       if (asset.width > 0 && asset.height > 0) return asset;
       const size = tileSizeCache.get(asset.id);
       return size ? { ...asset, ...size } : asset;
     });
-  }, [assets, viewerSession, sizeVersion]);
+  }, [viewerSession, sizeVersion]);
 
   // Resolve a tile's on-screen rect; null when it's no longer visible
   // (scrolled out of the strip or off the page) so the viewer fades.
@@ -391,7 +400,7 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
           <SectionTile
             key={asset.id}
             asset={asset}
-            popping={poppingIds?.includes(asset.id) === true}
+            popping={poppingSet.has(asset.id)}
             dimmed={asset.id === viewedId}
             badge={renderTileBadge?.(asset)}
             onPress={handleTilePress}
@@ -412,19 +421,25 @@ export const GallerySectionRow: React.FC<GallerySectionRowProps> = ({
         )}
       </ScrollView>
 
-      <PhotoViewer
-        visible={viewerSession !== null}
-        assets={viewerAssets}
-        initialIndex={viewerSession?.index ?? 0}
-        originFrame={viewerSession?.originFrame ?? null}
-        getReturnFrame={getReturnFrame}
-        onClose={handleCloseViewer}
-        onOpenTransitionStart={handleOpenTransitionStart}
-        gridCornerRadius={TILE_RADIUS}
-        renderSocialOverlay={renderSocialOverlay}
-        renderPageAttribution={renderPageAttribution}
-        onDoubleTapAsset={onDoubleTapAsset}
-      />
+      {/* Mounted only while open: one closed viewer per section row was
+          ~9 copies of the viewer's whole hook tree running per render.
+          onClose fires after the return flight lands, so unmounting on
+          null never cuts the animation. */}
+      {viewerSession !== null && (
+        <PhotoViewer
+          visible
+          assets={viewerAssets}
+          initialIndex={viewerSession.index}
+          originFrame={viewerSession.originFrame}
+          getReturnFrame={getReturnFrame}
+          onClose={handleCloseViewer}
+          onOpenTransitionStart={handleOpenTransitionStart}
+          gridCornerRadius={TILE_RADIUS}
+          renderSocialOverlay={renderSocialOverlay}
+          renderPageAttribution={renderPageAttribution}
+          onDoubleTapAsset={onDoubleTapAsset}
+        />
+      )}
     </View>
   );
 };

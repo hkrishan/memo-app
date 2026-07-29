@@ -91,8 +91,16 @@ export const useLibraryViewerSession = (
           resolve();
           return;
         }
+        const source = asset.thumbnailUrl || asset.uri;
+        // RNImage.getSize has no loader for ph:// Photos-library uris (a
+        // pending video's poster) — it redboxes natively. Skip; the viewer
+        // falls back to a fade for unknown sizes.
+        if (!/^(https?|file|data):/.test(source)) {
+          resolve();
+          return;
+        }
         RNImage.getSize(
-          asset.thumbnailUrl || asset.uri,
+          source,
           (width, height) => {
             if (width > 0 && height > 0) {
               sizeCacheRef.current.set(asset.id, { width, height });

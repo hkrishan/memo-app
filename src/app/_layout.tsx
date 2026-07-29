@@ -70,7 +70,10 @@ function RootContent() {
 }
 
 function Layout() {
-  const [fontsLoaded] = useFonts({
+  // Loaded in the background — these are DECORATIVE faces (two wordmarks).
+  // Gating the whole tree (and holding the splash) on them serialized
+  // font IO in front of first paint; they swap in when ready.
+  useFonts({
     BowlbyOneSC: require("../../assets/fonts/BowlbyOneSC-Regular.ttf"),
     // "Create" wordmark script (Memo Create)
     Pacifico_400Regular,
@@ -81,14 +84,8 @@ function Layout() {
   }, []);
 
   const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded) {
-      await SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
-
-  if (!fontsLoaded) {
-    return null;
-  }
+    await SplashScreen.hideAsync();
+  }, []);
 
   return (
     <GestureHandlerRootView style={styles.container} onLayout={onLayoutRootView}>

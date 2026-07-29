@@ -8,18 +8,33 @@
  * per-host concurrency natively, which makes enqueueing the entire batch
  * at once safe. Promises for in-flight tasks resolve when JS resumes.
  *
+ * Offline-first: each picked asset is STAGED (copied into app storage —
+ * picker files live in an OS-clearable cache) and the pending list is
+ * persisted. Adding photos with no connection just queues them: failures
+ * auto-retry when the network returns or the app foregrounds, and a
+ * restart resumes interrupted uploads from the staged copies (see
+ * useResumeAlbumUploads, mounted in the authenticated layout).
+ *
  * UI (the floating pill + expanded modal) subscribes via
  * `useUploadManagerStore`; screens only ever call `startUploadBatch`.
  */
 
-import { Platform } from "react-native";
+import { AppState, InteractionManager, Platform } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
+import { useEffect } from "react";
 import * as Haptics from "expo-haptics";
 import {
   FileSystemSessionType,
   FileSystemUploadType,
+  copyAsync,
+  deleteAsync,
+  documentDirectory,
+  makeDirectoryAsync,
   uploadAsync,
 } from "expo-file-system/legacy";
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { createDebouncedStorage } from "@/lib/debouncedStorage";
 
 import { env } from "@/lib/env";
 import { captureException } from "@/lib/sentry";
@@ -30,6 +45,9 @@ import {
   type PendingAsset,
 } from "./pendingUploadsStore";
 import { usePhotoAlbumStore } from "./photoAlbumStore";
+
+/** App-storage home of staged copies — survives restarts and cache purges. */
+const QUEUE_DIR = `${documentDirectory ?? ""}album-upload-queue/`;
 
 /** How long the "done" state lingers before the pill auto-hides. */
 const DONE_HIDE_MS = 1500;
@@ -65,16 +83,29 @@ export interface UploadBatch {
  * render it from its LOCAL file while it flies (see useAlbumPendingAssets).
  * A record outlives its upload: it retires only once the album's photo list
  * has refetched, so the local tile hands over to the server one with no gap.
+ *
+ * Records are persisted — they carry everything needed to redo the upload
+ * after a restart, and `fileUri` points at a staged copy that is ours (the
+ * original picker file may be gone by then).
  */
 export type PendingAlbumUpload = {
+  /** Display uri for the album tile — the picker file this session, the
+   *  staged copy after a restart. Also the record's identity key. */
   uri: string;
+  /** Staged app-storage copy (upload source); null until staging lands. */
+  fileUri: string | null;
   albumId: string;
+  albumTitle: string;
+  fileName: string;
+  mimeType: string;
+  latitude?: number;
+  longitude?: number;
   /** Server took it; the tile retires on the next album refetch. */
   uploaded: boolean;
   /** The album photo the server created — lets the server tile borrow this
    *  local file as its placeholder while the remote image downloads. */
   albumPhotoId: string | null;
-  /** Failed — waiting on the batch's retry (or its dismissal). */
+  /** Failed — waiting on a retry (manual, reconnect, or foreground). */
   failed: boolean;
   /** Drives newest-first ordering alongside the album's server photos. */
   startedAt: number;
@@ -91,10 +122,18 @@ interface UploadManagerState {
   pending: PendingAlbumUpload[];
 }
 
-export const useUploadManagerStore = create<UploadManagerState>(() => ({
-  batch: null,
-  pending: [],
-}));
+export const useUploadManagerStore = create<UploadManagerState>()(
+  persist((): UploadManagerState => ({ batch: null, pending: [] }), {
+    name: "album-upload-queue",
+    // Debounced: uploads patch state several times per photo — writing
+    // the whole queue to disk per patch was hundreds of serializations
+    // per batch
+    storage: createJSONStorage(() => createDebouncedStorage()),
+    // The batch is session UI state — only the uploads themselves persist;
+    // a resume rebuilds a batch for whatever is left to do.
+    partialize: (state) => ({ pending: state.pending }),
+  }),
+);
 
 const patchPending = (
   match: (upload: PendingAlbumUpload) => boolean,
@@ -127,11 +166,40 @@ const albumIdsToInvalidate = new Set<string>();
 /** Timer for the auto-hide after the "done" state. */
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Names staged copies uniquely within one JS session. */
+let stagedCounter = 0;
+
+/** Restart-resume runs at most once per session. */
+let resumedThisSession = false;
+
 const clearHideTimer = () => {
   if (hideTimer) {
     clearTimeout(hideTimer);
     hideTimer = null;
   }
+};
+
+const deleteStagedFile = (upload: PendingAlbumUpload): void => {
+  if (!upload.fileUri) return;
+  void deleteAsync(upload.fileUri, { idempotent: true }).catch(() => {});
+};
+
+/** Drops records settled before `staleBefore` and their staged files. */
+const pruneSettledRecords = (
+  staleBefore = Date.now() - SETTLED_LINGER_MS,
+): void => {
+  const stale = useUploadManagerStore
+    .getState()
+    .pending.filter(
+      (upload) => upload.settledAt != null && upload.settledAt <= staleBefore,
+    );
+  if (stale.length === 0) return;
+  for (const upload of stale) deleteStagedFile(upload);
+  useUploadManagerStore.setState((state) => ({
+    pending: state.pending.filter(
+      (upload) => upload.settledAt == null || upload.settledAt > staleBefore,
+    ),
+  }));
 };
 
 // ---------------------------------------------------------------------------
@@ -142,6 +210,10 @@ const clearHideTimer = () => {
  * Start uploading a batch of photos to an album. If a batch is already
  * running, the new assets are appended to it (the total grows) and are
  * enqueued immediately alongside the in-flight ones.
+ *
+ * Works with no connection: the assets are staged locally, the uploads
+ * fail into the batch's failed state, and the reconnect/foreground
+ * listeners (useResumeAlbumUploads) retry them automatically.
  */
 export function startUploadBatch(
   albumId: string,
@@ -191,38 +263,41 @@ export function startUploadBatch(
   // Local-first: the album renders these from their local files right away.
   // A retry replaces its old record rather than stacking a second tile.
   const startedAt = Date.now();
-  const staleBefore = startedAt - SETTLED_LINGER_MS;
-  useUploadManagerStore.setState((state) => ({
-    pending: [
-      ...state.pending
-        .filter(
-          (upload) =>
-            upload.settledAt == null || upload.settledAt > staleBefore,
-        )
-        .filter(
-        (upload) =>
-          !(
-            upload.albumId === albumId &&
-            toEnqueue.some((asset) => asset.uri === upload.uri)
-          ),
-      ),
-      ...toEnqueue.map((asset) => ({
-        uri: asset.uri,
-        albumId,
-        uploaded: false,
-        albumPhotoId: null,
-        failed: false,
-        startedAt,
-        settledAt: null,
-      })),
-    ],
-  }));
+  pruneSettledRecords(startedAt - SETTLED_LINGER_MS);
+  useUploadManagerStore.setState((state) => {
+    const replaced = state.pending.filter(
+      (upload) =>
+        upload.albumId === albumId &&
+        toEnqueue.some((asset) => asset.uri === upload.uri),
+    );
+    for (const upload of replaced) deleteStagedFile(upload);
+    return {
+      pending: [
+        ...state.pending.filter((upload) => !replaced.includes(upload)),
+        ...toEnqueue.map((asset) => ({
+          uri: asset.uri,
+          fileUri: null,
+          albumId,
+          albumTitle,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+          ...(asset.latitude !== undefined && { latitude: asset.latitude }),
+          ...(asset.longitude !== undefined && { longitude: asset.longitude }),
+          uploaded: false,
+          albumPhotoId: null,
+          failed: false,
+          startedAt,
+          settledAt: null,
+        })),
+      ],
+    };
+  });
 
   albumIdsToInvalidate.add(albumId);
   for (const asset of toEnqueue) {
     inFlightUris.add(asset.uri);
     inFlight += 1;
-    void uploadOne(albumId, asset);
+    void stageAndUpload(albumId, asset);
   }
 }
 
@@ -259,10 +334,14 @@ export function dismissUploadBatch(): void {
   if (batch.status === "done" || finishedWithFailures) {
     clearHideTimer();
     // Abandoning the failures retires their tiles too — nothing is coming
-    useUploadManagerStore.setState((state) => ({
-      batch: null,
-      pending: state.pending.filter((upload) => !upload.failed),
-    }));
+    useUploadManagerStore.setState((state) => {
+      const abandoned = state.pending.filter((upload) => upload.failed);
+      for (const upload of abandoned) deleteStagedFile(upload);
+      return {
+        batch: null,
+        pending: state.pending.filter((upload) => !upload.failed),
+      };
+    });
   }
 }
 
@@ -271,10 +350,43 @@ export function dismissUploadBatch(): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Stage the picker file into app storage, then upload. Staging first is
+ * what makes the queue offline-safe: the picker's cache file can vanish
+ * (OS cleanup, restart), but the staged copy is ours until the upload
+ * lands and its linger window closes.
+ */
+async function stageAndUpload(
+  albumId: string,
+  asset: PendingAsset,
+): Promise<void> {
+  try {
+    await makeDirectoryAsync(QUEUE_DIR, { intermediates: true }).catch(
+      () => {},
+    );
+    const extension =
+      asset.fileName.split(".").pop()?.toLowerCase() ??
+      asset.uri.split(".").pop()?.toLowerCase() ??
+      "jpg";
+    const staged = `${QUEUE_DIR}alb-${Date.now()}-${stagedCounter++}.${extension}`;
+    await copyAsync({ from: asset.uri, to: staged });
+    patchPending(
+      (upload) => upload.uri === asset.uri && upload.albumId === albumId,
+      { fileUri: staged },
+    );
+  } catch {
+    // Staging failed (exotic uri?) — upload straight from the picker file;
+    // the transfer just won't survive a restart.
+  }
+  await uploadOne(albumId, asset);
+}
+
+/**
  * Upload a single photo and record the outcome. Uses the legacy
  * expo-file-system upload API so the native side owns the transfer
  * (BACKGROUND NSURLSession on iOS keeps it running when the app is
- * backgrounded; Android uploads always run in the background).
+ * backgrounded; Android uploads always run in the background). The source
+ * is the staged copy when one exists — retries after a restart depend on
+ * that.
  */
 async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
   let succeeded = false;
@@ -293,7 +405,14 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
       parameters.longitude = String(asset.longitude);
     }
 
-    const result = await uploadAsync(url, asset.uri, {
+    const record = useUploadManagerStore
+      .getState()
+      .pending.find(
+        (upload) => upload.uri === asset.uri && upload.albumId === albumId,
+      );
+    const sourceUri = record?.fileUri ?? asset.uri;
+
+    const result = await uploadAsync(url, sourceUri, {
       httpMethod: "POST",
       uploadType: FileSystemUploadType.MULTIPART,
       fieldName: "photo",
@@ -330,8 +449,8 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
       });
     }
   } catch (error) {
+    // Expected while offline — the reconnect listener retries; don't spam
     if (__DEV__) console.error("Photo upload failed", error);
-    captureException(error, { albumId, operation: "uploadOne" });
   }
 
   inFlight -= 1;
@@ -354,20 +473,29 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
       .getState()
       .addAssociation(asset.uri, albumId, batch.albumTitle);
     usePendingUploadsStore.getState().removeAsset(asset.uri);
-    // The local tile stays (the album's list doesn't have the photo until
-    // the batch settles and refetches) — it just stops spinning
-    patchPending(isThisUpload, { uploaded: true, albumPhotoId: createdPhotoId });
-    useUploadManagerStore.setState({
-      batch: { ...batch, completed: batch.completed + 1 },
-    });
-  } else {
-    patchPending(isThisUpload, { failed: true });
-    useUploadManagerStore.setState({
-      batch: {
-        ...batch,
-        failedAssets: [...batch.failedAssets, { ...asset, albumId }],
+    // One setState for both the tile flip and the counter — two writes
+    // here meant two renders (and two persist events) per photo
+    useUploadManagerStore.setState((state) => ({
+      batch: state.batch && {
+        ...state.batch,
+        completed: state.batch.completed + 1,
       },
-    });
+      pending: state.pending.map((upload) =>
+        isThisUpload(upload)
+          ? { ...upload, uploaded: true, albumPhotoId: createdPhotoId }
+          : upload,
+      ),
+    }));
+  } else {
+    useUploadManagerStore.setState((state) => ({
+      batch: state.batch && {
+        ...state.batch,
+        failedAssets: [...state.batch.failedAssets, { ...asset, albumId }],
+      },
+      pending: state.pending.map((upload) =>
+        isThisUpload(upload) ? { ...upload, failed: true } : upload,
+      ),
+    }));
   }
 
   if (inFlight === 0) settleBatch();
@@ -398,20 +526,16 @@ function settleBatch(): void {
           : upload,
       ),
     }));
-    // Deterministic cleanup: the picker's cache files aren't ours to keep
-    // alive forever, and by now the remote image is a normal album fetch
+    // Deterministic cleanup: by now the remote image is a normal album
+    // fetch, and the staged copies aren't needed anymore
     setTimeout(() => {
-      useUploadManagerStore.setState((state) => ({
-        pending: state.pending.filter(
-          (upload) => upload.settledAt == null || upload.settledAt > settledAt,
-        ),
-      }));
+      pruneSettledRecords(settledAt);
     }, SETTLED_LINGER_MS);
   });
-  // Also refresh the albums LIST (["albums"]) + every album detail
-  // (["albums", id]) by prefix — the My Albums tab derives each card's
-  // cover from the list's recentPhotos, which a per-id invalidation misses.
-  queryClient.invalidateQueries({ queryKey: ["albums"] });
+  // Refresh the albums LIST (covers/counts derive from its recentPhotos).
+  // exact: the bare prefix also matched every cached ["albums", id] detail
+  // query — a refetch wave of every album opened recently.
+  queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
 
   const batch = useUploadManagerStore.getState().batch;
   if (!batch) return;
@@ -432,4 +556,118 @@ function settleBatch(): void {
   }
   // With failures the batch stays visible in its failed state until the
   // user retries or dismisses.
+}
+
+// ---------------------------------------------------------------------------
+// Restart resume + auto-retry
+// ---------------------------------------------------------------------------
+
+/**
+ * Picks the persisted queue back up after a restart: uploads that landed
+ * get their albums refreshed and retire through the normal linger; ones
+ * that didn't go back up as a fresh batch, sourced from their staged
+ * copies (the picker's cache files may be gone by now).
+ */
+function resumeAlbumUploads(): void {
+  if (resumedThisSession) return;
+  resumedThisSession = true;
+
+  pruneSettledRecords();
+
+  // Landed before the app died but never settled — the server has them;
+  // refresh their albums and let the linger window retire the tiles.
+  const landed = useUploadManagerStore
+    .getState()
+    .pending.filter((upload) => upload.uploaded && upload.settledAt == null);
+  if (landed.length > 0) {
+    const settledAt = Date.now();
+    useUploadManagerStore.setState((state) => ({
+      pending: state.pending.map((upload) =>
+        upload.uploaded && upload.settledAt == null
+          ? { ...upload, settledAt }
+          : upload,
+      ),
+    }));
+    for (const albumId of new Set(landed.map((upload) => upload.albumId))) {
+      void queryClient.invalidateQueries({
+        queryKey: photoKeys.byAlbum(albumId),
+      });
+    }
+    void queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
+    setTimeout(() => pruneSettledRecords(settledAt), SETTLED_LINGER_MS);
+  }
+
+  // Interrupted mid-flight or never sent — re-run them as a fresh batch.
+  // The staged copy becomes the display uri too: the original picker file
+  // may not have survived the restart.
+  const unfinished = useUploadManagerStore
+    .getState()
+    .pending.filter((upload) => !upload.uploaded);
+  if (unfinished.length === 0) return;
+
+  useUploadManagerStore.setState((state) => ({
+    batch: {
+      albumId: unfinished[unfinished.length - 1]!.albumId,
+      albumTitle: unfinished[unfinished.length - 1]!.albumTitle,
+      total: unfinished.length,
+      completed: 0,
+      failedAssets: [],
+      status: "uploading",
+    },
+    pending: state.pending.map((upload) =>
+      !upload.uploaded
+        ? { ...upload, uri: upload.fileUri ?? upload.uri, failed: false }
+        : upload,
+    ),
+  }));
+
+  const records = useUploadManagerStore
+    .getState()
+    .pending.filter((upload) => !upload.uploaded);
+  for (const record of records) {
+    albumIdsToInvalidate.add(record.albumId);
+    inFlightUris.add(record.uri);
+    inFlight += 1;
+    void uploadOne(record.albumId, {
+      uri: record.uri,
+      fileName: record.fileName,
+      mimeType: record.mimeType,
+      ...(record.latitude !== undefined && { latitude: record.latitude }),
+      ...(record.longitude !== undefined && { longitude: record.longitude }),
+    });
+  }
+}
+
+/**
+ * Resumes persisted album uploads on app start and retries failures on
+ * foreground / network regained. Mounted once in the authenticated layout.
+ */
+export function useResumeAlbumUploads(): void {
+  useEffect(() => {
+    // Deferred past first interactions — resume work must not race the
+    // app's first paint. The persisted queue also arrives asynchronously
+    // from AsyncStorage.
+    const resumeWhenIdle = () => {
+      void InteractionManager.runAfterInteractions(() => {
+        resumeAlbumUploads();
+      });
+    };
+    if (useUploadManagerStore.persist.hasHydrated()) {
+      resumeWhenIdle();
+    }
+    const unsubHydration = useUploadManagerStore.persist.onFinishHydration(
+      () => resumeWhenIdle(),
+    );
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") retryFailedUploads();
+    });
+    const netInfoUnsub = NetInfo.addEventListener((state) => {
+      if (state.isConnected) retryFailedUploads();
+    });
+    return () => {
+      unsubHydration();
+      appStateSub.remove();
+      netInfoUnsub();
+    };
+  }, []);
 }

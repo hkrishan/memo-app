@@ -80,7 +80,7 @@ module.exports = {
           defaultChannel: "default",
           // Bundled into the native build; iOS pushes reference it by
           // filename, Android via the "daily-drop" channel
-          sounds: ["./assets/sounds/daily-drop.wav"],
+          sounds: ["./assets/sounds/daily_drop.wav"],
         },
       ],
       // Sentry native setup + source-map upload during EAS builds.

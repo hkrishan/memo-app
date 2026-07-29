@@ -179,6 +179,19 @@ class HttpClient {
     if (!this.config.enableLogging) return;
 
     const emoji = type === "request" ? "➡️" : type === "response" ? "✅" : "❌";
+    // Responses log a size summary, not the body: serializing a 400KB
+    // photo-list payload into the Metro console blocked the JS thread and
+    // dominated any dev profiling
+    if (type === "response") {
+      let size = "";
+      try {
+        size = data ? ` (${JSON.stringify(data).length} bytes)` : "";
+      } catch {
+        // Unserializable body — the size is cosmetic
+      }
+      console.log(`${emoji} [${method}] ${url}${size}`);
+      return;
+    }
     console.log(`${emoji} [${method}] ${url}`, this.sanitizeForLog(data) ?? "");
   }
 

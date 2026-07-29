@@ -1,5 +1,5 @@
-import { ResizeMode, Video } from "expo-av";
 import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -154,18 +154,15 @@ const NoPage = ({ albumId }: { albumId: string }) => {
   };
   return (
     <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <Video
-        source={require("./../../../../../assets/memo-background-vid.mp4")}
+      {/* Static backdrop. This page sits pre-mounted in the album's
+          PagerView — the old looping video + live fullscreen blur decoded
+          and re-composited every frame while the user was on the Gallery
+          tab next door. */}
+      <LinearGradient
+        colors={["#f5f3ef", "#e8e4f3", "#f0eef7"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay
-        isLooping
-        isMuted
-      />
-      <BlurView
-        style={{ ...StyleSheet.absoluteFillObject }}
-        intensity={80}
-        tint="extraLight"
       />
       <View
         style={{

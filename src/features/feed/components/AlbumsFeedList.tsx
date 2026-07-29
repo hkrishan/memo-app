@@ -93,6 +93,9 @@ const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
       data={items}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
+      // Three very differently-sized row shapes must not share one
+      // recycling pool (photo collages vs one-line member rows)
+      getItemType={(item: AlbumFeedUpdate) => item.type}
       contentContainerStyle={contentStyle}
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={listEmpty}

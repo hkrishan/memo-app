@@ -310,7 +310,8 @@ export const useSetLibraryPhotoAlbumsMutation = () => {
       for (const albumId of touched) {
         queryClient.invalidateQueries({ queryKey: photoKeys.byAlbum(albumId) });
       }
-      queryClient.invalidateQueries({ queryKey: ["albums"] });
+      // exact: the bare prefix also matched every cached album detail
+      queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
       queryClient.invalidateQueries({ queryKey: libraryKeys.all });
     },
   });
@@ -344,7 +345,7 @@ export const useAddLibraryPhotoToAlbumMutation = () => {
       queryClient.invalidateQueries({
         queryKey: photoKeys.byAlbum(albumId),
       });
-      queryClient.invalidateQueries({ queryKey: ["albums"] });
+      queryClient.invalidateQueries({ queryKey: ["albums"], exact: true });
       // The library feed carries per-photo album memberships (the "In
       // <album>" banner) — refresh so the new membership shows at once
       queryClient.invalidateQueries({ queryKey: libraryKeys.all });

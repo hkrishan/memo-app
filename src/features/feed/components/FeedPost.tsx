@@ -78,12 +78,15 @@ const MediaPage = memo<{
 
   return (
     <Pressable style={[styles.mediaPage, { height }]} onPress={onPress}>
-      {/* The same image, blurred and cover-filled, backs the fitted one */}
+      {/* Blurred cover-filled backdrop behind the fitted image. The
+          THUMBNAIL is plenty here (it's blurred anyway) — blurring the
+          full-res source decoded every post twice, and a 200px radius
+          made the blur pass itself expensive */}
       <CachedImage
-        uri={uri}
+        uri={item.thumbnailUrl ?? uri}
         style={StyleSheet.absoluteFill}
         contentFit="cover"
-        blurRadius={200}
+        blurRadius={40}
         showPlaceholder={false}
       />
       <View style={styles.mediaBackdropDim} pointerEvents="none" />
@@ -182,6 +185,9 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   const onScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { x: number } } }) => {
       const idx = Math.round(e.nativeEvent.contentOffset.x / MEDIA_WIDTH);
+      // Only commit on an actual page change — unguarded, this re-rendered
+      // the whole post (viewer, sheet, list) on every scroll frame
+      if (idx === activeIdxRef.current) return;
       activeIdxRef.current = idx;
       setActiveIdx(idx);
     },
@@ -429,29 +435,35 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
         </Text>
       ) : null}
 
-      {/* Fullscreen viewer — the album photo grid's flight system: the
-          tapped media flies from its fitted rect to fullscreen and flies
-          home on dismiss, with zoom/filmstrip/pan-to-dismiss */}
-      <PhotoViewer
-        visible={viewerSession !== null}
-        assets={viewerAssets}
-        initialIndex={viewerSession?.index ?? 0}
-        originFrame={viewerSession?.originFrame ?? null}
-        getReturnFrame={getReturnFrame}
-        onClose={() => setViewerSession(null)}
-        gridCornerRadius={0}
-        onDoubleTapAsset={handleViewerDoubleTap}
-      />
+      {/* Fullscreen viewer — mounted only while a session is open (the
+          2000-line viewer's hook tree is far too heavy to run per feed
+          row while closed). onClose fires AFTER the return flight lands,
+          so unmounting on null never cuts the animation. */}
+      {viewerSession !== null && (
+        <PhotoViewer
+          visible
+          assets={viewerAssets}
+          initialIndex={viewerSession.index}
+          originFrame={viewerSession.originFrame}
+          getReturnFrame={getReturnFrame}
+          onClose={() => setViewerSession(null)}
+          gridCornerRadius={0}
+          onDoubleTapAsset={handleViewerDoubleTap}
+        />
+      )}
 
-      {/* Comments */}
-      <PostCommentsSheet
-        albumId={post.albumId}
-        pageId={post.pageId}
-        postId={sheetPostId}
-        visible={commentsOpen}
-        onClose={closeComments}
-        currentUserId={currentUserId}
-      />
+      {/* Comments — mounted from first open (sheetPostId is retained so
+          the closing sheet never blanks), never before */}
+      {sheetPostId !== null && (
+        <PostCommentsSheet
+          albumId={post.albumId}
+          pageId={post.pageId}
+          postId={sheetPostId}
+          visible={commentsOpen}
+          onClose={closeComments}
+          currentUserId={currentUserId}
+        />
+      )}
     </FeedCard>
   );
 });

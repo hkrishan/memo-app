@@ -1,5 +1,12 @@
-import React, { useCallback, useRef } from "react";
-import { View, StyleSheet, Dimensions, Pressable } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  InteractionManager,
+  Platform,
+  Pressable,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -90,42 +97,55 @@ export default function SwipeableTabs({
     [],
   );
 
-  const panGesture = Gesture.Pan()
-    .activeOffsetX([-10, 10])
-    .onStart(() => {
-      runOnJS(setChildTouchesBlocked)(true);
-    })
-    .onUpdate((e) => {
-      const dragProgress = -e.translationX / SCREEN_WIDTH;
-      scrollPosition.value = Math.max(
-        0,
-        Math.min(2, currentPage.value + dragProgress),
-      );
-    })
-    .onEnd((e) => {
-      const velocity = -e.velocityX;
-      const dragProgress = -e.translationX / SCREEN_WIDTH;
-      const projectedPage = currentPage.value + dragProgress + velocity / 2000;
+  // Memoized: the ROOT pager gesture — rebuilding it per render
+  // re-attached the recognizer that owns every horizontal swipe
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-10, 10])
+        .onStart(() => {
+          runOnJS(setChildTouchesBlocked)(true);
+        })
+        .onUpdate((e) => {
+          const dragProgress = -e.translationX / SCREEN_WIDTH;
+          scrollPosition.value = Math.max(
+            0,
+            Math.min(2, currentPage.value + dragProgress),
+          );
+        })
+        .onEnd((e) => {
+          const velocity = -e.velocityX;
+          const dragProgress = -e.translationX / SCREEN_WIDTH;
+          const projectedPage =
+            currentPage.value + dragProgress + velocity / 2000;
 
-      let targetPage: number;
-      if (projectedPage < 0.5) {
-        targetPage = 0;
-      } else if (projectedPage < 1.5) {
-        targetPage = 1;
-      } else {
-        targetPage = 2;
-      }
+          let targetPage: number;
+          if (projectedPage < 0.5) {
+            targetPage = 0;
+          } else if (projectedPage < 1.5) {
+            targetPage = 1;
+          } else {
+            targetPage = 2;
+          }
 
-      targetPage = Math.max(0, Math.min(2, targetPage));
-      currentPage.value = targetPage;
-      scrollPosition.value = withTiming(targetPage, TIMING_CONFIG, () => {
-        // Taps stay blocked while the pages settle under the finger-up spot
-        runOnJS(setChildTouchesBlocked)(false);
-      });
-    })
-    .onFinalize(() => {
-      runOnJS(scheduleUnblockSafety)();
-    });
+          targetPage = Math.max(0, Math.min(2, targetPage));
+          currentPage.value = targetPage;
+          scrollPosition.value = withTiming(targetPage, TIMING_CONFIG, () => {
+            // Taps stay blocked while the pages settle under the
+            // finger-up spot
+            runOnJS(setChildTouchesBlocked)(false);
+          });
+        })
+        .onFinalize(() => {
+          runOnJS(scheduleUnblockSafety)();
+        }),
+    [
+      scrollPosition,
+      currentPage,
+      setChildTouchesBlocked,
+      scheduleUnblockSafety,
+    ],
+  );
 
   const navigateToPage = useCallback(
     (index: number) => {
@@ -134,6 +154,16 @@ export default function SwipeableTabs({
     },
     [scrollPosition, currentPage],
   );
+
+  // Side tabs (albums / feed) mount after the first idle beat — see the
+  // render comment below
+  const [sidesMounted, setSidesMounted] = useState(false);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      setSidesMounted(true);
+    });
+    return () => task.cancel();
+  }, []);
 
   return (
     <GestureDetector gesture={panGesture}>
@@ -154,23 +184,31 @@ export default function SwipeableTabs({
           </SwipeableTabsProvider>
         </View>
 
-        {/* Left overlay (Albums) */}
-        <OverlayPage
-          scrollPosition={scrollPosition}
-          currentPage={currentPage}
-          pageIndex={0}
-          direction="left"
-          component={leftTab.component}
-        />
+        {/* Side overlays mount one idle-beat after first paint: cold
+            start used to commit all three tabs (albums grid + feed lists
+            + their queries) in the first frame. Once mounted they stay
+            mounted, so swipe behavior is unchanged. */}
+        {sidesMounted && (
+          <>
+            {/* Left overlay (Albums) */}
+            <OverlayPage
+              scrollPosition={scrollPosition}
+              currentPage={currentPage}
+              pageIndex={0}
+              direction="left"
+              component={leftTab.component}
+            />
 
-        {/* Right overlay (Stories) */}
-        <OverlayPage
-          scrollPosition={scrollPosition}
-          currentPage={currentPage}
-          pageIndex={2}
-          direction="right"
-          component={rightTab.component}
-        />
+            {/* Right overlay (Stories) */}
+            <OverlayPage
+              scrollPosition={scrollPosition}
+              currentPage={currentPage}
+              pageIndex={2}
+              direction="right"
+              component={rightTab.component}
+            />
+          </>
+        )}
 
         {/* Top bar */}
         <TopBar
@@ -312,7 +350,15 @@ function TopBar({ tabs, scrollPosition, topInset }: TopBarProps) {
         style={[StyleSheet.absoluteFill, blurStyle]}
         pointerEvents="none"
       >
-        <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFill} />
+        {/* Android's expo-blur is a flat overlay anyway — the tint layer
+            above IS the whole Android look; skip the fake blur's overdraw */}
+        {Platform.OS === "ios" && (
+          <BlurView
+            intensity={20}
+            tint="light"
+            style={StyleSheet.absoluteFill}
+          />
+        )}
       </Animated.View>
 
       {/* Tint overlay */}
@@ -453,7 +499,13 @@ function TabBar({
     <View style={[styles.tabBar, { paddingBottom: bottomInset + 8 }]}>
       {/* Blur background for Feed screen */}
       <Animated.View style={[StyleSheet.absoluteFill, blurStyle]}>
-        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
+        {Platform.OS === "ios" && (
+          <BlurView
+            intensity={40}
+            tint="light"
+            style={StyleSheet.absoluteFill}
+          />
+        )}
       </Animated.View>
 
       {/* Colored overlay */}

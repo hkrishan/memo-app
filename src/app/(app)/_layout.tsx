@@ -6,6 +6,7 @@ import {
 } from "@/features/auth/store/authStore";
 import { useDropTakeover } from "@/features/moments/hooks/useDropTakeover";
 import { useResumeLibraryUploads } from "@/features/photos/store/libraryUploadQueue";
+import { useResumeAlbumUploads } from "@/features/album/store/uploadManager";
 
 export default function AppLayout() {
   const isAuthenticated = useAuthStore(selectIsAuthenticated);
@@ -21,6 +22,10 @@ export default function AppLayout() {
   // Resume any captures still waiting to upload to the Memo library
   // (persisted queue survives restarts; retries on foreground/network)
   useResumeLibraryUploads();
+
+  // Same for photo-picker batches headed into albums — photos added while
+  // offline upload themselves once there's a connection again
+  useResumeAlbumUploads();
 
   // Wait for the persisted auth state to rehydrate before deciding
   if (!isInitialized) {

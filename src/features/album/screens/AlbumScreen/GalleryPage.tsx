@@ -109,16 +109,22 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     [router, albumId],
   );
 
+  // Newest-first ONCE for the whole page — the sections and the People
+  // strip both derive from this. Timestamps are precomputed: a
+  // `new Date()` pair inside the comparator allocated per comparison,
+  // and the sort used to run twice per render pass.
+  const sortedPhotos = useMemo<PhotoWithUploader[]>(() => {
+    if (!photos || photos.length === 0) return [];
+    return photos
+      .map((photo) => ({ photo, ts: new Date(photo.createdAt).getTime() }))
+      .sort((a, b) => b.ts - a.ts)
+      .map((entry) => entry.photo);
+  }, [photos]);
+
   const sections = useMemo<OverviewSection[]>(() => {
     if (!albumId || assets.length === 0) return [];
 
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-    const sortedPhotos: PhotoWithUploader[] = photos
-      ? [...photos].sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        )
-      : [];
     const toAssets = (list: PhotoWithUploader[]) =>
       list
         .map((photo) => assetById.get(photo.photoId))
@@ -235,23 +241,24 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     }
 
     return out;
-  }, [albumId, assets, photos, moments, tagCounts, openGallery, router]);
+  }, [albumId, assets, sortedPhotos, moments, tagCounts, openGallery, router]);
 
   // People — one CARD per contributor (their latest photo), heaviest
   // uploaders first. Tapping a card opens that person's full grid.
   const people = useMemo<PersonEntry[]>(() => {
-    if (!albumId || !photos || photos.length === 0) return [];
+    if (!albumId || sortedPhotos.length === 0) return [];
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-    const sortedPhotos = [...photos].sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    // One pass: per-uploader counts AND each uploader's newest photo
+    // (sortedPhotos is newest-first) — the old shape re-sorted the whole
+    // album and ran a linear .find per member (O(members × photos))
     const countByUploader = new Map<string, number>();
+    const latestByUploader = new Map<string, PhotoWithUploader>();
     for (const photo of sortedPhotos) {
-      countByUploader.set(
-        photo.uploader.userId,
-        (countByUploader.get(photo.uploader.userId) ?? 0) + 1,
-      );
+      const uploaderId = photo.uploader.userId;
+      countByUploader.set(uploaderId, (countByUploader.get(uploaderId) ?? 0) + 1);
+      if (!latestByUploader.has(uploaderId)) {
+        latestByUploader.set(uploaderId, photo);
+      }
     }
     return (album?.members ?? [])
       .filter((m: any) => (countByUploader.get(m.userId) ?? 0) > 0)
@@ -262,9 +269,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
       )
       .slice(0, MAX_PEOPLE)
       .map((member: any): PersonEntry | null => {
-        const latestPhoto = sortedPhotos.find(
-          (p) => p.uploader.userId === member.userId,
-        );
+        const latestPhoto = latestByUploader.get(member.userId);
         const latest = latestPhoto
           ? assetById.get(latestPhoto.photoId)
           : undefined;
@@ -276,7 +281,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
         };
       })
       .filter((entry: PersonEntry | null): entry is PersonEntry => entry != null);
-  }, [albumId, assets, photos, album?.members]);
+  }, [albumId, assets, sortedPhotos, album?.members]);
 
   const handlePressPerson = useCallback(
     (entry: PersonEntry) => {

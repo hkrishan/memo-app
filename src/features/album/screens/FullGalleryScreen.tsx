@@ -77,12 +77,19 @@ const FullGalleryScreen = () => {
     filter === "activity" && albumId ? albumId : "",
   );
 
-  const filteredPhotos = useMemo<PhotoWithUploader[]>(() => {
+  // Sorted once per photos change; the filter cases below only filter.
+  // (Numeric timestamps precomputed — Date allocation inside a comparator
+  // ran twice per comparison over the whole album, per filter change.)
+  const sortedPhotos = useMemo<PhotoWithUploader[]>(() => {
     if (!photos) return [];
-    const sorted = [...photos].sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    return photos
+      .map((photo) => ({ photo, ts: new Date(photo.createdAt).getTime() }))
+      .sort((a, b) => b.ts - a.ts)
+      .map((entry) => entry.photo);
+  }, [photos]);
+
+  const filteredPhotos = useMemo<PhotoWithUploader[]>(() => {
+    const sorted = sortedPhotos;
     switch (filter) {
       case "member":
         return sorted.filter((p) => p.uploader.userId === memberId);
@@ -117,7 +124,7 @@ const FullGalleryScreen = () => {
       default:
         return sorted;
     }
-  }, [photos, filter, memberId, momentId, tag, activityId, moments, activities]);
+  }, [sortedPhotos, filter, memberId, momentId, tag, activityId, moments, activities]);
 
   // In-flight captures belong to the unfiltered gallery only: every other
   // filter keys off server-side data (uploader, moment, tag, likes) that a

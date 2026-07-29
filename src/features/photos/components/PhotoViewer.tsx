@@ -1369,6 +1369,14 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     [onActiveIndexChange],
   );
 
+  // The asset count crosses into the scroll worklet as a shared value:
+  // with `assets.length` in the handler's deps, paginating mid-swipe
+  // rebuilt and re-attached the scroll worklet while the pager was moving
+  const assetCountSv = useSharedValue(assets.length);
+  useEffect(() => {
+    assetCountSv.value = assets.length;
+  }, [assets.length, assetCountSv]);
+
   // UI-thread scroll tracking: scrollX drives the filmstrip every frame;
   // JS work is throttled to page-index changes and momentum settles
   const pagerScrollHandler = useAnimatedScrollHandler(
@@ -1379,7 +1387,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
         const index = clamp(
           Math.round(e.contentOffset.x / pageWidth),
           0,
-          Math.max(assets.length - 1, 0),
+          Math.max(assetCountSv.value - 1, 0),
         );
         if (index !== liveIndexSv.value) {
           liveIndexSv.value = index;
@@ -1391,12 +1399,12 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
         const index = clamp(
           Math.round(e.contentOffset.x / pageWidth),
           0,
-          Math.max(assets.length - 1, 0),
+          Math.max(assetCountSv.value - 1, 0),
         );
         runOnJS(handleSettledIndex)(index);
       },
     },
-    [pageWidth, assets.length, handleLiveIndexChange, handleSettledIndex],
+    [pageWidth, handleLiveIndexChange, handleSettledIndex],
   );
 
   // -------------------------------------------------------------------------

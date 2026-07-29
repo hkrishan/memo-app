@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ViewStyle, StyleProp } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -29,32 +29,34 @@ export default function Touchable({
 }: TouchableProps) {
   const pressed = useSharedValue(0);
 
-  const gesture = Gesture.Tap()
-    .enabled(!disabled)
-    .onBegin(() => {
-      pressed.value = withTiming(1, { duration: 100 });
-    })
-    .onFinalize(() => {
-      pressed.value = withTiming(0, { duration: 150 });
-    })
-    .onEnd(() => {
-      if (onPress) {
-        runOnJS(onPress)();
-      }
-    });
+  // Memoized: rebuilt per render, these re-attached native recognizers on
+  // every render of their host — including the always-mounted top bar
+  const composedGesture = useMemo(() => {
+    const gesture = Gesture.Tap()
+      .enabled(!disabled)
+      .onBegin(() => {
+        pressed.value = withTiming(1, { duration: 100 });
+      })
+      .onFinalize(() => {
+        pressed.value = withTiming(0, { duration: 150 });
+      })
+      .onEnd(() => {
+        if (onPress) {
+          runOnJS(onPress)();
+        }
+      });
 
-  const longPressGesture = Gesture.LongPress()
-    .enabled(!disabled && !!onLongPress)
-    .minDuration(400)
-    .onStart(() => {
-      if (onLongPress) {
+    if (!onLongPress) return gesture;
+
+    const longPressGesture = Gesture.LongPress()
+      .enabled(!disabled)
+      .minDuration(400)
+      .onStart(() => {
         runOnJS(onLongPress)();
-      }
-    });
+      });
 
-  const composedGesture = onLongPress
-    ? Gesture.Race(gesture, longPressGesture)
-    : gesture;
+    return Gesture.Race(gesture, longPressGesture);
+  }, [disabled, onPress, onLongPress, pressed]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 - (1 - activeScale) * pressed.value }],

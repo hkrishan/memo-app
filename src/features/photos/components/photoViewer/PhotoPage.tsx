@@ -49,6 +49,16 @@ const RUBBER_FACTOR = 0.35;
 const MAX_FLING_VELOCITY = 2400;
 /** Same 15pt threshold the old activeOffset/failOffset config used. */
 const PAN_SLOP = 15;
+/**
+ * Taps must carry an explicit travel limit: RNGH's Tap has NO default
+ * max distance on iOS, so a quick page-flick (finger down under 500ms)
+ * "succeeds" as a tap even while the pager is already scrolling — the
+ * chrome then toggles (and re-fits the photo) mid-swipe.
+ */
+const TAP_MAX_DISTANCE = 15;
+/** Sloppier budget for double taps — the two touches rarely land on the
+ *  same point, and their offset counts into the gesture's translation. */
+const DOUBLE_TAP_MAX_DISTANCE = 32;
 
 /** clamp() with give: past the edge, movement continues at RUBBER_FACTOR
  *  so the drag resists instead of hitting a wall (iOS Photos feel). */
@@ -143,10 +153,11 @@ export const PhotoPage = memo<PhotoPageProps>(
     onFirstImageLoad,
     onDoubleTapLike,
   }) => {
-    // Local mirror of "scale > 1" so gesture configs (offsets) can be
+    // Local mirror of "scale > 1" so the pan gesture's offsets can be
     // rebuilt when zoom starts/ends; the parent uses onZoomChange to
     // disable FlatList paging at the same time.
     const isZoomedRef = useRef(false);
+    const [isZoomed, setIsZoomed] = useState(false);
 
     // Which URI the full-res Image has painted — compared against the
     // current asset.uri (not a boolean) so a URI change can never leave the
@@ -194,9 +205,6 @@ export const PhotoPage = memo<PhotoPageProps>(
     // movement) and its baseline offset re-anchored after the pinch ends
     const pinchedDuringPan = useSharedValue(false);
     const panBaseTranslationX = useSharedValue(0);
-    // First-touch origin for the manual activation decision
-    const panTouchStartX = useSharedValue(0);
-    const panTouchStartY = useSharedValue(0);
     const panBaseTranslationY = useSharedValue(0);
 
     // Aspect-fit ("contain") display size of the photo inside the page.
@@ -215,13 +223,10 @@ export const PhotoPage = memo<PhotoPageProps>(
       };
     }, [asset.width, asset.height, pageWidth, pageHeight]);
 
-    // No setState here: flipping React state at pinch release rebuilt the
-    // pan gesture and committed a re-render exactly when the settle springs
-    // were running — the release hitch. Zoom state lives in shared values /
-    // refs; activation is decided per-move in the worklet below.
     const setZoomed = useCallback(
       (zoomed: boolean) => {
         isZoomedRef.current = zoomed;
+        setIsZoomed(zoomed);
         onZoomChange(zoomed);
       },
       [onZoomChange],
@@ -393,48 +398,26 @@ export const PhotoPage = memo<PhotoPageProps>(
     );
 
     const panGesture = useMemo(() => {
-      const gesture = Gesture.Pan()
-        .maxPointers(2)
-        // Activation is decided in onTouchesMove instead of via
-        // activeOffset/failOffset config, so the gesture object NEVER has
-        // to be rebuilt when zoom starts or ends (a rebuild re-attaches
-        // the recognizer — mid-interaction, that's a visible stutter)
-        .manualActivation(true)
-        .onTouchesDown((e) => {
-          if (e.numberOfTouches === 1) {
-            const touch = e.allTouches[0];
-            if (touch) {
-              panTouchStartX.value = touch.x;
-              panTouchStartY.value = touch.y;
-            }
-          }
-        })
-        .onTouchesMove((e, manager) => {
-          // Zoomed (or pinching, or two fingers down): the pan is ours
-          if (
-            scale.value > 1 ||
-            pinchActive.value ||
-            e.numberOfTouches >= 2
-          ) {
-            manager.activate();
-            return;
-          }
-          // 1x, one finger — the old declarative constraints, per-move:
-          // dominant-vertical drags activate (dismiss), dominant-horizontal
-          // fail fast so the FlatList can page
-          const touch = e.allTouches[0];
-          if (!touch) return;
-          const dx = touch.x - panTouchStartX.value;
-          const dy = touch.y - panTouchStartY.value;
-          if (Math.abs(dx) > PAN_SLOP || Math.abs(dy) > PAN_SLOP) {
-            if (Math.abs(dy) > Math.abs(dx)) {
-              manager.activate();
-            } else {
-              manager.fail();
-            }
-          }
-        })
+      const gesture = Gesture.Pan().maxPointers(2);
+      // Simple declarative activation — the native side decides instantly,
+      // so the pager's scroll never sits waiting on a JS/worklet verdict:
+      // - zoomed: the pager is disabled, the pan owns every direction
+      // - 1x: vertical drags activate (dismiss), horizontal ones fail fast
+      //   so the FlatList pages natively from the first frame
+      if (isZoomed) {
+        gesture.minDistance(1);
+      } else {
+        gesture
+          .activeOffsetY([-PAN_SLOP, PAN_SLOP])
+          .failOffsetX([-PAN_SLOP, PAN_SLOP]);
+      }
+      gesture
         .onStart(() => {
+          // Explicit directive: the chain is built from a variable (the
+          // config branches on zoom), which Reanimated's babel plugin does
+          // not auto-workletize — without this the pan runs on the JS
+          // thread (and RNGH warns about it)
+          "worklet";
           pinchedDuringPan.value = false;
           savedTranslateX.value = translateX.value;
           savedTranslateY.value = translateY.value;
@@ -448,6 +431,7 @@ export const PhotoPage = memo<PhotoPageProps>(
           }
         })
         .onUpdate((e) => {
+          "worklet";
           if (pinchActive.value) {
             // The pinch owns translateX/Y right now. Keep tracking where
             // this pan's cumulative translation stands so the post-pinch
@@ -496,6 +480,7 @@ export const PhotoPage = memo<PhotoPageProps>(
           }
         })
         .onEnd((e) => {
+          "worklet";
           // A pan that hosted a pinch must never dismiss — its translation
           // includes pinch finger movement, not an intentional drag
           if (scale.value > 1 || pinchActive.value || pinchedDuringPan.value) {
@@ -586,6 +571,7 @@ export const PhotoPage = memo<PhotoPageProps>(
       fittedHeight,
       pageWidth,
       pageHeight,
+      isZoomed,
       onRequestDismiss,
       onDismissPanStart,
       onDismissPanEnd,
@@ -598,6 +584,7 @@ export const PhotoPage = memo<PhotoPageProps>(
       () =>
         Gesture.Tap()
           .numberOfTaps(2)
+          .maxDistance(DOUBLE_TAP_MAX_DISTANCE)
           .onEnd(() => {
             if (scale.value > 1) {
               scale.value = withSpring(MIN_SCALE, SPRING_CONFIG);
@@ -615,6 +602,7 @@ export const PhotoPage = memo<PhotoPageProps>(
       () =>
         Gesture.Tap()
           .numberOfTaps(1)
+          .maxDistance(TAP_MAX_DISTANCE)
           .onEnd(() => {
             runOnJS(onToggleChrome)();
           }),

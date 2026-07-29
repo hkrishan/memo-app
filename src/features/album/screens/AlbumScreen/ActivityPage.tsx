@@ -365,15 +365,19 @@ const ActivityPage = memo<ActivityPageProps>(
           ))}
         </ScrollView>
 
-        <PhotoViewer
-          visible={viewerPhotos != null}
-          assets={viewerAssets}
-          initialIndex={0}
-          onClose={closeViewer}
-          renderSocialOverlay={renderSocialOverlay}
-          renderPageAttribution={renderPageAttribution}
-          onDoubleTapAsset={onDoubleTapAsset}
-        />
+        {/* Mounted only while open — the viewer's hook tree is too heavy
+            to run per render while closed (onClose fires post-animation) */}
+        {viewerPhotos != null && (
+          <PhotoViewer
+            visible
+            assets={viewerAssets}
+            initialIndex={0}
+            onClose={closeViewer}
+            renderSocialOverlay={renderSocialOverlay}
+            renderPageAttribution={renderPageAttribution}
+            onDoubleTapAsset={onDoubleTapAsset}
+          />
+        )}
       </View>
     );
   },

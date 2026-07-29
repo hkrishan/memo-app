@@ -39,7 +39,12 @@ export const CachedImage: React.FC<CachedImageProps> = ({
       placeholder={showPlaceholder ? { blurhash: PLACEHOLDER_BLURHASH } : undefined}
       placeholderContentFit="cover"
       cachePolicy="memory-disk"
-      transition={200}
+      // Recycled list cells must never keep painting the previous photo
+      // while the next decodes — key the native view to the uri
+      recyclingKey={uri}
+      // No default cross-fade: in recycled lists a 200ms dissolve read as
+      // flicker on every scroll. Hero surfaces can opt back in via props.
+      transition={0}
       {...rest}
     />
   );
