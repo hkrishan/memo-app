@@ -60,6 +60,11 @@ export interface PagePost {
   pageId: string;
   authorId: string;
   caption: string | null;
+  /** Author's position at post time (optional; pair is always complete). */
+  latitude?: number | null;
+  longitude?: number | null;
+  /** Reverse-geocoded label ("Stockholm") shown in feeds. */
+  locationName?: string | null;
   createdAt: string;
   updatedAt: string;
   media: PostMedia[];
@@ -75,6 +80,12 @@ export interface FeedPage {
   pageHandle: string;
   pageTitle: string;
   albumId: string;
+  /**
+   * The page's cover photo (thumbnail) — the feed header's avatar.
+   * Optional: items persisted to the offline cache before this field
+   * shipped won't have it.
+   */
+  coverPhotoUrl?: string | null;
 }
 
 export interface PagePostFeedItem {

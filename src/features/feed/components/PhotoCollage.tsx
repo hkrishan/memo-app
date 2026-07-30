@@ -29,14 +29,15 @@ const Cell = memo<{
   index: number;
   onPressItem?: (index: number) => void;
   extra?: number;
-}>(({ item, width, height, index, onPressItem, extra }) => {
+  radius?: number;
+}>(({ item, width, height, index, onPressItem, extra, radius = 0 }) => {
   const handlePress = useCallback(
     () => onPressItem?.(index),
     [onPressItem, index],
   );
   return (
   <Pressable
-    style={[styles.cell, { width, height }]}
+    style={[styles.cell, { width, height, borderRadius: radius }]}
     onPress={onPressItem ? handlePress : undefined}
     disabled={!onPressItem}
   >
@@ -71,10 +72,12 @@ interface PhotoCollageProps {
    */
   extraCount?: number;
   onPressItem?: (index: number) => void;
+  /** Corner radius applied to every cell (editorial inset collages) */
+  cellRadius?: number;
 }
 
 export const PhotoCollage = memo<PhotoCollageProps>(
-  ({ items, width, spacing = 2, extraCount, onPressItem }) => {
+  ({ items, width, spacing = 2, extraCount, onPressItem, cellRadius }) => {
     const count = items.length;
     if (count === 0) return null;
 
@@ -88,6 +91,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
           width={width}
           height={width}
           index={0} onPressItem={onPressItem}
+              radius={cellRadius}
           extra={extra}
         />
       );
@@ -105,6 +109,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
               width={cellW}
               height={cellW}
               index={i} onPressItem={onPressItem}
+              radius={cellRadius}
               extra={i === 1 ? extra : 0}
             />
           ))}
@@ -124,6 +129,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
             width={bigW}
             height={bigH}
             index={0} onPressItem={onPressItem}
+              radius={cellRadius}
           />
           <View style={{ gap: spacing }}>
             {visible.slice(1).map((item, i) => (
@@ -133,6 +139,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
                 width={smallW}
                 height={smallW}
                 index={i + 1} onPressItem={onPressItem}
+              radius={cellRadius}
                 extra={i === 1 ? extra : 0}
               />
             ))}
@@ -153,6 +160,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
               width={cellW}
               height={cellW}
               index={i} onPressItem={onPressItem}
+              radius={cellRadius}
             />
           ))}
         </View>
@@ -164,6 +172,7 @@ export const PhotoCollage = memo<PhotoCollageProps>(
               width={cellW}
               height={cellW}
               index={i + 2} onPressItem={onPressItem}
+              radius={cellRadius}
               extra={i === 1 ? extra : 0}
             />
           ))}

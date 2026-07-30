@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import {
   StyleSheet,
   View,
+  Image,
+  Linking,
   Modal,
   Pressable,
   TextInput,
@@ -13,7 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Video, ResizeMode } from "expo-av";
 import { StatusBar } from "react-native";
 import { useRouter } from "expo-router";
-import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -23,10 +26,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { tokenStorage } from "@/lib/api";
 import { UnauthorizedError } from "@/lib/api/errors";
+import { env } from "@/lib/env";
+import { font, scriptType } from "@/lib/tokens";
 import userApi from "@/features/user/api/user.api";
 import { useAuthStore } from "../store/authStore";
 import useAuth, { sanitizeRedirect } from "../hooks/useAuth";
-import LoginProviderButton from "../components/LoginProviderButton";
 
 const TEST_USER_IDS = ["test-user", "test-user2"];
 
@@ -37,7 +41,8 @@ type AuthScreenProps = {
 
 export default function AuthScreen({ redirect }: AuthScreenProps) {
   const router = useRouter();
-  const { testLogin, isLoading } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { testLogin, loginWithApple, loginWithGoogle, isLoading } = useAuth();
   // Where to land after auth: the guarded path the user was headed to
   // (e.g. an invite deeplink), or the app root
   const redirectTarget = sanitizeRedirect(redirect) ?? "/(app)";
@@ -132,6 +137,15 @@ export default function AuthScreen({ redirect }: AuthScreenProps) {
     });
   };
 
+  // Apple/Google handle their own cancel/error UX inside useAuth; the throw
+  // after the error toast just needs swallowing here.
+  const handleAppleLogin = () => loginWithApple().catch(() => {});
+  const handleGoogleLogin = () => loginWithGoogle().catch(() => {});
+
+  const openLegalLink = (path: "/terms" | "/privacy") => {
+    Linking.openURL(`${env.webUrl}${path}`).catch(() => {});
+  };
+
   // Test login picker (dev builds only): preset users or a custom user id,
   // validated against the user table by the backend. State hooks must run
   // unconditionally, but every handler and all UI below is gated on __DEV__.
@@ -206,28 +220,109 @@ export default function AuthScreen({ redirect }: AuthScreenProps) {
         isLooping
         isMuted
       />
-      <Animated.View style={[styles.overlay, overlayAnimatedStyle]} />
-      <View style={styles.content}>
-        <Text style={styles.title}>MEMO</Text>
-        <Text style={styles.subTitle}>Shared memories, together.</Text>
+      <Animated.View style={[styles.overlay, overlayAnimatedStyle]}>
+        {/* Heavier scrim toward the bottom so the headline and buttons stay
+            legible over any video frame */}
+        <LinearGradient
+          colors={[
+            "rgba(0,0,0,0.35)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.88)",
+            "rgba(0,0,0,0.97)",
+          ]}
+          locations={[0, 0.35, 0.58, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+
+      {/* Wordmark */}
+      <View style={[styles.brandRow, { top: insets.top + 16 }]}>
+        <Image
+          source={require("../../../../assets/logo-white.png")}
+          style={styles.brandLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.brandName}>MEMO</Text>
       </View>
-      <Animated.View style={[styles.bottomContainer, bottomSheetAnimatedStyle]}>
-        <BlurView intensity={80} tint="light" style={styles.blurContent}>
-          <Text style={styles.loginTitle}>Get Started</Text>
-          <LoginProviderButton
-            provider="phone"
-            onPress={handlePhoneLogin}
-            disabled={isLoading || isAnimatingOut}
-          />
-          {__DEV__ && (
-            <LoginProviderButton
-              provider="test"
-              onPress={handleOpenTestPicker}
+
+      <Animated.View
+        style={[
+          styles.bottomContainer,
+          { paddingBottom: insets.bottom + 24 },
+          bottomSheetAnimatedStyle,
+        ]}
+      >
+        <Text style={styles.headline}>
+          Shared{"\n"}memories,{"\n"}
+          <Text style={styles.headlineAccent}>forever.</Text>
+        </Text>
+        <Text style={styles.tagline}>
+          One album, everyone's photos. Private unless you choose to share.
+        </Text>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed && styles.buttonPressed,
+          ]}
+          onPress={handlePhoneLogin}
+          disabled={isLoading || isAnimatingOut}
+        >
+          <Ionicons name="phone-portrait-outline" size={19} color="#000" />
+          <Text style={styles.primaryButtonText}>Continue with phone</Text>
+        </Pressable>
+
+        <View style={styles.providerRow}>
+          {Platform.OS === "ios" && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.providerButton,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={handleAppleLogin}
               disabled={isLoading || isAnimatingOut}
-              loading={isLoading}
-            />
+            >
+              <Ionicons name="logo-apple" size={19} color="#fff" />
+              <Text style={styles.providerButtonText}>Apple</Text>
+            </Pressable>
           )}
-        </BlurView>
+          <Pressable
+            style={({ pressed }) => [
+              styles.providerButton,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={handleGoogleLogin}
+            disabled={isLoading || isAnimatingOut}
+          >
+            <Ionicons name="logo-google" size={17} color="#fff" />
+            <Text style={styles.providerButtonText}>Google</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.legal}>
+          By continuing you agree to our{" "}
+          <Text style={styles.legalLink} onPress={() => openLegalLink("/terms")}>
+            Terms
+          </Text>{" "}
+          and{" "}
+          <Text
+            style={styles.legalLink}
+            onPress={() => openLegalLink("/privacy")}
+          >
+            Privacy Policy
+          </Text>
+        </Text>
+
+        {__DEV__ && (
+          <Pressable
+            style={styles.devButton}
+            onPress={handleOpenTestPicker}
+            disabled={isLoading || isAnimatingOut}
+          >
+            <Ionicons name="bug-outline" size={13} color="#999" />
+            <Text style={styles.devButtonText}>Dev login</Text>
+          </Pressable>
+        )}
       </Animated.View>
 
       {/* Test user picker (dev builds only) */}
@@ -325,45 +420,113 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
-  content: {
-    flex: 1,
-    justifyContent: "center",
+  brandRow: {
+    position: "absolute",
+    left: 24,
+    flexDirection: "row",
     alignItems: "center",
-    padding: 20,
+    gap: 10,
+    zIndex: 1,
   },
-  title: {
-    fontSize: 36,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
-    color: "#fff",
+  brandLogo: {
+    width: 26,
+    height: 18,
   },
-  subTitle: {
-    fontSize: 18,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
+  brandName: {
+    fontSize: 16,
+    ...font.bold,
+    letterSpacing: 5,
     color: "#fff",
-    marginTop: 0,
   },
   bottomContainer: {
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    overflow: "hidden",
+    marginTop: "auto",
+    paddingHorizontal: 24,
   },
-  blurContent: {
-    padding: 20,
-    paddingBottom: 50,
-    justifyContent: "flex-start",
-    alignItems: "flex-start",
-  },
-  loginTitle: {
-    fontSize: 18,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
+  headline: {
+    fontSize: 44,
+    lineHeight: 50,
+    ...font.bold,
     color: "#fff",
+  },
+  headlineAccent: {
+    ...scriptType(44),
+    lineHeight: 50,
+    color: "#fff",
+  },
+  tagline: {
+    marginTop: 14,
+    marginBottom: 28,
+    fontSize: 16,
+    lineHeight: 23,
+    ...font.regular,
+    color: "rgba(255, 255, 255, 0.78)",
+    maxWidth: 320,
+  },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: "#fff",
+  },
+  primaryButtonText: {
+    fontSize: 17,
+    ...font.semibold,
+    color: "#000",
+  },
+  providerRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
+  },
+  providerButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+  },
+  providerButtonText: {
+    fontSize: 16,
+    ...font.semibold,
+    color: "#fff",
+  },
+  buttonPressed: {
+    opacity: 0.75,
+  },
+  legal: {
+    marginTop: 22,
+    fontSize: 13,
+    ...font.regular,
+    color: "rgba(255, 255, 255, 0.55)",
     textAlign: "center",
-    marginBottom: 5,
+  },
+  legalLink: {
+    color: "rgba(255, 255, 255, 0.8)",
+    textDecorationLine: "underline",
+  },
+  devButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    marginTop: 14,
+    alignSelf: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  devButtonText: {
+    fontSize: 12,
+    ...font.medium,
+    color: "#999",
   },
   testModalRoot: {
     flex: 1,

@@ -50,6 +50,8 @@ module.exports = {
         },
       ],
       ["expo-video"],
+      // Adds the Sign in with Apple entitlement to the iOS build
+      "expo-apple-authentication",
       [
         "expo-location",
         {
@@ -97,6 +99,9 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.hugokrishan.memo-app",
+      // Sign in with Apple — memo-api verifies the identity token with
+      // this bundle id as the expected audience (APPLE_CLIENT_ID)
+      usesAppleSignIn: true,
       infoPlist: {
         // Required for the daily-drop Live Activity (ActivityKit)
         NSSupportsLiveActivities: true,

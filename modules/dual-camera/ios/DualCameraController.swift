@@ -478,6 +478,16 @@ final class DualCameraController: NSObject {
     do {
       try device.lockForConfiguration()
       device.activeFormat = best
+      // If the chosen format is HDR-capable, auto-adjust flips the sensor
+      // into HDR video, and the BGRA frames this session reads are then
+      // HLG-tone-mapped — they composite as washed-out, way-too-bright
+      // panes. Nothing downstream can use the extended range anyway, so
+      // force HDR off. (Auto-adjust must be disabled BEFORE touching
+      // videoHDREnabled; the other order throws NSInvalidArgumentException.)
+      if best.isVideoHDRSupported {
+        device.automaticallyAdjustsVideoHDREnabled = false
+        device.isVideoHDREnabled = false
+      }
       // Pin to 30fps: higher rates multiply the multi-cam hardware cost
       // for no visible benefit at these resolutions.
       let frameDuration = CMTime(value: 1, timescale: 30)

@@ -6,6 +6,7 @@ import {
   AlbumJoinRequest,
   AlbumMember,
   InviteInfo,
+  MyPendingAlbumJoinRequest,
   Photo,
 } from "../types/album.types";
 
@@ -22,6 +23,11 @@ export interface UploadPhotoParams {
 // The API returns the created Photo directly (photo.handler.ts responds
 // with `res.json(photo)` — there is no wrapper object).
 export type UploadPhotoResponse = Photo;
+
+export interface CreateAlbumParams {
+  title: string;
+  description?: string;
+}
 
 export interface UpdateAlbumParams {
   title?: string;
@@ -48,8 +54,8 @@ const albumApi = {
       color,
     }),
 
-  createAlbum: async (name: string) =>
-    httpClient.post<Album>(endpoints.album.create, { title: name }),
+  createAlbum: async (input: CreateAlbumParams) =>
+    httpClient.post<Album>(endpoints.album.create, input),
 
   updateAlbum: async (albumId: string, input: UpdateAlbumParams) =>
     httpClient.put<Album>(endpoints.album.update(albumId), input),
@@ -75,6 +81,12 @@ const albumApi = {
   getAlbumPendingJoinRequests: async (albumId: string) =>
     httpClient.get<AlbumJoinRequest[]>(
       endpoints.album.pendingJoinRequests(albumId),
+    ),
+
+  /** MY outbound join requests still waiting on an owner's approval */
+  getMyPendingJoinRequests: async () =>
+    httpClient.get<MyPendingAlbumJoinRequest[]>(
+      endpoints.album.myPendingJoinRequests,
     ),
 
   acceptJoinRequest: async (albumId: string, requestId: string) =>

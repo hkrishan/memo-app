@@ -16,6 +16,11 @@ export type AlbumPagePost = {
   pageId: string;
   authorId: string;
   caption: string | null;
+  /** Author's position at post time (optional; pair is always complete). */
+  latitude?: number | null;
+  longitude?: number | null;
+  /** Reverse-geocoded label ("Stockholm") shown in feeds. */
+  locationName?: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
   media: AlbumPagePostMedia[];
@@ -28,6 +33,9 @@ export type AlbumPagePost = {
 
 export type NewAlbumPagePostInput = {
   caption?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationName?: string | null;
   media: Array<{
     mediaType: AlbumPagePostMediaType;
     url: string;

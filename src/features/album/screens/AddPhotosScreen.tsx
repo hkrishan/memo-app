@@ -22,10 +22,12 @@ import { useGetAlbumQuery } from "../api/album.queries";
 import { gpsFromExif } from "@/utils/image";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const NUM_COLUMNS = 3;
+const NUM_COLUMNS = 4;
 const GRID_SPACING = 2;
-const ITEM_SIZE =
+const ITEM_WIDTH =
   (SCREEN_WIDTH - GRID_SPACING * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
+// The app's universal portrait tile ratio (matches the full-view grids)
+const ITEM_HEIGHT = ITEM_WIDTH * 1.4;
 
 const AddPhotosScreen: React.FC = () => {
   const { albumId, autoPick } = useLocalSearchParams<{
@@ -294,8 +296,8 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   gridItem: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
+    width: ITEM_WIDTH,
+    height: ITEM_HEIGHT,
     marginRight: GRID_SPACING,
     marginBottom: GRID_SPACING,
   },

@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import albumApi, { UpdateAlbumParams, UploadPhotoParams } from "./album.api";
+import albumApi, {
+  CreateAlbumParams,
+  UpdateAlbumParams,
+  UploadPhotoParams,
+} from "./album.api";
 import { photoKeys } from "./photo.queries";
 import { Album } from "../types/album.types";
 
@@ -26,7 +30,7 @@ export const useCreateAlbumMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (name: string) => albumApi.createAlbum(name),
+    mutationFn: (input: CreateAlbumParams) => albumApi.createAlbum(input),
     onSuccess: () => {
       // Invalidate albums query to refresh the list
       queryClient.invalidateQueries({
@@ -142,6 +146,20 @@ export const useHandleAlbumJoinRequestMutation = (albumId: string) => {
         queryKey: ["albums", albumId, "members"],
       });
     },
+  });
+};
+
+/**
+ * MY outbound join requests still awaiting approval — feeds the "pending
+ * requests" row in the Add an album sheet. Lives under the ["albums"]
+ * prefix so sending a new request (which invalidates ["albums"]) refreshes
+ * it too.
+ */
+export const useGetMyPendingJoinRequestsQuery = () => {
+  return useQuery({
+    queryKey: ["albums", "pendingJoinRequests", "me"],
+    queryFn: albumApi.getMyPendingJoinRequests,
+    staleTime: 60 * 1000, // 1 minute
   });
 };
 

@@ -12,6 +12,7 @@ import { useDropTakeover } from "@/features/moments/hooks/useDropTakeover";
 import { useInAppNotificationBanners } from "@/features/notifications/inApp/useInAppNotificationBanners";
 import { useResumeLibraryUploads } from "@/features/photos/store/libraryUploadQueue";
 import { useResumeAlbumUploads } from "@/features/album/store/uploadManager";
+import OfflineBanner from "@/components/global/OfflineBanner";
 
 
 // Identity-stable screen options (this layout re-renders on every
@@ -94,6 +95,7 @@ export default function AppLayout() {
   }
 
   return (
+    <>
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen
         name="user"
@@ -159,5 +161,8 @@ export default function AppLayout() {
         options={MODAL_OPTIONS}
       />
     </Stack>
+    {/* Connectivity strip over every authenticated screen */}
+    <OfflineBanner />
+    </>
   );
 }

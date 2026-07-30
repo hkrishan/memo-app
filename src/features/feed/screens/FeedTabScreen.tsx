@@ -5,17 +5,18 @@
  * mounted (queries cached, scroll positions kept) and cross-fade/slide.
  */
 
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  Platform,
   Pressable,
 } from "react-native";
+import { BlurView } from "expo-blur";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FlashList } from "@shopify/flash-list";
@@ -23,7 +24,9 @@ import {
   TOP_BAR_HEIGHT,
   usePageFadeStyle,
 } from "../../../contexts/SwipeableTabsContext";
-import { useGetFeedQuery } from "../api/feed.queries";
+import { useAlbumsFeedQuery, useGetFeedQuery } from "../api/feed.queries";
+import { groupAlbumsFeed } from "../utils/albumGroups";
+import { color } from "@/lib/tokens";
 import FeedPost from "../components/FeedPost";
 import AlbumsFeedList from "../components/AlbumsFeedList";
 import FeedModeSwitch, {
@@ -56,8 +59,16 @@ const VIEW_SLIDE = 24;
 
 const PagesFeedList = memo<{ topInset: number }>(({ topInset }) => {
   const router = useRouter();
-  const { data, refetch, isRefetching, isLoading, isError } =
-    useGetFeedQuery();
+  const { data, refetch, isLoading, isError } = useGetFeedQuery();
+
+  // Pull-to-refresh only. Binding the RefreshControl to isRefetching made
+  // the whole list shift down with a spinner whenever a like/comment
+  // mutation revalidated the feed in the background.
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setPullRefreshing(true);
+    refetch().finally(() => setPullRefreshing(false));
+  }, [refetch]);
   // The /feed response still mixes in album_activity items; those belong to
   // the Albums view now — Pages shows page posts only
   const items = useMemo(
@@ -149,8 +160,8 @@ const PagesFeedList = memo<{ topInset: number }>(({ topInset }) => {
       ListEmptyComponent={listEmpty}
       refreshControl={
         <RefreshControl
-          refreshing={isRefetching}
-          onRefresh={refetch}
+          refreshing={pullRefreshing}
+          onRefresh={handleRefresh}
           tintColor="#888"
         />
       }
@@ -170,6 +181,15 @@ export default function FeedScreen() {
 
   const mode = useFeedModeStore((s) => s.mode);
   const setMode = useFeedModeStore((s) => s.setMode);
+
+  // Albums-with-new-photos count for the tab badge. AlbumsFeedList (always
+  // mounted below) owns this query; subscribing here shares its cache — no
+  // extra fetch.
+  const { data: albumsData } = useAlbumsFeedQuery();
+  const albumsBadge = useMemo(() => {
+    const items = albumsData?.pages.flatMap((page) => page.items) ?? [];
+    return groupAlbumsFeed(items).groups.length;
+  }, [albumsData]);
 
   // 0 = pages, 1 = albums; animated by the segmented control
   const modeProgress = useSharedValue(mode === "albums" ? 1 : 0);
@@ -195,9 +215,10 @@ export default function FeedScreen() {
   }));
 
   // Content scrolls under the blurred top bar (like the Albums tab) and
-  // under the floating pill row that sits just below it
+  // under the frosted tabs row just below it; the extra 16 keeps the
+  // first post from resting flush against the tabs
   const barBottom = insets.top + TOP_BAR_HEIGHT;
-  const listTopInset = barBottom + SWITCH_ROW_HEIGHT + 8;
+  const listTopInset = barBottom + SWITCH_ROW_HEIGHT + 16;
 
   return (
     <View style={styles.container}>
@@ -219,34 +240,36 @@ export default function FeedScreen() {
           </Animated.View>
         </View>
 
-        {/* Floating mode switch + search — overlays the lists, which
-            scroll underneath (they reserve SWITCH_ROW_HEIGHT at the top) */}
-        <View
-          style={[styles.switchRow, { top: barBottom }]}
-          pointerEvents="box-none"
-        >
-          <View style={styles.switchSpacer} pointerEvents="none" />
+        {/* Tabs row — same frosted recipe as the top bar above it (iOS
+            blur + white tint; Android is tint-only, like the bar); the
+            lists scroll underneath it */}
+        <View style={[styles.switchRow, { top: barBottom }]}>
+          {Platform.OS === "ios" && (
+            <BlurView
+              intensity={20}
+              tint="light"
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+          <View style={styles.switchRowTint} pointerEvents="none" />
           <FeedModeSwitch
             mode={mode}
             onChange={setMode}
             progress={modeProgress}
+            albumsBadge={albumsBadge}
           />
-          <View style={styles.switchSpacer} pointerEvents="box-none">
-            <Pressable
-              onPress={handleOpenSearch}
-              hitSlop={8}
-              style={styles.searchButton}
-              accessibilityRole="button"
-              accessibilityLabel="Search pages"
-            >
-              <BlurView
-                intensity={25}
-                tint="light"
-                style={styles.frostedFill}
-              />
-              <Ionicons name="search" size={20} color="#111" />
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={handleOpenSearch}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.searchButton,
+              pressed && styles.searchButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Search pages"
+          >
+            <Ionicons name="search" size={21} color={color.textPrimary} />
+          </Pressable>
         </View>
       </Animated.View>
     </View>
@@ -268,28 +291,24 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: color.separator,
   },
-  switchSpacer: {
-    flex: 1,
-    justifyContent: "center",
+  // Matches the top bar's white tint over its blur layer
+  switchRowTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.7)",
   },
   searchButton: {
-    alignSelf: "flex-end",
     width: 36,
     height: 36,
-    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
-    backgroundColor: "rgba(255, 255, 255, 0.6)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0, 0, 0, 0.06)",
   },
-  frostedFill: {
-    ...StyleSheet.absoluteFillObject,
+  searchButtonPressed: {
+    opacity: 0.5,
   },
   views: {
     flex: 1,

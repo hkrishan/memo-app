@@ -83,10 +83,12 @@ type ToolPanel = "background" | "pages" | "layerStyle";
 const StudioEditorScreen = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { projectId, ratioId, pages } = useLocalSearchParams<{
+  const { projectId, ratioId, pages, bg } = useLocalSearchParams<{
     projectId?: string;
     ratioId?: string;
     pages?: string;
+    /** Page background seed (a Looks preset from the Create home). */
+    bg?: string;
   }>();
 
   const upsert = useCreateProjectsStore((state) => state.upsert);
@@ -105,7 +107,9 @@ const StudioEditorScreen = () => {
       Math.max(Number.parseInt(pages ?? "3", 10) || 3, 1),
       MAX_PAGES,
     );
-    return newStudioProject(newProjectId(), ratioId ?? "portrait", count);
+    const bgColor =
+      typeof bg === "string" && /^#[0-9A-Fa-f]{6}$/.test(bg) ? bg : undefined;
+    return newStudioProject(newProjectId(), ratioId ?? "portrait", count, bgColor);
   });
 
   const load = useEditorStore((state) => state.load);

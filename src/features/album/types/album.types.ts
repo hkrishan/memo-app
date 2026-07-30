@@ -58,6 +58,12 @@ export type Photo = {
    * Optional — older cached responses may lack it; treat missing as "photo".
    */
   mediaType?: "photo" | "video";
+  /**
+   * Base64 ThumbHash — instant blurred placeholder painted before any
+   * image bytes arrive. Optional: older cached responses and media
+   * processed before the column existed lack it.
+   */
+  thumbHash?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   /** See MediaMetadata — e.g. { memoCreate } for Memo Create covers. */
@@ -170,3 +176,6 @@ export type AlbumJoinRequest = {
   decidedAt: Date | null;
   createdAt: Date;
 };
+
+/** One of MY pending join requests, with the album it targets attached. */
+export type MyPendingAlbumJoinRequest = AlbumJoinRequest & { album: Album };

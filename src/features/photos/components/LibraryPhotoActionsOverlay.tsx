@@ -1,9 +1,9 @@
 /**
  * Per-photo actions shown over the fullscreen library viewer: Add to album
  * (a checkbox picker that edits the photo's full album membership) and
- * Delete — icon-only buttons stacked vertically in the top-right corner
- * (the viewer's top chrome keeps that corner empty as a spacer). Fades in
- * lockstep with the viewer chrome.
+ * Delete — icon-only buttons in a centered row at the bottom, sitting just
+ * below the album-membership badge (above the filmstrip). Fades in lockstep
+ * with the viewer chrome.
  *
  * Both actions work while a capture is still UPLOADING. Such a photo has no
  * server id yet, so its actions are applied to the upload-queue entry
@@ -20,7 +20,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "react-native-paper";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { notify } from "@/components/global";
 import { MediaAsset } from "@/features/album/hooks";
@@ -55,7 +54,6 @@ export const LibraryPhotoActionsOverlay: React.FC<
   onDeleteStarted,
   onDeleteFailed,
 }) => {
-  const insets = useSafeAreaInsets();
   const { data: albums } = useGetAlbumsQuery();
   const deleteMutation = useDeleteLibraryPhotoMutation();
   const setAlbumsMutation = useSetLibraryPhotoAlbumsMutation();
@@ -178,45 +176,44 @@ export const LibraryPhotoActionsOverlay: React.FC<
 
   return (
     <>
-      {memberAlbums.length > 0 && (
-        <Animated.View
-          style={[styles.albumBanner, { bottom: bottomInset + 16 }, barStyle]}
-          pointerEvents="none"
-        >
-          <Ionicons name="albums" size={12} color="#fff" />
-          <Text style={styles.albumBannerText} numberOfLines={1}>
-            In {memberAlbums[0].title}
-            {memberAlbums.length > 1
-              ? ` +${memberAlbums.length - 1} more`
-              : ""}
-          </Text>
-        </Animated.View>
-      )}
-
-      {/* Icon stack in the top-right corner, aligned with the chrome's
-          close button row and growing downward */}
+      {/* Bottom-anchored column: album badge on top, action icons in a
+          row directly below it, all just above the filmstrip */}
       <Animated.View
-        style={[styles.stack, { top: insets.top + 4 }, barStyle]}
+        style={[styles.bottomStack, { bottom: bottomInset + 16 }, barStyle]}
         pointerEvents={chromeVisible ? "box-none" : "none"}
       >
-        <Pressable
-          onPress={() => setShowAlbumPicker(true)}
-          style={styles.iconButton}
-          hitSlop={6}
-          accessibilityRole="button"
-          accessibilityLabel="Add to album"
-        >
-          <Ionicons name="albums-outline" size={20} color="#fff" />
-        </Pressable>
-        <Pressable
-          onPress={handleDelete}
-          style={styles.iconButton}
-          hitSlop={6}
-          accessibilityRole="button"
-          accessibilityLabel="Delete photo"
-        >
-          <Ionicons name="trash-outline" size={20} color="#FF6961" />
-        </Pressable>
+        {memberAlbums.length > 0 && (
+          <Animated.View style={styles.albumBanner} pointerEvents="none">
+            <Ionicons name="albums" size={12} color="#fff" />
+            <Text style={styles.albumBannerText} numberOfLines={1}>
+              In {memberAlbums[0].title}
+              {memberAlbums.length > 1
+                ? ` +${memberAlbums.length - 1} more`
+                : ""}
+            </Text>
+          </Animated.View>
+        )}
+
+        <Animated.View style={styles.actionRow}>
+          <Pressable
+            onPress={() => setShowAlbumPicker(true)}
+            style={styles.iconButton}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Add to album"
+          >
+            <Ionicons name="albums-outline" size={20} color="#fff" />
+          </Pressable>
+          <Pressable
+            onPress={handleDelete}
+            style={styles.iconButton}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Delete photo"
+          >
+            <Ionicons name="trash-outline" size={20} color="#FF6961" />
+          </Pressable>
+        </Animated.View>
       </Animated.View>
 
       <AlbumMultiSelectSheet
@@ -232,16 +229,18 @@ export const LibraryPhotoActionsOverlay: React.FC<
 };
 
 const styles = StyleSheet.create({
-  stack: {
+  bottomStack: {
     position: "absolute",
-    right: 12,
-    flexDirection: "column",
+    alignSelf: "center",
+    alignItems: "center",
+    gap: 12,
+  },
+  actionRow: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
   albumBanner: {
-    position: "absolute",
-    alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
     gap: 5,

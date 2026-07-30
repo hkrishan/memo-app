@@ -129,7 +129,12 @@ export const FeedCard: React.FC<{ children: React.ReactNode }> = ({
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 56,
+    // Editorial separation: a full-bleed hairline instead of pure
+    // whitespace between posts
+    paddingBottom: 24,
+    marginBottom: 28,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0, 0, 0, 0.08)",
   },
   header: {
     flexDirection: "row",
@@ -166,7 +171,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: "#111",
-    fontSize: 14.5,
+    fontSize: 15,
     fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
   },

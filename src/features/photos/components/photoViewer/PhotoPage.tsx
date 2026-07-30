@@ -165,6 +165,20 @@ export const PhotoPage = memo<PhotoPageProps>(
     const isZoomedRef = useRef(false);
     const [isZoomed, setIsZoomed] = useState(false);
 
+    // Pinch/pan are dead weight on pages the user cannot touch — only the
+    // active page receives touches, yet building their gesture chains (and
+    // shipping every worklet to the UI runtime) at page MOUNT was a
+    // measured chunk of the pager's swipe-settle JS burst. Non-active
+    // pages mount with taps only; the heavy gestures attach one beat after
+    // the page first becomes active. The ~80ms window before a fresh page
+    // answers pinch/drag is below re-grip time — taps stay live throughout.
+    const [gesturesReady, setGesturesReady] = useState(false);
+    useEffect(() => {
+      if (!isActive || gesturesReady) return undefined;
+      const timer = setTimeout(() => setGesturesReady(true), 80);
+      return () => clearTimeout(timer);
+    }, [isActive, gesturesReady]);
+
     // Which URI the full-res Image has painted — compared against the
     // current asset.uri (not a boolean) so a URI change can never leave the
     // underlay wrongly hidden behind a stale flag
@@ -297,7 +311,9 @@ export const PhotoPage = memo<PhotoPageProps>(
 
     const pinchGesture = useMemo(
       () =>
-        Gesture.Pinch()
+        !gesturesReady
+          ? null
+          : Gesture.Pinch()
           .onStart((e) => {
             pinchActive.value = true;
             pinchedDuringPan.value = true;
@@ -381,6 +397,7 @@ export const PhotoPage = memo<PhotoPageProps>(
             }
           }),
       [
+        gesturesReady,
         scale,
         savedScale,
         translateX,
@@ -404,6 +421,7 @@ export const PhotoPage = memo<PhotoPageProps>(
     );
 
     const panGesture = useMemo(() => {
+      if (!gesturesReady) return null;
       const gesture = Gesture.Pan().maxPointers(2);
       // Simple declarative activation — the native side decides instantly,
       // so the pager's scroll never sits waiting on a JS/worklet verdict:
@@ -561,6 +579,7 @@ export const PhotoPage = memo<PhotoPageProps>(
 
       return gesture;
     }, [
+      gesturesReady,
       scale,
       translateX,
       translateY,
@@ -617,10 +636,13 @@ export const PhotoPage = memo<PhotoPageProps>(
 
     const composedGesture = useMemo(
       () =>
-        Gesture.Race(
-          Gesture.Simultaneous(pinchGesture, panGesture),
-          Gesture.Exclusive(doubleTapGesture, singleTapGesture),
-        ),
+        pinchGesture && panGesture
+          ? Gesture.Race(
+              Gesture.Simultaneous(pinchGesture, panGesture),
+              Gesture.Exclusive(doubleTapGesture, singleTapGesture),
+            )
+          : // Taps only until the heavy gestures attach (see gesturesReady)
+            Gesture.Exclusive(doubleTapGesture, singleTapGesture),
       [pinchGesture, panGesture, doubleTapGesture, singleTapGesture],
     );
 

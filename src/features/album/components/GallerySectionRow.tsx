@@ -43,7 +43,10 @@ import type { Frame } from "@/features/photos/components";
 import UploadingBadge from "@/components/ui/UploadingBadge";
 import { MediaTile, VideoPlayBadge } from "@/components/ui/MediaTile";
 import { hasRenderableStill } from "@/lib/mediaStill";
-import { retryAllFailedUploads } from "@/features/photos/uploadRetry";
+import {
+  retryAllFailedUploads,
+  showWaitingForConnectionNotice,
+} from "@/features/photos/uploadRetry";
 
 // Portrait tiles, matching the "My Photos" strip on the My Albums tab
 // (GaleryCarousel: 80 wide, 1.4x tall, same radius and gap) so a photo is
@@ -138,8 +141,11 @@ const SectionTile = memo<SectionTileProps>(
               </View>
             )}
             {/* Still uploading to the album (local-first tile) */}
-            {(asset.pending || asset.uploadFailed) && (
-              <UploadingBadge failed={asset.uploadFailed} />
+            {(asset.pending || asset.uploadFailed || asset.uploadOffline) && (
+              <UploadingBadge
+                failed={asset.uploadFailed}
+                offline={asset.uploadOffline}
+              />
             )}
             {badge}
             {dimmed && <View style={styles.tileDimmed} pointerEvents="none" />}
@@ -167,6 +173,8 @@ export interface GallerySectionRowProps {
   leading?: React.ReactNode;
   /** Per-tile corner badge (e.g. Most loved's heart count). */
   renderTileBadge?: (asset: MediaAsset) => React.ReactNode;
+  /** Tiles shown in the strip before the "+N" end tile (default 12). */
+  maxTiles?: number;
   /** Album social layer for the viewer — see useAlbumPhotoViewerExtras. */
   renderSocialOverlay?: (info: SocialOverlayInfo) => React.ReactNode;
   /** Per-page uploader pill — travels with each photo while swiping. */
@@ -182,12 +190,13 @@ const GallerySectionRowInner: React.FC<GallerySectionRowProps> = ({
   onOpenAll,
   leading,
   renderTileBadge,
+  maxTiles = MAX_TILES,
   renderSocialOverlay,
   renderPageAttribution,
   onDoubleTapAsset,
   poppingIds,
 }) => {
-  const tiles = useMemo(() => assets.slice(0, MAX_TILES), [assets]);
+  const tiles = useMemo(() => assets.slice(0, maxTiles), [assets, maxTiles]);
   const overflow = count - tiles.length;
   // Set lookup — O(P) .includes ran per tile per render
   const poppingSet = useMemo(() => new Set(poppingIds ?? []), [poppingIds]);
@@ -314,6 +323,12 @@ const GallerySectionRowInner: React.FC<GallerySectionRowProps> = ({
       const base = assetsRef.current;
       const index = base.findIndex((a) => a.id === assetId);
       if (index < 0) return;
+      // Parked for the network: the tap explains the wait (upload resumes
+      // by itself on reconnect)
+      if (base[index].uploadOffline) {
+        showWaitingForConnectionNotice();
+        return;
+      }
       // Tapping a failed upload IS the retry (Snapchat's tap-to-retry) —
       // no hunting for the progress pill
       if (base[index].uploadFailed) {

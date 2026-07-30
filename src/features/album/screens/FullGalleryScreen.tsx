@@ -36,10 +36,10 @@ import { photoToMediaAsset } from "../utils/mediaAsset";
 import { PhotoWithUploader } from "../types/album.types";
 import { PhotoBrowser } from "@/features/photos/components";
 
-// Match the configuration the (previously tab-resident) grid always ran
-// with — flat, 3 columns. The sectioned month/year mode measurably lagged
-// here, so it stays off until profiled.
-const NUM_COLUMNS = 3;
+// Flat mode (the sectioned month/year mode measurably lagged here, so it
+// stays off until profiled), 4 columns of portrait tiles — the app-wide
+// full-view grid format.
+const NUM_COLUMNS = 4;
 const LIST_BOTTOM_PADDING = 100;
 
 export type GalleryFilter =
@@ -67,7 +67,12 @@ const FullGalleryScreen = () => {
       photoId?: string;
     }>();
 
-  const { data: photos, isLoading, refetch } = useGetPhotosQuery(albumId!);
+  const {
+    data: photos,
+    isLoading,
+    isError,
+    refetch,
+  } = useGetPhotosQuery(albumId!);
   // Moments are only needed to resolve a moment filter's photo set —
   // an empty id keeps the query (and its polling) disabled otherwise
   const { data: moments } = useGetMomentsQuery(
@@ -187,7 +192,14 @@ const FullGalleryScreen = () => {
         assets={assets}
         autoOpenAssetId={photoId}
         numColumns={NUM_COLUMNS}
-        ListEmptyComponent={isLoading ? null : EmptyFilteredGallery}
+        ListEmptyComponent={
+          isLoading
+            ? null
+            : isError
+              ? // A failed fetch must never read as "no photos here yet"
+                GalleryLoadError
+              : EmptyFilteredGallery
+        }
         contentBottomPadding={LIST_BOTTOM_PADDING}
         renderSocialOverlay={renderSocialOverlay}
         renderPageAttribution={renderPageAttribution}
@@ -209,6 +221,16 @@ const EmptyFilteredGallery = memo(() => (
   </View>
 ));
 EmptyFilteredGallery.displayName = "EmptyFilteredGallery";
+
+const GalleryLoadError = memo(() => (
+  <View style={styles.emptyContainer}>
+    <Ionicons name="cloud-offline-outline" size={48} color="#ccc" />
+    <Text style={styles.emptyText}>
+      Couldn't load photos — pull down to retry
+    </Text>
+  </View>
+));
+GalleryLoadError.displayName = "GalleryLoadError";
 
 const styles = StyleSheet.create({
   container: {

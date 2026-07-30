@@ -1,11 +1,12 @@
 /**
  * Memo Create — the hub.
  *
- * Its own corner of the app (pushed from the My Albums tab's banner) with
- * an internal tab bar:
- *   Collage  — template gallery; tapping one starts a new collage
- *   Carousel — the seamless-split carousel builder entry
- *   Projects — auto-saved drafts, reopenable and deletable
+ * One editorial scroll, no tabs:
+ *   Blank canvas  — striped hero into the freeform Studio (ratio + pages sheet)
+ *   What are you making — intent tiles (collage, carousel, story, edit photo…)
+ *   Layouts       — horizontal rail of collage templates, "All N" opens the full set
+ *   Looks         — monochrome background presets that seed a blank canvas
+ *   In progress   — latest drafts; the folder icon / "Projects" opens them all
  */
 
 import React, { useCallback, useMemo, useState } from "react";
@@ -19,7 +20,7 @@ import {
 } from "react-native";
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
-import { scriptType } from "@/lib/tokens";
+import { color, font, radius, screenH, scriptType } from "@/lib/tokens";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import dayjs from "dayjs";
@@ -36,11 +37,7 @@ import {
   LibraryPickerSheet,
   type PickedPhoto,
 } from "../components/LibraryPickerSheet";
-import {
-  MAX_PAGES,
-  convertToStudio,
-  projectFromTemplate,
-} from "../engine/document";
+import { MAX_PAGES, convertToStudio, projectFromTemplate } from "../engine/document";
 import {
   newProjectId,
   useCreateProjectsStore,
@@ -48,26 +45,65 @@ import {
 } from "../store/createProjectsStore";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const GRID_PADDING = 16;
-const GRID_GAP = 12;
-const TEMPLATE_COLUMNS = 3;
-const TEMPLATE_CELL = Math.floor(
-  (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * (TEMPLATE_COLUMNS - 1)) /
-    TEMPLATE_COLUMNS,
+const GRID_GAP = 10;
+const MAKE_COLUMNS = 3;
+const MAKE_TILE = Math.floor(
+  (SCREEN_WIDTH - screenH * 2 - GRID_GAP * (MAKE_COLUMNS - 1)) / MAKE_COLUMNS,
 );
 
-type CreateTab = "collage" | "carousel" | "projects";
+// The layouts rail shows the first few; the sheet has them all
+const RAIL_TEMPLATE_COUNT = 6;
+const RAIL_PREVIEW_W = 88;
+const RAIL_PREVIEW_H = 110;
 
-const TABS: { key: CreateTab; label: string; icon: string }[] = [
-  { key: "collage", label: "Collage", icon: "grid" },
-  { key: "carousel", label: "Carousel", icon: "albums" },
-  { key: "projects", label: "Projects", icon: "folder-open" },
+/** Looks — monochrome page-background presets for a blank canvas. */
+const LOOKS: { id: string; label: string; colorValue: string }[] = [
+  { id: "mono", label: "Mono", colorValue: "#1C1C1E" },
+  { id: "fade", label: "Fade", colorValue: "#9A9AA0" },
+  { id: "grain", label: "Grain", colorValue: "#6E6E73" },
+  { id: "matte", label: "Matte", colorValue: "#48484A" },
+  { id: "paper", label: "Paper", colorValue: "#F2F2F0" },
 ];
+
+/** Compact "2h ago" stamp for draft rows. */
+const agoLabel = (iso: string): string => {
+  const mins = Math.max(dayjs().diff(dayjs(iso), "minute"), 0);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return dayjs(iso).format("D MMM");
+};
+
+type PickerTarget =
+  | { kind: "template"; templateId: string }
+  | { kind: "editPhoto" };
+
+const MAKE_TILES: {
+  id: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  soon?: boolean;
+}[] = [
+  { id: "collage", label: "Collage", icon: "grid-outline" },
+  { id: "carousel", label: "Carousel", icon: "albums-outline" },
+  { id: "story", label: "Story", icon: "reader-outline" },
+  { id: "editPhoto", label: "Edit photo", icon: "image-outline" },
+  { id: "photoBook", label: "Photo book", icon: "book-outline", soon: true },
+  { id: "print", label: "Print", icon: "print-outline", soon: true },
+];
+
+// Diagonal hatch on the hero — enough rotated bars to cover any phone width
+const HERO_STRIPES = Array.from(
+  { length: Math.ceil(SCREEN_WIDTH / 52) + 4 },
+  (_, i) => i,
+);
 
 const CreateHomeScreen = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<CreateTab>("collage");
 
   const projects = useCreateProjectsStore((state) => state.projects);
   const removeProject = useCreateProjectsStore((state) => state.remove);
@@ -75,23 +111,32 @@ const CreateHomeScreen = () => {
 
   const handleBack = useCallback(() => router.back(), [router]);
 
-  // Templates seed freeform Studio projects — photos first (the picker
-  // caps at the template's slot count), then the editor opens pre-filled
-  const [templateTarget, setTemplateTarget] = useState<string | null>(null);
+  const [lookId, setLookId] = useState("mono");
+  const lookColor = LOOKS.find((look) => look.id === lookId)!.colorValue;
+
+  const [layoutsOpen, setLayoutsOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
+
+  // Photo picker — templates cap at the layout's slot count, edit-photo at 1
+  const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
 
   const openTemplate = useCallback((templateId: string) => {
-    setTemplateTarget(templateId);
+    setLayoutsOpen(false);
+    setPickerTarget({ kind: "template", templateId });
   }, []);
 
-  const handleTemplatePhotos = useCallback(
+  const handlePickedPhotos = useCallback(
     (photos: PickedPhoto[]) => {
-      const templateId = templateTarget;
-      setTemplateTarget(null);
-      if (!templateId || photos.length === 0) return;
+      const target = pickerTarget;
+      setPickerTarget(null);
+      if (!target || photos.length === 0) return;
+      const templateId =
+        target.kind === "template" ? target.templateId : "solo";
+      const ratioId = target.kind === "template" ? "square" : "portrait";
       const project = projectFromTemplate(
         newProjectId(),
         templateId,
-        "square",
+        ratioId,
         photos,
       );
       upsertProject(project);
@@ -100,14 +145,33 @@ const CreateHomeScreen = () => {
         params: { projectId: project.id },
       });
     },
-    [templateTarget, upsertProject, router],
+    [pickerTarget, upsertProject, router],
   );
 
-  const openCarousel = useCallback(() => {
-    router.push("/create/carousel");
-  }, [router]);
+  const openMakeTile = useCallback(
+    (id: string) => {
+      switch (id) {
+        case "collage":
+          setLayoutsOpen(true);
+          break;
+        case "carousel":
+          router.push("/create/carousel");
+          break;
+        case "story":
+          router.push({
+            pathname: "/create/studio",
+            params: { ratioId: "story", pages: "1", bg: lookColor },
+          });
+          break;
+        case "editPhoto":
+          setPickerTarget({ kind: "editPhoto" });
+          break;
+      }
+    },
+    [router, lookColor],
+  );
 
-  // ---- Studio: start-from-scratch sheet (ratio + page count) ----
+  // ---- Blank canvas: ratio + page count, then into the Studio ----
   const [scratchOpen, setScratchOpen] = useState(false);
   const [scratchRatioId, setScratchRatioId] = useState("portrait");
   const [scratchPages, setScratchPages] = useState(3);
@@ -116,12 +180,17 @@ const CreateHomeScreen = () => {
     setScratchOpen(false);
     router.push({
       pathname: "/create/studio",
-      params: { ratioId: scratchRatioId, pages: String(scratchPages) },
+      params: {
+        ratioId: scratchRatioId,
+        pages: String(scratchPages),
+        bg: lookColor,
+      },
     });
-  }, [router, scratchRatioId, scratchPages]);
+  }, [router, scratchRatioId, scratchPages, lookColor]);
 
   const openProject = useCallback(
     (project: CreateProject) => {
+      setProjectsOpen(false);
       if (project.type === "carousel") {
         router.push({
           pathname: "/create/carousel",
@@ -157,17 +226,87 @@ const CreateHomeScreen = () => {
 
   const projectRows = useMemo(
     () =>
-      projects.map((project) => ({
-        project,
-        title:
-          project.type === "collage"
-            ? `Collage · ${ratioById(project.ratioId).label}`
-            : project.type === "studio"
-              ? `Studio · ${project.pageCount} page${project.pageCount === 1 ? "" : "s"} · ${ratioById(project.ratioId).label}`
-              : `Carousel · ${project.pages} pages`,
-        subtitle: `Edited ${dayjs(project.updatedAt).format("D MMM, HH:mm")}`,
-      })),
+      projects.map((project) => {
+        const stamp = `edited ${agoLabel(project.updatedAt)}`;
+        if (project.type === "studio") {
+          return {
+            project,
+            title: `Studio · ${ratioById(project.ratioId).label}`,
+            subtitle: `${project.pageCount} page${project.pageCount === 1 ? "" : "s"} · ${stamp}`,
+          };
+        }
+        if (project.type === "carousel") {
+          return {
+            project,
+            title: "Carousel",
+            subtitle: `${project.pages} pages · ${stamp}`,
+          };
+        }
+        return {
+          project,
+          title: `Collage · ${ratioById(project.ratioId).label}`,
+          subtitle: `${project.slots.length} photos · ${stamp}`,
+        };
+      }),
     [projects],
+  );
+
+  const recentRows = projectRows.slice(0, 3);
+
+  const renderProjectThumb = (project: CreateProject, size: number) =>
+    project.type === "collage" ? (
+      <TemplatePreview
+        templateId={project.templateId}
+        width={size}
+        height={size}
+        slots={project.slots}
+        gap={2}
+        background={project.background}
+      />
+    ) : (
+      <View style={[styles.projectThumbDark, { width: size, height: size }]}>
+        <Ionicons
+          name={project.type === "studio" ? "color-wand-outline" : "albums-outline"}
+          size={20}
+          color={color.onDarkSecondary}
+        />
+      </View>
+    );
+
+  const renderProjectRow = (
+    { project, title, subtitle }: (typeof projectRows)[number],
+    options: { deletable: boolean },
+  ) => (
+    <Pressable
+      key={project.id}
+      onPress={() => openProject(project)}
+      style={({ pressed }) => [styles.projectRow, pressed && styles.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+    >
+      {renderProjectThumb(project, 52)}
+      <View style={styles.projectTextWrap}>
+        <Text style={styles.projectTitle}>{title}</Text>
+        <Text style={styles.projectSubtitle}>{subtitle}</Text>
+      </View>
+      {options.deletable ? (
+        <Pressable
+          onPress={() => confirmDelete(project)}
+          hitSlop={10}
+          style={styles.projectDelete}
+          accessibilityRole="button"
+          accessibilityLabel="Delete project"
+        >
+          <Ionicons name="trash-outline" size={18} color={color.textTertiary} />
+        </Pressable>
+      ) : (
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={color.textTertiary}
+        />
+      )}
+    </Pressable>
   );
 
   return (
@@ -181,7 +320,7 @@ const CreateHomeScreen = () => {
           accessibilityRole="button"
           accessibilityLabel="Back"
         >
-          <Ionicons name="chevron-back" size={26} color="#000" />
+          <Ionicons name="chevron-back" size={26} color={color.textPrimary} />
         </Pressable>
         <View style={styles.navCenter}>
           {/* Wordmark: "Memo" in the app face, "Create" in script */}
@@ -189,33 +328,15 @@ const CreateHomeScreen = () => {
             Memo <Text style={styles.navTitleScript}>Create</Text>
           </Text>
         </View>
-        <View style={styles.navButton} />
-      </View>
-
-      {/* Tab bar — segmented, matching the app's control voice */}
-      <View style={styles.tabBar}>
-        {TABS.map(({ key, label, icon }) => {
-          const active = key === tab;
-          return (
-            <Pressable
-              key={key}
-              onPress={() => setTab(key)}
-              style={[styles.tabItem, active && styles.tabItemActive]}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-            >
-              <Ionicons
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                name={(active ? icon : `${icon}-outline`) as any}
-                size={15}
-                color={active ? "#fff" : "#666"}
-              />
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
+        <Pressable
+          onPress={() => setProjectsOpen(true)}
+          style={styles.navButton}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Projects"
+        >
+          <Ionicons name="folder-outline" size={22} color={color.textPrimary} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -223,171 +344,273 @@ const CreateHomeScreen = () => {
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
       >
-        {tab === "collage" && (
-          <>
-            {/* Studio: the freeform, SCRL-style editor */}
+        {/* Blank canvas — the striped hero into the Studio */}
+        <Pressable
+          onPress={() => setScratchOpen(true)}
+          style={({ pressed }) => [styles.hero, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Blank canvas — start from scratch in Studio"
+        >
+          {HERO_STRIPES.map((i) => (
+            <View key={i} style={[styles.heroStripe, { left: i * 52 - 60 }]} />
+          ))}
+          <View style={styles.heroIcon}>
+            <Ionicons name="sparkles" size={22} color={color.bgDark} />
+          </View>
+          <View style={styles.heroTextWrap}>
+            <Text style={styles.heroTitle}>Blank canvas</Text>
+            <Text style={styles.heroText}>
+              Freeform pages — drag photos anywhere, add text, layer and mask
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={color.onDarkSecondary}
+          />
+        </Pressable>
+
+        {/* What are you making */}
+        <Text style={styles.sectionLabel}>What are you making</Text>
+        <View style={styles.makeGrid}>
+          {MAKE_TILES.map((tile) => (
             <Pressable
-              onPress={() => setScratchOpen(true)}
+              key={tile.id}
+              onPress={() => openMakeTile(tile.id)}
+              disabled={tile.soon}
               style={({ pressed }) => [
-                styles.studioCard,
-                pressed && styles.cardPressed,
+                styles.makeTile,
+                pressed && styles.pressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Start from scratch in Studio"
+              accessibilityLabel={
+                tile.soon ? `${tile.label} — coming soon` : tile.label
+              }
             >
-              <View style={styles.studioIcon}>
-                <Ionicons name="color-wand" size={20} color="#fff" />
-              </View>
-              <View style={styles.studioTextWrap}>
-                <Text style={styles.studioTitle}>Start from scratch</Text>
-                <Text style={styles.studioText}>
-                  Freeform pages — drag photos anywhere, even across pages
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#8E8E93" />
+              {tile.soon && (
+                <View style={styles.soonPill}>
+                  <Text style={styles.soonPillText}>Soon</Text>
+                </View>
+              )}
+              <Ionicons
+                name={tile.icon}
+                size={22}
+                color={tile.soon ? color.textTertiary : color.textPrimary}
+              />
+              <Text
+                style={[
+                  styles.makeTileLabel,
+                  tile.soon && styles.makeTileLabelSoon,
+                ]}
+              >
+                {tile.label}
+              </Text>
             </Pressable>
-            <Text style={styles.sectionLabel}>Templates</Text>
+          ))}
+        </View>
+
+        {/* Layouts */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionLabelInline}>Layouts</Text>
+          <Pressable
+            onPress={() => setLayoutsOpen(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="All layouts"
+          >
+            <Text style={styles.sectionLink}>
+              All {COLLAGE_TEMPLATES.length}
+            </Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.railWrap}
+          contentContainerStyle={styles.rail}
+        >
+          {COLLAGE_TEMPLATES.slice(0, RAIL_TEMPLATE_COUNT).map((template) => (
+            <Pressable
+              key={template.id}
+              onPress={() => openTemplate(template.id)}
+              style={({ pressed }) => [
+                styles.layoutCell,
+                pressed && styles.pressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${template.name} layout`}
+            >
+              <View style={styles.layoutCard}>
+                <TemplatePreview
+                  templateId={template.id}
+                  width={RAIL_PREVIEW_W}
+                  height={RAIL_PREVIEW_H}
+                  background={color.bg}
+                />
+              </View>
+              <Text style={styles.layoutName}>{template.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Looks — background presets for a blank canvas */}
+        <Text style={styles.sectionLabel}>Looks</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.railWrap}
+          contentContainerStyle={styles.rail}
+        >
+          {LOOKS.map((look) => {
+            const active = look.id === lookId;
+            return (
+              <Pressable
+                key={look.id}
+                onPress={() => setLookId(look.id)}
+                style={({ pressed }) => [
+                  styles.lookCell,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${look.label} look`}
+              >
+                <View
+                  style={[styles.lookFrame, active && styles.lookFrameActive]}
+                >
+                  <View
+                    style={[
+                      styles.lookSwatch,
+                      { backgroundColor: look.colorValue },
+                      look.id === "paper" && styles.lookSwatchHairline,
+                    ]}
+                  />
+                </View>
+                <Text
+                  style={[styles.lookName, active && styles.lookNameActive]}
+                >
+                  {look.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* In progress */}
+        {recentRows.length > 0 && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabelInline}>In progress</Text>
+              <Pressable
+                onPress={() => setProjectsOpen(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="All projects"
+              >
+                <Text style={styles.sectionLink}>Projects</Text>
+              </Pressable>
+            </View>
+            <View style={styles.projectList}>
+              {recentRows.map((row, index) => (
+                <React.Fragment key={row.project.id}>
+                  {index > 0 && <View style={styles.hairline} />}
+                  {renderProjectRow(row, { deletable: false })}
+                </React.Fragment>
+              ))}
+            </View>
           </>
         )}
-        {tab === "collage" && (
-          <View style={styles.templateGrid}>
+      </ScrollView>
+
+      {/* Photo picker: template flow (slot-capped) or edit-photo (single) */}
+      <LibraryPickerSheet
+        visible={pickerTarget != null}
+        maxCount={
+          pickerTarget?.kind === "template"
+            ? templateById(pickerTarget.templateId).slots.length
+            : 1
+        }
+        allowCameraRoll
+        allowAlbums
+        onConfirm={handlePickedPhotos}
+        onClose={() => setPickerTarget(null)}
+      />
+
+      {/* All layouts */}
+      <Sheet
+        visible={layoutsOpen}
+        onClose={() => setLayoutsOpen(false)}
+        title="Layouts"
+      >
+        <ScrollView
+          style={styles.layoutsSheetScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.layoutsSheetGrid}>
             {COLLAGE_TEMPLATES.map((template) => (
               <Pressable
                 key={template.id}
                 onPress={() => openTemplate(template.id)}
                 style={({ pressed }) => [
-                  styles.templateCard,
-                  pressed && styles.cardPressed,
+                  styles.layoutCell,
+                  pressed && styles.pressed,
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`${template.name} layout`}
               >
-                <TemplatePreview
-                  templateId={template.id}
-                  width={TEMPLATE_CELL}
-                  height={TEMPLATE_CELL}
-                  background="#F2F2F7"
-                />
-                <Text style={styles.templateName}>{template.name}</Text>
+                <View style={styles.layoutCard}>
+                  <TemplatePreview
+                    templateId={template.id}
+                    width={RAIL_PREVIEW_W}
+                    height={RAIL_PREVIEW_H}
+                    background={color.bg}
+                  />
+                </View>
+                <Text style={styles.layoutName}>{template.name}</Text>
               </Pressable>
             ))}
           </View>
-        )}
+        </ScrollView>
+      </Sheet>
 
-        {tab === "carousel" && (
-          <View style={styles.carouselIntro}>
-            {/* Visual explainer: one photo flowing across three pages */}
-            <View style={styles.carouselDiagram}>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={styles.carouselDiagramPage}>
-                  <View
-                    style={[
-                      styles.carouselDiagramFill,
-                      { left: -i * 64 },
-                    ]}
-                  />
-                </View>
-              ))}
-            </View>
-            <Text style={styles.carouselTitle}>Seamless carousel</Text>
-            <Text style={styles.carouselText}>
-              Split one photo into swipeable Instagram pages that line up
-              edge-to-edge. Pick a wide shot, choose how many pages, and every
-              page lands in your camera roll in posting order.
+      {/* All projects */}
+      <Sheet
+        visible={projectsOpen}
+        onClose={() => setProjectsOpen(false)}
+        title="Projects"
+      >
+        {projectRows.length === 0 ? (
+          <View style={styles.empty}>
+            <Ionicons
+              name="folder-open-outline"
+              size={40}
+              color={color.textTertiary}
+            />
+            <Text style={styles.emptyTitle}>No projects yet</Text>
+            <Text style={styles.emptyText}>
+              Drafts save automatically while you edit
             </Text>
-            <Pressable
-              onPress={openCarousel}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.cardPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Start a carousel"
-            >
-              <Ionicons name="albums" size={18} color="#fff" />
-              <Text style={styles.primaryButtonText}>Start a carousel</Text>
-            </Pressable>
           </View>
+        ) : (
+          <ScrollView
+            style={styles.projectsSheetScroll}
+            showsVerticalScrollIndicator={false}
+          >
+            {projectRows.map((row, index) => (
+              <React.Fragment key={row.project.id}>
+                {index > 0 && <View style={styles.hairline} />}
+                {renderProjectRow(row, { deletable: true })}
+              </React.Fragment>
+            ))}
+          </ScrollView>
         )}
+      </Sheet>
 
-        {tab === "projects" &&
-          (projectRows.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="folder-open-outline" size={44} color="#ccc" />
-              <Text style={styles.emptyTitle}>No projects yet</Text>
-              <Text style={styles.emptyText}>
-                Drafts save automatically while you edit
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.projectList}>
-              {projectRows.map(({ project, title, subtitle }) => (
-                <Pressable
-                  key={project.id}
-                  onPress={() => openProject(project)}
-                  style={({ pressed }) => [
-                    styles.projectRow,
-                    pressed && styles.cardPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={title}
-                >
-                  {project.type === "collage" ? (
-                    <TemplatePreview
-                      templateId={project.templateId}
-                      width={56}
-                      height={56}
-                      slots={project.slots}
-                      gap={2}
-                      background={project.background}
-                    />
-                  ) : (
-                    <View style={styles.projectThumbFallback}>
-                      <Ionicons
-                        name={
-                          project.type === "studio" ? "color-wand" : "albums"
-                        }
-                        size={22}
-                        color="#8E8E93"
-                      />
-                    </View>
-                  )}
-                  <View style={styles.projectTextWrap}>
-                    <Text style={styles.projectTitle}>{title}</Text>
-                    <Text style={styles.projectSubtitle}>{subtitle}</Text>
-                  </View>
-                  <Pressable
-                    onPress={() => confirmDelete(project)}
-                    hitSlop={10}
-                    style={styles.projectDelete}
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete project"
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#8E8E93" />
-                  </Pressable>
-                </Pressable>
-              ))}
-            </View>
-          ))}
-      </ScrollView>
-
-      {/* Template flow: photos first, then the Studio opens pre-filled */}
-      <LibraryPickerSheet
-        visible={templateTarget != null}
-        maxCount={
-          templateTarget ? templateById(templateTarget).slots.length : 1
-        }
-        allowCameraRoll
-        allowAlbums
-        onConfirm={handleTemplatePhotos}
-        onClose={() => setTemplateTarget(null)}
-      />
-
-      {/* Start-from-scratch: ratio + page count, then into the Studio */}
+      {/* Blank canvas: ratio + page count, then into the Studio */}
       <Sheet
         visible={scratchOpen}
         onClose={() => setScratchOpen(false)}
-        title="New Studio project"
+        title="Blank canvas"
       >
         <View style={styles.scratchBody}>
           <Text style={styles.scratchLabel}>Format</Text>
@@ -426,7 +649,7 @@ const CreateHomeScreen = () => {
               accessibilityRole="button"
               accessibilityLabel="Fewer pages"
             >
-              <Ionicons name="remove" size={18} color="#000" />
+              <Ionicons name="remove" size={18} color={color.textPrimary} />
             </Pressable>
             <View style={styles.stepValue}>
               <Text style={styles.stepValueText}>{scratchPages}</Text>
@@ -437,7 +660,7 @@ const CreateHomeScreen = () => {
               accessibilityRole="button"
               accessibilityLabel="More pages"
             >
-              <Ionicons name="add" size={18} color="#000" />
+              <Ionicons name="add" size={18} color={color.textPrimary} />
             </Pressable>
           </View>
 
@@ -445,7 +668,7 @@ const CreateHomeScreen = () => {
             onPress={startStudio}
             style={({ pressed }) => [
               styles.scratchCreate,
-              pressed && styles.cardPressed,
+              pressed && styles.pressed,
             ]}
             accessibilityRole="button"
             accessibilityLabel="Create project"
@@ -461,7 +684,7 @@ const CreateHomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: color.bg,
   },
   nav: {
     flexDirection: "row",
@@ -481,155 +704,217 @@ const styles = StyleSheet.create({
   },
   navTitle: {
     fontSize: 17,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
-    color: "#000",
+    ...font.bold,
+    color: color.textPrimary,
   },
   navTitleScript: {
     ...scriptType(17),
-    color: "#000",
-  },
-  tabBar: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 12,
-    padding: 3,
-    borderRadius: 12,
-    backgroundColor: "#F2F2F7",
-    gap: 3,
-  },
-  tabItem: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    height: 36,
-    borderRadius: 9,
-  },
-  tabItemActive: {
-    backgroundColor: "#000",
-  },
-  tabLabel: {
-    fontSize: 13,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#666",
-  },
-  tabLabelActive: {
-    color: "#fff",
+    color: color.textPrimary,
   },
   content: {
     flex: 1,
   },
-  templateGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: GRID_PADDING,
-    gap: GRID_GAP,
-  },
-  templateCard: {
-    width: TEMPLATE_CELL,
-    alignItems: "center",
-    gap: 6,
-  },
-  cardPressed: {
+  pressed: {
     opacity: 0.75,
   },
-  templateName: {
-    fontSize: 12,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#3C3C43",
-  },
-  carouselIntro: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
+
+  // ---- Blank canvas hero ----
+  hero: {
+    flexDirection: "row",
     alignItems: "center",
-  },
-  carouselDiagram: {
-    flexDirection: "row",
-    gap: 6,
-    marginBottom: 24,
-  },
-  carouselDiagramPage: {
-    width: 64,
-    height: 80,
-    borderRadius: 10,
+    gap: 14,
+    marginHorizontal: screenH,
+    marginTop: 8,
+    marginBottom: 26,
+    paddingHorizontal: 18,
+    paddingVertical: 26,
+    borderRadius: radius.lg,
+    backgroundColor: "#0A0A0A",
     overflow: "hidden",
-    backgroundColor: "#F2F2F7",
   },
-  // One wide "photo" sliding left per page = the seamless-split idea
-  carouselDiagramFill: {
+  heroStripe: {
     position: "absolute",
-    top: 12,
-    width: 64 * 3,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#D8D8DE",
+    top: -80,
+    width: 26,
+    height: 320,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    transform: [{ rotate: "-24deg" }],
   },
-  carouselTitle: {
+  heroIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: color.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroTextWrap: {
+    flex: 1,
+  },
+  heroTitle: {
     fontSize: 20,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
-    color: "#000",
-    marginBottom: 8,
+    ...font.bold,
+    color: color.textInverse,
   },
-  carouselText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 24,
+  heroText: {
+    fontSize: 13,
+    lineHeight: 18,
+    ...font.regular,
+    color: color.onDarkSecondary,
+    marginTop: 4,
   },
-  primaryButton: {
+
+  // ---- Section headers ----
+  sectionLabel: {
+    marginHorizontal: screenH,
+    marginBottom: 12,
+    fontSize: 12,
+    ...font.semibold,
+    color: color.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  sectionHeader: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: screenH,
+    marginBottom: 12,
+  },
+  sectionLabelInline: {
+    fontSize: 12,
+    ...font.semibold,
+    color: color.textTertiary,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  sectionLink: {
+    fontSize: 13,
+    ...font.bold,
+    color: color.textPrimary,
+    textDecorationLine: "underline",
+  },
+
+  // ---- What are you making ----
+  makeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: screenH,
+    gap: GRID_GAP,
+    marginBottom: 26,
+  },
+  makeTile: {
+    width: MAKE_TILE,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 14,
+    gap: 12,
+  },
+  makeTileLabel: {
+    fontSize: 15,
+    ...font.bold,
+    color: color.textPrimary,
+  },
+  makeTileLabelSoon: {
+    color: color.textTertiary,
+  },
+  soonPill: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    backgroundColor: color.surface1,
+  },
+  soonPillText: {
+    fontSize: 10,
+    ...font.semibold,
+    color: color.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+
+  // ---- Layouts rail ----
+  railWrap: {
+    flexGrow: 0,
+    marginBottom: 26,
+  },
+  rail: {
+    paddingHorizontal: screenH,
+    gap: GRID_GAP,
+  },
+  layoutCell: {
     alignItems: "center",
     gap: 8,
-    height: 50,
-    paddingHorizontal: 26,
-    borderRadius: 25,
-    backgroundColor: "#000",
   },
-  primaryButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
+  layoutCard: {
+    padding: 8,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+    backgroundColor: color.bg,
   },
-  empty: {
-    alignItems: "center",
-    paddingTop: 70,
-    gap: 6,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#3C3C43",
-  },
-  emptyText: {
+  layoutName: {
     fontSize: 13,
-    color: "#8E8E93",
+    ...font.semibold,
+    color: color.textPrimary,
   },
+
+  // ---- Looks rail ----
+  lookCell: {
+    alignItems: "center",
+    gap: 8,
+  },
+  lookFrame: {
+    padding: 2,
+    borderRadius: radius.md + 2,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  lookFrameActive: {
+    borderColor: color.bgDark,
+  },
+  lookSwatch: {
+    width: 68,
+    height: 68,
+    borderRadius: radius.md,
+  },
+  lookSwatchHairline: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+  },
+  lookName: {
+    fontSize: 13,
+    ...font.regular,
+    color: color.textSecondary,
+  },
+  lookNameActive: {
+    ...font.bold,
+    color: color.textPrimary,
+  },
+
+  // ---- In progress / projects ----
   projectList: {
-    paddingHorizontal: 16,
-    gap: 10,
+    paddingHorizontal: screenH,
+  },
+  hairline: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: color.separator,
+    marginLeft: 52 + 12,
   },
   projectRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: "#F9F9FB",
+    paddingVertical: 10,
   },
-  projectThumbFallback: {
-    width: 56,
-    height: 56,
-    borderRadius: 8,
-    backgroundColor: "#F2F2F7",
+  projectThumbDark: {
+    borderRadius: radius.sm,
+    backgroundColor: color.surfaceDark,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -638,13 +923,13 @@ const styles = StyleSheet.create({
   },
   projectTitle: {
     fontSize: 15,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#000",
+    ...font.semibold,
+    color: color.textPrimary,
   },
   projectSubtitle: {
     fontSize: 12,
-    color: "#8E8E93",
+    ...font.regular,
+    color: color.textTertiary,
     marginTop: 2,
   },
   projectDelete: {
@@ -653,61 +938,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  studioCard: {
+  projectsSheetScroll: {
+    maxHeight: 420,
+    paddingHorizontal: screenH,
+  },
+  layoutsSheetScroll: {
+    maxHeight: 480,
+  },
+  layoutsSheetGrid: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginHorizontal: 16,
-    marginBottom: 18,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: "#F9F9FB",
-  },
-  studioIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#000",
-    alignItems: "center",
+    flexWrap: "wrap",
     justifyContent: "center",
+    paddingHorizontal: screenH,
+    paddingBottom: 8,
+    gap: GRID_GAP + 4,
   },
-  studioTextWrap: {
-    flex: 1,
+  empty: {
+    alignItems: "center",
+    paddingVertical: 36,
+    gap: 6,
   },
-  studioTitle: {
-    fontSize: 15,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
-    color: "#000",
+  emptyTitle: {
+    fontSize: 16,
+    ...font.semibold,
+    color: color.textPrimary,
   },
-  studioText: {
-    fontSize: 12,
-    color: "#8E8E93",
-    marginTop: 1,
+  emptyText: {
+    fontSize: 13,
+    ...font.regular,
+    color: color.textTertiary,
   },
-  sectionLabel: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    fontSize: 12,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#8E8E93",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
+
+  // ---- Blank canvas sheet ----
   scratchBody: {
-    paddingHorizontal: 16,
+    paddingHorizontal: screenH,
     paddingBottom: 8,
   },
   scratchLabel: {
     marginTop: 14,
     marginBottom: 8,
     fontSize: 12,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#8E8E93",
+    ...font.semibold,
+    color: color.textTertiary,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
   },
   scratchRow: {
     flexDirection: "row",
@@ -717,30 +991,29 @@ const styles = StyleSheet.create({
   scratchSegment: {
     minWidth: 52,
     height: 34,
-    borderRadius: 17,
+    borderRadius: radius.full,
     paddingHorizontal: 14,
-    backgroundColor: "#F2F2F7",
+    backgroundColor: color.surface1,
     alignItems: "center",
     justifyContent: "center",
   },
   scratchSegmentActive: {
-    backgroundColor: "#000",
+    backgroundColor: color.bgDark,
   },
   scratchSegmentText: {
     fontSize: 13,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#3C3C43",
+    ...font.semibold,
+    color: color.textPrimary,
     fontVariant: ["tabular-nums"],
   },
   scratchSegmentTextActive: {
-    color: "#fff",
+    color: color.textInverse,
   },
   stepButton: {
     width: 34,
     height: 34,
-    borderRadius: 17,
-    backgroundColor: "#F2F2F7",
+    borderRadius: radius.full,
+    backgroundColor: color.surface1,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -750,24 +1023,22 @@ const styles = StyleSheet.create({
   },
   stepValueText: {
     fontSize: 17,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
-    color: "#000",
+    ...font.bold,
+    color: color.textPrimary,
     fontVariant: ["tabular-nums"],
   },
   scratchCreate: {
     marginTop: 22,
     height: 50,
-    borderRadius: 25,
-    backgroundColor: "#000",
+    borderRadius: radius.full,
+    backgroundColor: color.bgDark,
     alignItems: "center",
     justifyContent: "center",
   },
   scratchCreateText: {
-    color: "#fff",
+    color: color.textInverse,
     fontSize: 16,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
+    ...font.semibold,
   },
 });
 

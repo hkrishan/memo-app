@@ -14,6 +14,8 @@ export interface LibraryPhoto {
   thumbnailUrl: string | null;
   /** See Photo.displayUrl — the size the viewer paints. */
   displayUrl?: string | null;
+  /** See Photo.thumbHash — instant blurred placeholder. */
+  thumbHash?: string | null;
   mediaType: "photo" | "video";
   width: number | null;
   height: number | null;

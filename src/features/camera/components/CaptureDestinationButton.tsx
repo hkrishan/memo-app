@@ -1,13 +1,10 @@
 /**
  * CaptureDestinationButton
- * Shows where the next capture goes, docked to the RIGHT of the shutter
- * (mirroring the last-capture thumbnail on the left). Every capture goes to
- * the Memo library (the always-on base, shown as the Memo glyph); the sticky
- * EXTRAS ride on top — a small album cover badge when an album extra is set,
- * plus a tiny label naming just those extras ("Roll", "<Album>",
- * "Roll · <Album>"), blank when there are none. The Memo base is deliberately
- * not named: it never changes, so printing it only crowds the label.
- * Tapping opens the capture-extras preferences sheet.
+ * The ALBUM tile docked to the RIGHT of the shutter (mirroring the
+ * last-capture thumbnail on the left). Shows the first sticky album's cover
+ * as its face — or a quiet dark tile when captures go to the library alone —
+ * with the Memo bookmark riding the corner (every capture always lands in
+ * the Memo library). Tapping opens the capture-extras sheet.
  */
 
 import React from "react";
@@ -15,14 +12,15 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 
+import { font } from "@/lib/tokens";
 import { Album } from "@/features/album/types/album.types";
 import { CaptureExtras } from "../store/captureDestinationStore";
 import { resolveAlbumCoverUri } from "./DestinationPickerSheet";
 
-const CHIP_SIZE = 46;
+const TILE_SIZE = 56;
 
 interface CaptureDestinationButtonProps {
-  /** Resolved extras (album already checked to still exist). */
+  /** Resolved extras (albums already checked to still exist). */
   extras: CaptureExtras;
   albums: Album[] | undefined;
   onPress: () => void;
@@ -31,118 +29,89 @@ interface CaptureDestinationButtonProps {
 export const CaptureDestinationButton: React.FC<
   CaptureDestinationButtonProps
 > = ({ extras, albums, onPress }) => {
-  const album = extras.alsoAlbumId
-    ? albums?.find((a) => a.albumId === extras.alsoAlbumId)
+  const primaryAlbum = extras.alsoAlbumIds.length
+    ? albums?.find((a) => a.albumId === extras.alsoAlbumIds[0])
     : undefined;
-  const coverUri = album ? resolveAlbumCoverUri(album) : null;
+  const coverUri = primaryAlbum ? resolveAlbumCoverUri(primaryAlbum) : null;
 
-  // The Memo library is the always-on base, so naming it adds nothing — the
-  // label reads only the EXTRAS riding on top ("Roll", "<Album>", both), and
-  // stays empty when there are none.
-  const parts: string[] = [];
-  if (extras.alsoDeviceGallery) parts.push("Roll");
-  if (album) parts.push(album.title);
-  const label = parts.join(" · ");
+  const albumNames = extras.alsoAlbumIds
+    .map((id) => albums?.find((a) => a.albumId === id)?.title)
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.wrap, pressed && styles.pressed]}
       accessibilityRole="button"
-      // Screen readers still hear the full picture, Memo base included
-      accessibilityLabel={`Capture destinations: Memo${
-        label ? ` · ${label}` : ""
-      }. Tap to change.`}
+      accessibilityLabel={`Capture destinations: Memo library${
+        albumNames ? ` and ${albumNames}` : ""
+      }${extras.alsoDeviceGallery ? ", camera roll" : ""}. Tap to change.`}
     >
-      <View style={styles.chip}>
-        <View style={styles.fallback}>
-          <Ionicons
-            name="bookmark"
-            size={20}
-            color="rgba(255, 255, 255, 0.95)"
+      <View style={styles.tile}>
+        {coverUri && (
+          <Image
+            source={{ uri: coverUri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={120}
           />
-        </View>
-        {/* Album extra: cover thumbnail badge overlapping the base chip */}
-        {album ? (
-          coverUri ? (
-            <Image
-              source={{ uri: coverUri }}
-              style={styles.albumBadge}
-              contentFit="cover"
-              transition={120}
-            />
-          ) : (
-            <View style={[styles.albumBadge, styles.albumBadgeFallback]}>
-              <Ionicons
-                name="albums"
-                size={12}
-                color="rgba(255, 255, 255, 0.95)"
-              />
-            </View>
-          )
-        ) : null}
+        )}
+        {/* Label scrim: keeps ALBUM legible over any cover */}
+        <View style={styles.labelScrim} />
+        <Text style={styles.label}>Album</Text>
       </View>
-      {/* Extra destinations, tiny, under the chip — legible over any scene.
-          Omitted entirely with no extras, so the chip doesn't sit above a
-          blank line's worth of space. */}
-      {label !== "" && (
-        <Text style={styles.label} numberOfLines={1}>
-          {label}
-        </Text>
-      )}
+      {/* Memo-library bookmark riding the corner — the always-on base */}
+      <View style={styles.memoBadge}>
+        <Ionicons name="bookmark" size={11} color="#000" />
+      </View>
     </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
   wrap: {
-    alignItems: "center",
-    width: 64,
-  },
-  label: {
-    marginTop: 4,
-    maxWidth: 64,
-    fontSize: 10,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#fff",
-    textAlign: "center",
-    textShadowColor: "rgba(0, 0, 0, 0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  chip: {
-    width: CHIP_SIZE,
-    height: CHIP_SIZE,
-    borderRadius: CHIP_SIZE / 2,
-    overflow: "visible",
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.9)",
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  albumBadge: {
-    position: "absolute",
-    right: -4,
-    bottom: -4,
-    width: 22,
-    height: 22,
-    borderRadius: 7,
-    borderWidth: 1.5,
-    borderColor: "rgba(0, 0, 0, 0.6)",
-    backgroundColor: "rgba(60, 60, 66, 0.9)",
-  },
-  albumBadgeFallback: {
-    alignItems: "center",
-    justifyContent: "center",
+    width: TILE_SIZE,
+    height: TILE_SIZE,
   },
   pressed: {
-    opacity: 0.7,
+    opacity: 0.8,
   },
-  fallback: {
-    width: "100%",
-    height: "100%",
+  tile: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "rgba(24, 24, 24, 0.55)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    justifyContent: "flex-end",
+  },
+  labelScrim: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 26,
+    backgroundColor: "rgba(0, 0, 0, 0.28)",
+  },
+  label: {
+    ...font.bold,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  memoBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
   },

@@ -1,6 +1,7 @@
 /**
  * ModeToggle Component
- * Photo/Video capture mode switch below the capture button.
+ * Photo/Video capture mode switch below the capture button — bare text tabs
+ * with a short underline sliding beneath the active one (no pill chrome).
  * Photo mode still supports hold-to-record; video mode makes a tap
  * start/stop recording.
  */
@@ -14,10 +15,11 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 
+import { font } from '@/lib/tokens';
 import { CaptureMode } from '../types';
 
-const OPTION_WIDTH = 76;
-const OPTION_HEIGHT = 32;
+const OPTION_WIDTH = 72;
+const UNDERLINE_WIDTH = 24;
 
 interface ModeToggleProps {
   mode: CaptureMode;
@@ -50,7 +52,6 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({
 
   return (
     <View style={[styles.container, disabled && styles.disabled]}>
-      <Animated.View style={[styles.indicator, indicatorStyle]} />
       <Pressable
         onPress={() => onModeChange(CaptureMode.PHOTO)}
         disabled={disabled}
@@ -79,6 +80,9 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({
           Video
         </Text>
       </Pressable>
+      <Animated.View style={[styles.underlineTrack, indicatorStyle]}>
+        <View style={styles.underline} />
+      </Animated.View>
     </View>
   );
 };
@@ -86,36 +90,41 @@ export const ModeToggle: React.FC<ModeToggleProps> = ({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-    borderRadius: (OPTION_HEIGHT + 8) / 2,
-    padding: 4,
+    paddingBottom: 7,
   },
   disabled: {
     opacity: 0.4,
   },
-  indicator: {
-    position: 'absolute',
-    top: 4,
-    left: 4,
-    width: OPTION_WIDTH,
-    height: OPTION_HEIGHT,
-    borderRadius: OPTION_HEIGHT / 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-  },
   option: {
     width: OPTION_WIDTH,
-    height: OPTION_HEIGHT,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
   },
   optionText: {
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 13,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
+    ...font.medium,
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 15,
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   optionTextActive: {
-    color: '#000',
+    ...font.bold,
+    color: '#fff',
+  },
+  underlineTrack: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: OPTION_WIDTH,
+    alignItems: 'center',
+  },
+  underline: {
+    width: UNDERLINE_WIDTH,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#fff',
   },
 });
 

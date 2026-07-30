@@ -24,6 +24,11 @@ import {
   useAlbumPendingAssets,
 } from "../../hooks/useAlbumPendingAssets";
 import GalleryPage from "./GalleryPage";
+import GalleryPageB from "./GalleryPageB";
+import {
+  selectGalleryVariant,
+  useGalleryVariantStore,
+} from "../../store/galleryVariantStore";
 import PagePage from "./PagePage";
 import MomentsPage from "@/features/moments/screens/MomentsPage";
 import { useLiveDropAlbumIds } from "@/features/moments/hooks/useLiveDropAlbumIds";
@@ -66,6 +71,10 @@ const AlbumScreen = () => {
   const tabPosition = useSharedValue(initialTabIndex);
 
   const { data: album } = useGetAlbumQuery(albumId!);
+
+  // Gallery layout A/B (sticky 50/50, assigned in the store on first
+  // read) — picks the Gallery tab body and the nav bar's chrome
+  const galleryVariant = useGalleryVariantStore(selectGalleryVariant);
 
   // Opening the album counts as "seen": clear its "NEW +n" badge on the list.
   // Fires once per albumId (mutate is stable) — NOT on scroll-past, only here
@@ -223,6 +232,7 @@ const AlbumScreen = () => {
         onBack={handleBack}
         onSettingsPress={handleOpenSettings}
         pageExists={pageExists}
+        galleryVariant={galleryVariant}
       />
 
       <PagerView
@@ -235,15 +245,27 @@ const AlbumScreen = () => {
         overdrag={false}
         offscreenPageLimit={1}
       >
-        <GalleryPage
-          key="gallery"
-          album={album}
-          albumId={albumId}
-          assets={assets}
-          isLoading={isLoading}
-          galleryScrollY={galleryScrollY}
-          contentTop={contentTop}
-        />
+        {galleryVariant === "editorial" ? (
+          <GalleryPageB
+            key="gallery"
+            album={album}
+            albumId={albumId}
+            assets={assets}
+            isLoading={isLoading}
+            galleryScrollY={galleryScrollY}
+            contentTop={contentTop}
+          />
+        ) : (
+          <GalleryPage
+            key="gallery"
+            album={album}
+            albumId={albumId}
+            assets={assets}
+            isLoading={isLoading}
+            galleryScrollY={galleryScrollY}
+            contentTop={contentTop}
+          />
+        )}
 
         <PagePage
           key="page"

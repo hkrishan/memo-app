@@ -107,6 +107,9 @@ export type PendingAlbumUpload = {
   albumPhotoId: string | null;
   /** Failed — waiting on a retry (manual, reconnect, or foreground). */
   failed: boolean;
+  /** The failure was just a missing connection — the tile renders as
+   *  waiting-for-network instead of errored. Cleared on every retry. */
+  offline?: boolean;
   /** Drives newest-first ordering alongside the album's server photos. */
   startedAt: number;
   /**
@@ -316,7 +319,7 @@ export function retryFailedUploads(): void {
     // Its tile goes back to spinning
     patchPending(
       (upload) => upload.uri === asset.uri && upload.albumId === albumId,
-      { failed: false },
+      { failed: false, offline: false },
     );
     void uploadOne(albumId, asset);
   }
@@ -391,66 +394,78 @@ async function stageAndUpload(
 async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
   let succeeded = false;
   let createdPhotoId: string | null = null;
-  try {
-    // Fresh token per file — a long batch can outlive an access token
-    const token = await tokenStorage.getAccessToken();
-    if (!token) throw new Error("No access token available");
+  // No connection: skip the transfer instead of handing it to the OS. An
+  // iOS BACKGROUND NSURLSession never fails offline — it silently waits for
+  // connectivity (days if need be) and the tile spun forever meanwhile.
+  // The record fails with `offline` set, renders as waiting-for-network,
+  // and the reconnect listener retries it.
+  let offline = (await NetInfo.fetch()).isConnected === false;
+  if (!offline) {
+    try {
+      // Fresh token per file — a long batch can outlive an access token
+      const token = await tokenStorage.getAccessToken();
+      if (!token) throw new Error("No access token available");
 
-    const base = env.apiUrl.replace(/\/+$/, "");
-    const url = `${base}${endpoints.album.uploadPhoto(albumId)}`;
+      const base = env.apiUrl.replace(/\/+$/, "");
+      const url = `${base}${endpoints.album.uploadPhoto(albumId)}`;
 
-    const parameters: Record<string, string> = {};
-    if (asset.latitude !== undefined && asset.longitude !== undefined) {
-      parameters.latitude = String(asset.latitude);
-      parameters.longitude = String(asset.longitude);
-    }
-
-    const record = useUploadManagerStore
-      .getState()
-      .pending.find(
-        (upload) => upload.uri === asset.uri && upload.albumId === albumId,
-      );
-    const sourceUri = record?.fileUri ?? asset.uri;
-
-    const result = await uploadAsync(url, sourceUri, {
-      httpMethod: "POST",
-      uploadType: FileSystemUploadType.MULTIPART,
-      fieldName: "photo",
-      mimeType: asset.mimeType,
-      parameters,
-      headers: { Authorization: `Bearer ${token}` },
-      // iOS-only option (Android sessions are always background-capable)
-      ...(Platform.OS === "ios"
-        ? { sessionType: FileSystemSessionType.BACKGROUND }
-        : {}),
-    });
-
-    succeeded = result.status === 201;
-    if (succeeded) {
-      try {
-        createdPhotoId = (JSON.parse(result.body) as { photoId?: string })
-          .photoId ?? null;
-      } catch {
-        // Body wasn't the photo we expected — the tile just loses its
-        // placeholder, nothing else depends on this
+      const parameters: Record<string, string> = {};
+      if (asset.latitude !== undefined && asset.longitude !== undefined) {
+        parameters.latitude = String(asset.latitude);
+        parameters.longitude = String(asset.longitude);
       }
-    }
-    if (!succeeded) {
-      if (__DEV__) {
-        console.error(
-          `Photo upload failed (HTTP ${result.status})`,
-          result.body?.slice(0, 200),
+
+      const record = useUploadManagerStore
+        .getState()
+        .pending.find(
+          (upload) => upload.uri === asset.uri && upload.albumId === albumId,
         );
-      }
-      captureException(new Error(`Photo upload failed (HTTP ${result.status})`), {
-        albumId,
-        status: result.status,
-        body: result.body?.slice(0, 200),
+      const sourceUri = record?.fileUri ?? asset.uri;
+
+      const result = await uploadAsync(url, sourceUri, {
+        httpMethod: "POST",
+        uploadType: FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        mimeType: asset.mimeType,
+        parameters,
+        headers: { Authorization: `Bearer ${token}` },
+        // iOS-only option (Android sessions are always background-capable)
+        ...(Platform.OS === "ios"
+          ? { sessionType: FileSystemSessionType.BACKGROUND }
+          : {}),
       });
+
+      succeeded = result.status === 201;
+      if (succeeded) {
+        try {
+          createdPhotoId = (JSON.parse(result.body) as { photoId?: string })
+            .photoId ?? null;
+        } catch {
+          // Body wasn't the photo we expected — the tile just loses its
+          // placeholder, nothing else depends on this
+        }
+      }
+      if (!succeeded) {
+        if (__DEV__) {
+          console.error(
+            `Photo upload failed (HTTP ${result.status})`,
+            result.body?.slice(0, 200),
+          );
+        }
+        captureException(new Error(`Photo upload failed (HTTP ${result.status})`), {
+          albumId,
+          status: result.status,
+          body: result.body?.slice(0, 200),
+        });
+      }
+    } catch (error) {
+      // The connection dropped mid-transfer (Android fails fast) — that's
+      // the offline state, not an error worth logging
+      offline = (await NetInfo.fetch().catch(() => null))?.isConnected === false;
+      // Anything else is expected to be transient — the retry listeners
+      // handle it; don't spam
+      if (__DEV__ && !offline) console.error("Photo upload failed", error);
     }
-  } catch (error) {
-    // Expected while offline — the reconnect listener retries; don't spam
-    if (__DEV__) console.error("Photo upload failed", error);
   }
 
   inFlight -= 1;
@@ -493,7 +508,7 @@ async function uploadOne(albumId: string, asset: PendingAsset): Promise<void> {
         failedAssets: [...state.batch.failedAssets, { ...asset, albumId }],
       },
       pending: state.pending.map((upload) =>
-        isThisUpload(upload) ? { ...upload, failed: true } : upload,
+        isThisUpload(upload) ? { ...upload, failed: true, offline } : upload,
       ),
     }));
   }
@@ -616,7 +631,12 @@ function resumeAlbumUploads(): void {
     },
     pending: state.pending.map((upload) =>
       !upload.uploaded
-        ? { ...upload, uri: upload.fileUri ?? upload.uri, failed: false }
+        ? {
+            ...upload,
+            uri: upload.fileUri ?? upload.uri,
+            failed: false,
+            offline: false,
+          }
         : upload,
     ),
   }));

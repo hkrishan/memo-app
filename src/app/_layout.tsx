@@ -37,6 +37,8 @@ import {
   useOnboardingStore,
 } from "@/features/onboarding/store/onboardingStore";
 import { perf } from "@/lib/performance";
+// PERF-PROBE (temporary)
+import { PerfProbeRoot } from "@/dev/PerfProbeRoot";
 
 // Keep the splash screen visible while we load fonts
 SplashScreen.preventAutoHideAsync();
@@ -99,6 +101,8 @@ function RootContent() {
       <NotificationManager />
       <UploadIndicatorHost />
       <UploadProgressHost />
+      {/* PERF-PROBE (temporary) */}
+      <PerfProbeRoot />
     </>
   );
 }

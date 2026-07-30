@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 
 import { notify } from "@/components/global";
-import { ApiError } from "@/lib/api/errors";
+import { ApiError, isTransientError } from "@/lib/api/errors";
 import {
   useAcceptInviteMutation,
   useInviteInfoQuery,
@@ -33,8 +33,15 @@ const InviteAcceptScreen = () => {
     data: invite,
     isLoading,
     isError,
+    error,
+    refetch,
   } = useInviteInfoQuery(inviteId ?? null);
   const acceptMutation = useAcceptInviteMutation();
+
+  // A fetch that never completed (offline, timeout, server down) says
+  // nothing about the invite — telling the user "this invite isn't valid"
+  // would send them chasing a new link they don't need.
+  const connectionFailed = isError && isTransientError(error);
 
   // A 410 on accept means the link died between preview and tap
   const [expiredOnAccept, setExpiredOnAccept] = useState(false);
@@ -104,6 +111,14 @@ const InviteAcceptScreen = () => {
       <View style={styles.body}>
         {isLoading ? (
           <InviteSkeleton />
+        ) : connectionFailed && !invite ? (
+          <InvalidState
+            icon="cloud-offline-outline"
+            title="Couldn't load this invite"
+            message="Check your internet connection and try again — the invite itself is fine."
+            retryLabel="Try again"
+            onRetry={refetch}
+          />
         ) : isError || !invite ? (
           <InvalidState
             title="This invite isn't valid"
@@ -245,16 +260,34 @@ const InviteSkeleton = () => {
 const InvalidState = ({
   title,
   message,
+  icon = "time-outline",
+  retryLabel,
+  onRetry,
 }: {
   title: string;
   message: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  retryLabel?: string;
+  onRetry?: () => void;
 }) => (
   <View style={styles.invalidContainer}>
     <View style={styles.invalidIconCircle}>
-      <Ionicons name="time-outline" size={30} color="#111" />
+      <Ionicons name={icon} size={30} color="#111" />
     </View>
     <Text style={styles.invalidTitle}>{title}</Text>
     <Text style={styles.invalidMessage}>{message}</Text>
+    {onRetry && (
+      <Pressable
+        style={({ pressed }) => [
+          styles.retryButton,
+          pressed && styles.retryButtonPressed,
+        ]}
+        onPress={onRetry}
+        accessibilityRole="button"
+      >
+        <Text style={styles.retryButtonText}>{retryLabel ?? "Try again"}</Text>
+      </Pressable>
+    )}
   </View>
 );
 
@@ -404,6 +437,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: "#777",
     textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  retryButtonPressed: {
+    backgroundColor: "#f4f4f4",
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#111",
   },
   // Skeleton
   skeletonEyebrow: {

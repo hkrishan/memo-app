@@ -17,7 +17,6 @@ import {
   Linking,
   TouchableOpacity,
   Dimensions,
-  Pressable,
   InteractionManager,
 } from "react-native";
 import * as MediaLibrary from "expo-media-library";
@@ -25,7 +24,6 @@ import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { notify } from "@/components/global";
-import { uploadIndicator } from "@/components/global/uploadIndicator";
 import Animated, {
   useAnimatedStyle,
   useAnimatedProps,
@@ -59,7 +57,10 @@ import {
   useCaptureExtrasStore,
   CaptureExtras,
 } from "@/features/camera/store/captureDestinationStore";
-import { enqueueCapture } from "@/features/photos/store/libraryUploadQueue";
+import {
+  enqueueCapture,
+  useLibraryUploadQueue,
+} from "@/features/photos/store/libraryUploadQueue";
 import {
   selectHasSeenLocationPrimer,
   useOnboardingStore,
@@ -73,7 +74,6 @@ import {
   CaptureMode,
   FlashMode,
   TimerMode,
-  CapturedMedia,
 } from "../types";
 import { RECORDING_CONFIG } from "../constants";
 import { useCameraZoom, useDualCamera, useVideoRecording } from "../hooks";
@@ -88,7 +88,6 @@ import {
   CaptureButton,
   ModeToggle,
   VideoTimer,
-  MediaPreview,
   ZoomPresetSelector,
   CameraToolbar,
   GridOverlay,
@@ -96,11 +95,13 @@ import {
   FocusExposureControl,
   LastCaptureThumbnail,
   CaptureDestinationButton,
+  SaveDestinationPill,
   CaptureExtrasSheet,
   DualCameraPreview,
   DualLayoutPicker,
   LocationPrimerSheet,
 } from "../components";
+import { resolveAlbumCoverUri } from "../components/DestinationPickerSheet";
 
 const ReanimatedCamera = Animated.createAnimatedComponent(Camera);
 
@@ -198,13 +199,6 @@ export default function CameraScreen({
   useEffect(() => {
     void setDualAudioEnabled(hasMicPermission);
   }, [hasMicPermission]);
-
-  // Media state (video preview flow)
-  const [capturedMedia, setCapturedMedia] = useState<CapturedMedia | null>(
-    null,
-  );
-  const [showPreview, setShowPreview] = useState(false);
-  const [isSavingMedia, setIsSavingMedia] = useState(false);
 
   // Sticky capture-extras preferences sheet (button right of the shutter)
   const [showExtrasSheet, setShowExtrasSheet] = useState(false);
@@ -314,38 +308,24 @@ export default function CameraScreen({
     duration: visionRecordingDuration,
     startRecording,
     stopRecording,
-    resetRecording,
   } = useVideoRecording({
     maxDuration: RECORDING_CONFIG.MAX_DURATION,
     flashMode,
+    // Same instant local-first delivery as the photo shutter — no preview
+    // stop (deliverCapturedVideo is declared below; the callback only
+    // runs after render, so the forward reference is safe)
     onRecordingStop: (video) => {
-      setCapturedMedia({
-        ...video,
-        timestamp: Date.now(),
-        position: cameraPosition,
-        flashUsed: flashMode !== FlashMode.OFF,
-        duration: visionRecordingDuration,
-      } as CapturedMedia);
-      setShowPreview(true);
+      void deliverCapturedVideo(video.path);
     },
   });
 
   // Dual-camera recording: the native module writes the already-composited
-  // frames, so its output lands in the same preview/save flow as a normal
+  // frames, so its output lands in the same instant delivery as a normal
   // recording — the rest of the screen can't tell them apart.
   const dualCamera = useDualCamera({
     maxDuration: RECORDING_CONFIG.MAX_DURATION,
     onRecordingStop: (video) => {
-      setCapturedMedia({
-        path: video.path,
-        width: video.width,
-        height: video.height,
-        duration: video.duration,
-        timestamp: Date.now(),
-        position: dualSwapped ? CameraPosition.FRONT : CameraPosition.BACK,
-        flashUsed: false,
-      });
-      setShowPreview(true);
+      void deliverCapturedVideo(video.path);
     },
     onError: (error) => {
       notify.error("Recording failed", error.message);
@@ -402,7 +382,7 @@ export default function CameraScreen({
   const locationPrimerAttemptedRef = useRef(false);
   useEffect(() => {
     if (hasSeenLocationPrimer || locationPrimerAttemptedRef.current) return;
-    if (!isCameraVisible || showPreview) return;
+    if (!isCameraVisible) return;
     locationPrimerAttemptedRef.current = true;
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -426,7 +406,7 @@ export default function CameraScreen({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [hasSeenLocationPrimer, isCameraVisible, showPreview, markLocationPrimerSeen]);
+  }, [hasSeenLocationPrimer, isCameraVisible, markLocationPrimerSeen]);
 
   const handleLocationPrimerAllow = useCallback(async () => {
     markLocationPrimerSeen();
@@ -458,19 +438,19 @@ export default function CameraScreen({
   // (the base action). These are the sticky OPTIONAL extras. Album-capture
   // mode (albumId prop) keeps its own gallery-base flow and ignores these.
   const alsoDeviceGallery = useCaptureExtrasStore((s) => s.alsoDeviceGallery);
-  const alsoAlbumId = useCaptureExtrasStore((s) => s.alsoAlbumId);
+  const alsoAlbumIds = useCaptureExtrasStore((s) => s.alsoAlbumIds);
   const setAlsoDeviceGallery = useCaptureExtrasStore(
     (s) => s.setAlsoDeviceGallery,
   );
-  const setAlsoAlbumId = useCaptureExtrasStore((s) => s.setAlsoAlbumId);
+  const toggleAlsoAlbum = useCaptureExtrasStore((s) => s.toggleAlsoAlbum);
   // Resolve at the read site: a stored album that no longer exists is ignored
-  // (the store itself doesn't know the album list).
+  // (the store itself doesn't know the album list). Before the list loads,
+  // trust the stored ids — dropping them would mis-label the pill on launch.
   const resolvedExtras: CaptureExtras = {
     alsoDeviceGallery,
-    alsoAlbumId:
-      alsoAlbumId && albums?.some((a) => a.albumId === alsoAlbumId)
-        ? alsoAlbumId
-        : null,
+    alsoAlbumIds: albums
+      ? alsoAlbumIds.filter((id) => albums.some((a) => a.albumId === id))
+      : alsoAlbumIds,
   };
   // Ref mirror so the memoized capture callback reads the latest value
   // without being re-created on every extras/albums change.
@@ -485,6 +465,30 @@ export default function CameraScreen({
     (originFrame: Frame | null) => libraryViewer.open(0, originFrame),
     [libraryViewer],
   );
+
+  // Still-uploading tally on the last-capture thumbnail
+  const pendingUploadCount = useLibraryUploadQueue(
+    (state) => state.entries.filter((e) => e.status !== "done").length,
+  );
+
+  // Bumped per shutter press — the ONLY thing that pops the last-capture
+  // thumbnail (upload settles swap its uri underneath without animating)
+  const [captureTick, setCaptureTick] = useState(0);
+
+  // "Saving to" pill: the album camera names its forced album; the main tab
+  // names the first sticky album (plus a "+N" tally) or the Memo library.
+  const pillAlbum = albumId
+    ? albums?.find((a) => a.albumId === albumId)
+    : resolvedExtras.alsoAlbumIds.length
+      ? albums?.find((a) => a.albumId === resolvedExtras.alsoAlbumIds[0])
+      : undefined;
+  const pillTitle =
+    pillAlbum?.title ??
+    (albumId || resolvedExtras.alsoAlbumIds.length ? "Album" : "Memo library");
+  const pillCover = pillAlbum ? resolveAlbumCoverUri(pillAlbum) : null;
+  const pillExtraCount = albumId
+    ? 0
+    : Math.max(0, resolvedExtras.alsoAlbumIds.length - 1);
 
   // Animated camera props: display zoom → native zoom, plus exposure
   // bias. One set PER camera (both stay mounted for instant flips), each
@@ -660,7 +664,7 @@ export default function CameraScreen({
   }, [requestCameraPermission, requestMicPermission]);
 
   // GPS for the capture in flight (best-effort; see the hook)
-  const { captureLocationRef, captureCurrentLocation } = useCaptureLocation();
+  const { captureCurrentLocation } = useCaptureLocation();
 
   // Save a captured file to the device camera roll (silent — the banner's
   // icon flipping to a checkmark is the feedback).
@@ -689,6 +693,7 @@ export default function CameraScreen({
   const deliverCapturedPhoto = useCallback(
     (path: string) => {
       const fileUri = path.startsWith("file://") ? path : `file://${path}`;
+      setCaptureTick((t) => t + 1);
 
       // Fetch where this was taken. The fix is a PROMISE handed to the
       // queue, not a ref read: reading the ref here was a race — the fetch
@@ -698,36 +703,118 @@ export default function CameraScreen({
       const locationPromise = captureCurrentLocation();
 
       const extras = resolvedExtrasRef.current;
-      const targetAlbumId = albumId ?? extras.alsoAlbumId ?? null;
-      const targetAlbum = targetAlbumId
-        ? albums?.find((a) => a.albumId === targetAlbumId)
-        : undefined;
+      // Album camera forces its one album; the main tab copies into every
+      // sticky album (the queue's processor handles any number of targets)
+      const targetAlbumIds = albumId ? [albumId] : extras.alsoAlbumIds;
+      const targets = targetAlbumIds.map((id) => ({
+        albumId: id,
+        title: albums?.find((a) => a.albumId === id)?.title ?? "Album",
+      }));
       // Camera-roll extra only applies on the main tab (album mode has no
       // sticky prefs UI)
       const alsoRoll = albumId ? false : extras.alsoDeviceGallery;
       if (alsoRoll) {
         void saveToCameraRoll(fileUri);
       }
+      const momentAlbumId = targets[0]?.albumId;
       void enqueueCapture({
         tempFileUri: fileUri,
         locationPromise,
-        albumId: targetAlbumId,
-        albumTitle: targetAlbum?.title ?? (albumId ? "Album" : null),
+        albums: targets,
         cameraRollSaved: alsoRoll,
         // "Post now": the queue submits to the event once the album copy
         // exists, so closing the camera can't strand the submission
-        ...(targetAlbumId &&
+        ...(momentAlbumId &&
           momentTarget && {
-            momentTarget: { albumId: targetAlbumId, ...momentTarget },
+            momentTarget: { albumId: momentAlbumId, ...momentTarget },
           }),
       });
     },
     [albumId, albums, momentTarget, saveToCameraRoll, captureCurrentLocation],
   );
 
-  // Photo capture. Main tab: INSTANT — enqueue for background library upload
-  // (local-first; no loader) and flash the top banner. Album-capture mode:
-  // unchanged gallery-save + confirmation sheet.
+  // Videos ship exactly like photos: instant local-first enqueue when the
+  // recording stops — no preview, no confirmation sheet. The one step the
+  // photo path doesn't have: a best-effort save into the device library
+  // FIRST, because the grids can't paint a raw video file — the library
+  // asset renders the poster frame. A denied permission degrades to the
+  // dark posterless tile instead of blocking the upload.
+  const deliverCapturedVideo = useCallback(
+    async (path: string) => {
+      const fileUri = path.startsWith("file://") ? path : `file://${path}`;
+      setCaptureTick((t) => t + 1);
+      // Same promise-to-the-queue contract as the photo path
+      const locationPromise = captureCurrentLocation();
+
+      // The mimetype must match the actual recorded container — iOS records
+      // .mov (video/quicktime); uploading it renamed as .mp4 made the
+      // backend store an unplayable "photo". The queue derives the file
+      // extension from this.
+      const pathExtension = path.split(".").pop()?.toLowerCase();
+      const mimeType =
+        pathExtension === "mov"
+          ? "video/quicktime"
+          : pathExtension === "webm"
+            ? "video/webm"
+            : "video/mp4";
+
+      const extras = resolvedExtrasRef.current;
+      // Same fan-out as the photo path: forced single album, or every
+      // sticky one
+      const targetAlbumIds = albumId ? [albumId] : extras.alsoAlbumIds;
+      const targets = targetAlbumIds.map((id) => ({
+        albumId: id,
+        title: albums?.find((a) => a.albumId === id)?.title ?? "Album",
+      }));
+
+      let posterUri: string | undefined;
+      let rollSaved = false;
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === "granted") {
+          const asset = await MediaLibrary.createAssetAsync(fileUri);
+          rollSaved = true;
+          posterUri = asset.uri || undefined;
+          triggerGalleryRefresh();
+          if (asset.uri) {
+            for (const target of targets) {
+              addAlbumAssociation(asset.uri, target.albumId, target.title);
+            }
+          }
+        }
+      } catch (error) {
+        if (__DEV__) console.error("Failed to save video to roll:", error);
+        // Poster stays empty — tiles fall back to the dark play glyph
+      }
+
+      setLastCapture({ uri: fileUri, mediaType: "video" });
+
+      const momentAlbumId = targets[0]?.albumId;
+      void enqueueCapture({
+        tempFileUri: fileUri,
+        mimeType,
+        ...(posterUri && { posterUri }),
+        locationPromise,
+        albums: targets,
+        cameraRollSaved: rollSaved,
+        ...(momentAlbumId &&
+          momentTarget && {
+            momentTarget: { albumId: momentAlbumId, ...momentTarget },
+          }),
+      });
+    },
+    [
+      albumId,
+      albums,
+      momentTarget,
+      captureCurrentLocation,
+      triggerGalleryRefresh,
+      addAlbumAssociation,
+    ],
+  );
+
+  // Photo capture. INSTANT everywhere — enqueue for background upload
+  // (local-first; no loader) and flash the top banner.
   const capturePhoto = useCallback(async () => {
     // Dual mode hands back the exact frame already on screen — no flash
     // (there's no single camera to light) and no device round-trip.
@@ -792,12 +879,12 @@ export default function CameraScreen({
     dualCamera,
   ]);
 
-  // Sticky capture-extras preferences (button right of the shutter)
+  // Sticky capture-extras preferences (pill + button right of the shutter)
   const handleToggleAlbumExtra = useCallback(
     (targetAlbumId: string) => {
-      setAlsoAlbumId(alsoAlbumId === targetAlbumId ? null : targetAlbumId);
+      toggleAlsoAlbum(targetAlbumId);
     },
-    [alsoAlbumId, setAlsoAlbumId],
+    [toggleAlsoAlbum],
   );
 
   // Self-timer countdown
@@ -946,154 +1033,8 @@ export default function CameraScreen({
     [setZoomPreset],
   );
 
-  // Media preview handlers
-  const handleClosePreview = useCallback(() => {
-    setShowPreview(false);
-    setCapturedMedia(null);
-    resetRecording();
-    dualCamera.resetRecording();
-  }, [resetRecording, dualCamera]);
-
-  // The video/preview flow captures via the recording hook — fetch the
-  // location as soon as its media lands, mirroring the photo path. The
-  // promise is kept so a fast confirm (ref still empty) can still hand the
-  // in-flight fix to the upload queue.
-  const pendingLocationRef = useRef<ReturnType<
-    typeof captureCurrentLocation
-  > | null>(null);
-  useEffect(() => {
-    if (capturedMedia) {
-      pendingLocationRef.current = captureCurrentLocation();
-    }
-  }, [capturedMedia, captureCurrentLocation]);
-
-  const handleSaveMedia = useCallback(
-    async (pickedAlbumId?: string) => {
-      // Guard against double-tap: a second press while the first save is
-      // in flight would save (and upload) the media twice
-      if (!capturedMedia?.path || isSavingMedia) return;
-      setIsSavingMedia(true);
-
-      const fileUri = capturedMedia.path.startsWith("file://")
-        ? capturedMedia.path
-        : `file://${capturedMedia.path}`;
-
-      // The mimetype must match the actual recorded container — iOS records
-      // .mov (video/quicktime); uploading it renamed as .mp4 made the
-      // backend store an unplayable "photo". The queue derives the file
-      // extension from this.
-      const isVideo = "duration" in capturedMedia;
-      let mimeType = "image/jpeg";
-      if (isVideo) {
-        const pathExtension = capturedMedia.path
-          .split(".")
-          .pop()
-          ?.toLowerCase();
-        mimeType =
-          pathExtension === "mov"
-            ? "video/quicktime"
-            : pathExtension === "webm"
-              ? "video/webm"
-              : "video/mp4";
-      }
-
-      // Album-capture mode always targets ITS album; the main tab uses the
-      // album the preview's picker selected (if any).
-      const targetAlbumId = albumId ?? pickedAlbumId;
-
-      try {
-        // Request gallery permission
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== "granted") {
-          notify.error(
-            "Permission required",
-            "Please allow access to save media to your gallery",
-          );
-          Linking.openSettings();
-          return;
-        }
-
-        // Always save to local gallery first
-        const asset = await MediaLibrary.createAssetAsync(fileUri);
-        triggerGalleryRefresh();
-        // In-session video/photo saves update the docked thumbnail too
-        setLastCapture({
-          uri: fileUri,
-          mediaType: isVideo ? "video" : "photo",
-        });
-
-        if (targetAlbumId) {
-          const album = albums?.find((a) => a.albumId === targetAlbumId);
-          const title = album?.title ?? "Album";
-
-          // Store album association immediately for the local asset
-          if (album && asset.uri) {
-            addAlbumAssociation(asset.uri, targetAlbumId, title);
-          }
-
-          // Same local-first queue the photo shutter uses: the album shows
-          // this capture from its local file (with an uploading badge)
-          // straight away, and the transfer survives leaving the camera.
-          // Resolved fix tags directly; otherwise the still-pending promise
-          // rides along and the background upload waits briefly for it
-          const location = captureLocationRef.current;
-          await enqueueCapture({
-            tempFileUri: fileUri,
-            mimeType,
-            // A video file can't be painted by the grids — the device
-            // library asset we just created renders its poster frame
-            ...(isVideo && asset.uri && { posterUri: asset.uri }),
-            ...(location && {
-              latitude: location.latitude,
-              longitude: location.longitude,
-            }),
-            ...(pendingLocationRef.current && {
-              locationPromise: pendingLocationRef.current,
-            }),
-            albumId: targetAlbumId,
-            albumTitle: title,
-            cameraRollSaved: true,
-            ...(momentTarget && {
-              momentTarget: { albumId: targetAlbumId, ...momentTarget },
-            }),
-          });
-          // The upload itself is background work the album tile reports on
-          // — acknowledge the save (begin+succeed jumps straight to the
-          // checkmark state, per the indicator contract)
-          const saveId = `album-save-${Date.now()}`;
-          uploadIndicator.begin(saveId);
-          uploadIndicator.succeed(saveId, `Saved to ${title}`);
-        } else {
-          // Gallery only — no upload was queued
-          const saveId = `gallery-save-${Date.now()}`;
-          uploadIndicator.begin(saveId);
-          uploadIndicator.succeed(saveId, "Saved to gallery");
-        }
-
-        // Close preview immediately
-        handleClosePreview();
-      } catch (error) {
-        if (__DEV__) console.error("Failed to save media:", error);
-        notify.error("Save failed", "Could not save media to gallery");
-      } finally {
-        setIsSavingMedia(false);
-      }
-    },
-    [
-      capturedMedia,
-      isSavingMedia,
-      handleClosePreview,
-      triggerGalleryRefresh,
-      albums,
-      addAlbumAssociation,
-      albumId,
-      momentTarget,
-    ],
-  );
-
-  const handleDeleteMedia = useCallback(() => {
-    handleClosePreview();
-  }, [handleClosePreview]);
+  // (The old video preview/confirm flow lived here — videos now deliver
+  // instantly via deliverCapturedVideo, exactly like photos.)
 
   // Flash is available on back camera (hardware) or front camera (screen flash)
   const isFlashAvailable =
@@ -1151,7 +1092,7 @@ export default function CameraScreen({
           it) lives in the native view, so no GestureDetector here. */}
       {dualMode ? (
         <DualCameraPreview
-          isActive={isCameraVisible && !showPreview}
+          isActive={isCameraVisible}
           layout={dualLayout}
           swapped={dualSwapped}
           onPreviewStarted={handlePreviewStarted}
@@ -1180,9 +1121,7 @@ export default function CameraScreen({
                 device={backDevice}
                 format={backFormat}
                 isActive={
-                  isCameraVisible &&
-                  !showPreview &&
-                  cameraPosition === CameraPosition.BACK
+                  isCameraVisible && cameraPosition === CameraPosition.BACK
                 }
                 photo={true}
                 video={true}
@@ -1207,9 +1146,7 @@ export default function CameraScreen({
                 device={frontDevice}
                 format={frontFormat}
                 isActive={
-                  isCameraVisible &&
-                  !showPreview &&
-                  cameraPosition === CameraPosition.FRONT
+                  isCameraVisible && cameraPosition === CameraPosition.FRONT
                 }
                 photo={true}
                 video={true}
@@ -1332,6 +1269,27 @@ export default function CameraScreen({
         </Animated.View>
       )}
 
+      {/* "SAVING TO" pill, centered at the top of the screen so it's always
+          obvious where captures are going. Main-tab: tap = change it. Album
+          camera: fixed "→ this album" indicator. */}
+      {!isRecording && (
+        <Animated.View
+          style={[
+            styles.destinationBadgeContainer,
+            { top: topControlsTop },
+            controlsFadeStyle,
+          ]}
+          pointerEvents="box-none"
+        >
+          <SaveDestinationPill
+            coverUri={pillCover}
+            title={pillTitle}
+            extraCount={pillExtraCount}
+            onPress={albumId ? undefined : () => setShowExtrasSheet(true)}
+          />
+        </Animated.View>
+      )}
+
       {/* Bottom controls */}
       <Animated.View
         style={[
@@ -1340,37 +1298,6 @@ export default function CameraScreen({
           controlsFadeStyle,
         ]}
       >
-        {/* Sticky destination album, spelled out above the zoom presets so
-            it's always obvious where captures are going. Tap = change it.
-            Main-tab only, and only when an album is actually targeted. */}
-        {/* Album camera: fixed "→ this album" indicator (not changeable). */}
-        {albumId && !isRecording && (
-          <View style={styles.destinationAlbumPill}>
-            <Ionicons name="albums" size={12} color="#fff" />
-            <Text style={styles.destinationAlbumText} numberOfLines={1}>
-              {albums?.find((a) => a.albumId === albumId)?.title ?? "Album"}
-            </Text>
-          </View>
-        )}
-        {!albumId && !isRecording && resolvedExtras.alsoAlbumId != null && (
-          <Pressable
-            onPress={() => setShowExtrasSheet(true)}
-            style={styles.destinationAlbumPill}
-            hitSlop={6}
-            accessibilityRole="button"
-            accessibilityLabel={`Saving to ${
-              albums?.find((a) => a.albumId === resolvedExtras.alsoAlbumId)
-                ?.title ?? "album"
-            }. Tap to change.`}
-          >
-            <Ionicons name="albums" size={12} color="#fff" />
-            <Text style={styles.destinationAlbumText} numberOfLines={1}>
-              {albums?.find((a) => a.albumId === resolvedExtras.alsoAlbumId)
-                ?.title ?? "Album"}
-            </Text>
-          </Pressable>
-        )}
-
         {/* Zoom presets (0.5x / 1x / 2x / 3x). Hidden in dual mode: the
             multi-cam session runs both wide lenses at fixed formats, so
             there are no lens presets to switch between. */}
@@ -1395,6 +1322,8 @@ export default function CameraScreen({
               <LastCaptureThumbnail
                 capture={libraryViewer.newest}
                 onPress={handleOpenLibraryViewer}
+                badgeCount={pendingUploadCount}
+                popSignal={captureTick}
               />
             </View>
           )}
@@ -1506,17 +1435,6 @@ export default function CameraScreen({
         />
       )}
 
-      {/* Media preview overlay (videos) */}
-      <MediaPreview
-        media={capturedMedia}
-        onClose={handleClosePreview}
-        onSave={handleSaveMedia}
-        onDelete={handleDeleteMedia}
-        visible={showPreview}
-        isUploading={isSavingMedia}
-        lockedAlbumId={albumId}
-      />
-
       {/* Scroll overlay (fades when swiping to other tabs) */}
       <Animated.View
         style={[styles.scrollOverlay, overlayStyle]}
@@ -1592,23 +1510,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 20,
   },
-  destinationAlbumPill: {
-    flexDirection: "row",
+  destinationBadgeContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
     alignItems: "center",
-    alignSelf: "center",
-    gap: 5,
-    maxWidth: 220,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    marginBottom: 10,
-  },
-  destinationAlbumText: {
-    color: "#fff",
-    fontSize: 12,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
   },
   zoomPresetContainer: {
     marginBottom: 18,

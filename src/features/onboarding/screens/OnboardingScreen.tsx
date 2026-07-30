@@ -210,7 +210,7 @@ const OnboardingScreen = () => {
           <Animated.View entering={FadeInDown.duration(300).delay(60)}>
             <Text style={styles.welcomeTitle}>
               Shared memories,{"\n"}
-              <Text style={styles.welcomeTitleAccent}>together.</Text>
+              <Text style={styles.welcomeTitleAccent}>forever.</Text>
             </Text>
           </Animated.View>
           <View style={styles.rows}>

@@ -1,12 +1,16 @@
 /**
  * CameraToolbar Component
- * Snapchat-style vertical toolbar on the right edge:
- * flip camera, flash, photo timer, grid, night mode.
+ * Vertical toolbar on the right edge: flip camera, flash, photo timer,
+ * grid, night mode. Monochrome: an engaged control flips to a solid white
+ * circle with a black glyph; the flip button sits bare (it has no on/off
+ * state to signal).
  */
 
 import React, { useCallback } from 'react';
 import { StyleSheet, View, Pressable, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+import { font } from '@/lib/tokens';
 
 import type { DualCameraLayout } from '../../../../modules/dual-camera';
 import { CameraPosition, FlashMode, TimerMode } from '../types';
@@ -27,6 +31,8 @@ interface ToolbarButtonProps {
   active?: boolean;
   badge?: string;
   disabled?: boolean;
+  /** No circle behind the glyph (stateless buttons like flip). */
+  bare?: boolean;
   accessibilityLabel?: string;
 }
 
@@ -36,6 +42,7 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
   active,
   badge,
   disabled,
+  bare,
   accessibilityLabel,
 }) => (
   <Pressable
@@ -44,12 +51,17 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
     hitSlop={6}
     accessibilityRole="button"
     accessibilityLabel={accessibilityLabel}
-    style={[styles.button, disabled && styles.buttonDisabled]}
+    style={[
+      styles.button,
+      bare && styles.buttonBare,
+      active && styles.buttonActive,
+      disabled && styles.buttonDisabled,
+    ]}
   >
     <Ionicons
       name={icon}
       size={CONTROL_BUTTON.ICON_SIZE}
-      color={active ? COLORS.ACCENT : COLORS.TEXT}
+      color={active ? '#000' : COLORS.TEXT}
     />
     {badge != null && (
       <View style={styles.badge}>
@@ -156,6 +168,7 @@ export const CameraToolbar: React.FC<CameraToolbarProps> = ({
         icon={dualMode ? 'swap-horizontal' : 'camera-reverse-outline'}
         onPress={dualMode ? (onSwapDual ?? onFlip) : onFlip}
         disabled={disabled}
+        bare
         accessibilityLabel={dualMode ? 'Swap camera panes' : 'Flip camera'}
       />
 
@@ -238,32 +251,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  buttonBare: {
+    backgroundColor: 'transparent',
+  },
+  buttonActive: {
+    backgroundColor: '#fff',
+  },
   buttonDisabled: {
     opacity: 0.4,
   },
+  // Dark on a white border so it reads on both the idle (translucent) and
+  // engaged (solid white) button faces
   badge: {
     position: 'absolute',
     bottom: -2,
     right: -2,
-    backgroundColor: COLORS.ACCENT,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 9,
+    minWidth: 17,
+    height: 17,
     paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
-    color: '#000',
+    ...font.bold,
+    color: '#fff',
     fontSize: 9,
-    fontFamily: "InstrumentSans_700Bold",
-    fontWeight: "700",
   },
   frontIndicator: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: COLORS.ACCENT,
+    backgroundColor: '#fff',
   },
 });
 

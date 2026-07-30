@@ -72,7 +72,14 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 };
 const DEFAULT_MIME_TYPE = "image/jpeg";
 
-export type QueuedCaptureStatus = "queued" | "uploading" | "failed" | "done";
+/** "offline" = waiting for the connection to return. Not a failure: no
+ *  attempt is burned, no backoff runs — the reconnect listener re-queues. */
+export type QueuedCaptureStatus =
+  | "queued"
+  | "uploading"
+  | "failed"
+  | "done"
+  | "offline";
 
 /** One album this capture should (also) land in. `albumPhotoId` is set once
  *  the server-side copy exists, which is what makes removal possible. */
@@ -143,6 +150,8 @@ export const useLibraryUploadQueue = create<LibraryUploadQueueState>()(
     // per-patch full-queue writes were a bridge storm during uploads
     storage: createJSONStorage(() => createDebouncedStorage()),
     // A JS-death mid-upload leaves "uploading" — reset to queued on load.
+    // "offline" resets too: connectivity is unknown at launch, and the
+    // processor's pre-flight check re-marks it when there's still no net.
     // Also migrates entries persisted under the single-album shape, and
     // entries from before the queue carried videos (all were JPEGs).
     onRehydrateStorage: () => (state) => {
@@ -166,7 +175,7 @@ export const useLibraryUploadQueue = create<LibraryUploadQueueState>()(
             albumTargets,
             mediaType: raw.mediaType ?? "photo",
             mimeType: raw.mimeType ?? DEFAULT_MIME_TYPE,
-            ...(raw.status === "uploading"
+            ...(raw.status === "uploading" || raw.status === "offline"
               ? { status: "queued" as const }
               : {}),
           };
@@ -281,6 +290,11 @@ export type EnqueueCaptureInput = {
   locationPromise?: Promise<{ latitude: number; longitude: number } | null>;
   albumId?: string | null;
   albumTitle?: string | null;
+  /**
+   * Multi-album form: the capture lands in ALL of these (the processor
+   * already copies per target). Takes precedence over albumId/albumTitle.
+   */
+  albums?: { albumId: string; title: string }[];
   cameraRollSaved?: boolean;
   /** Set when the camera was opened from a moment's "Post now". */
   momentTarget?: QueuedMomentTarget;
@@ -362,15 +376,21 @@ export async function enqueueCapture(
         ...(input.momentTarget && { momentTarget: input.momentTarget }),
         ...(input.latitude !== undefined && { latitude: input.latitude }),
         ...(input.longitude !== undefined && { longitude: input.longitude }),
-        albumTargets: input.albumId
-          ? [
-              {
-                albumId: input.albumId,
-                title: input.albumTitle ?? "Album",
-                albumPhotoId: null,
-              },
-            ]
-          : [],
+        albumTargets: input.albums
+          ? input.albums.map((album) => ({
+              albumId: album.albumId,
+              title: album.title,
+              albumPhotoId: null,
+            }))
+          : input.albumId
+            ? [
+                {
+                  albumId: input.albumId,
+                  title: input.albumTitle ?? "Album",
+                  albumPhotoId: null,
+                },
+              ]
+            : [],
         cameraRollSaved: input.cameraRollSaved ?? false,
         ...(size && { width: size.width, height: size.height }),
         status: "queued" as const,
@@ -518,15 +538,19 @@ async function teardownEntry(entry: QueuedCapture): Promise<void> {
   }
 }
 
-/** Flips failed entries back to queued (attempts kept) and kicks the loop. */
+/** Flips failed/offline entries back to queued (attempts kept) and kicks
+ *  the loop. Offline entries re-park themselves via the pre-flight check
+ *  when the network still isn't there. */
 export function retryFailedEntries(): void {
-  const hasFailed = useLibraryUploadQueue
+  const hasRetryable = useLibraryUploadQueue
     .getState()
-    .entries.some((entry) => entry.status === "failed");
-  if (!hasFailed) return;
+    .entries.some(
+      (entry) => entry.status === "failed" || entry.status === "offline",
+    );
+  if (!hasRetryable) return;
   useLibraryUploadQueue.setState((state) => ({
     entries: state.entries.map((entry) =>
-      entry.status === "failed"
+      entry.status === "failed" || entry.status === "offline"
         ? { ...entry, status: "queued" as const }
         : entry,
     ),
@@ -556,9 +580,25 @@ async function processQueue(): Promise<void> {
   }
 }
 
+/** True when the device reports no network connection right now. `null`
+ *  (unknown) counts as connected — the attempt itself then finds out. */
+const isDeviceOffline = async (): Promise<boolean> =>
+  (await NetInfo.fetch()).isConnected === false;
+
 async function processEntry(localId: string): Promise<void> {
   const entry = getEntry(localId);
   if (!entry || entry.status !== "queued") return;
+
+  // No connection: park the entry instead of handing the file to the OS.
+  // An iOS BACKGROUND NSURLSession never fails offline — it silently waits
+  // (for days) for connectivity, which left the tile spinning forever with
+  // the failed/retry machinery unreachable. "offline" renders as
+  // waiting-for-network, and the NetInfo listener re-queues on reconnect.
+  if (await isDeviceOffline()) {
+    patchEntry(localId, { status: "offline" });
+    return;
+  }
+
   patchEntry(localId, { status: "uploading" });
 
   try {
@@ -688,6 +728,12 @@ async function processEntry(localId: string): Promise<void> {
     // a no-op for it) — just drop the marker so it can't leak
     if (cancelledIds.has(localId)) {
       cancelledIds.delete(localId);
+      return;
+    }
+    // The connection dropped mid-entry — that's the offline state, not a
+    // failure: no attempt burned, no backoff, the reconnect listener owns it
+    if (await isDeviceOffline()) {
+      patchEntry(localId, { status: "offline" });
       return;
     }
     const attempts = (getEntry(localId)?.attempts ?? 0) + 1;

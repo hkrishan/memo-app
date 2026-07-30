@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import DraggableFlatList, {
   RenderItemParams,
   ScaleDecorator,
@@ -74,6 +75,13 @@ type SelectedPhoto = {
   thumbnailUri?: string;
 };
 
+type PostLocation = {
+  latitude: number;
+  longitude: number;
+  /** City-level label from reverse geocoding; null when it failed. */
+  name: string | null;
+};
+
 const CreatePostScreen = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -85,6 +93,8 @@ const CreatePostScreen = () => {
   const [caption, setCaption] = useState("");
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedPhoto[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [postLocation, setPostLocation] = useState<PostLocation | null>(null);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
   const { data: photos, isLoading: isLoadingPhotos } = useGetPhotosQuery(albumId ?? "");
   const createPostMutation = useCreatePostMutation();
@@ -157,6 +167,65 @@ const CreatePostScreen = () => {
     []
   );
 
+  // Tap to attach "where I am" (tap again to clear). The permission ask is
+  // contextual — it fires from this explicit tap, so requesting here is
+  // fine even though useCaptureLocation itself never prompts. The label is
+  // city-level on purpose: posts are public-ish (page followers, web), so
+  // never expose a street address.
+  const handleToggleLocation = useCallback(async () => {
+    if (isFetchingLocation) return;
+    if (postLocation) {
+      setPostLocation(null);
+      Haptics.selectionAsync().catch(() => {});
+      return;
+    }
+    setIsFetchingLocation(true);
+    try {
+      let { status, canAskAgain } =
+        await Location.getForegroundPermissionsAsync();
+      if (status !== "granted" && canAskAgain) {
+        ({ status } = await Location.requestForegroundPermissionsAsync());
+      }
+      if (status !== "granted") {
+        Alert.alert(
+          "Location unavailable",
+          "Allow location access in Settings to tag posts with where you are.",
+        );
+        return;
+      }
+      // A recent cached fix is instant; otherwise get a fresh one
+      let position = await Location.getLastKnownPositionAsync({
+        maxAge: 60_000,
+      });
+      if (!position) {
+        position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+      }
+      const { latitude, longitude } = position.coords;
+      let name: string | null = null;
+      try {
+        const [place] = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude,
+        });
+        name =
+          place?.city ?? place?.district ?? place?.subregion ?? place?.region ?? null;
+      } catch {
+        // A label-less location is still worth keeping (coordinates saved)
+      }
+      setPostLocation({ latitude, longitude, name });
+      Haptics.selectionAsync().catch(() => {});
+    } catch {
+      Alert.alert(
+        "Location unavailable",
+        "Couldn't get your current location. Try again in a moment.",
+      );
+    } finally {
+      setIsFetchingLocation(false);
+    }
+  }, [isFetchingLocation, postLocation]);
+
   const handleSubmit = useCallback(async () => {
     if (!isValid || isSubmitting || !albumId || !pageId) return;
 
@@ -169,6 +238,9 @@ const CreatePostScreen = () => {
         pageId,
         input: {
           caption: caption.trim() || null,
+          latitude: postLocation?.latitude ?? null,
+          longitude: postLocation?.longitude ?? null,
+          locationName: postLocation?.name ?? null,
           media: selectedPhotos.map((photo, index) => ({
             mediaType: "image" as const,
             url: photo.uri,
@@ -191,6 +263,7 @@ const CreatePostScreen = () => {
     albumId,
     pageId,
     caption,
+    postLocation,
     selectedPhotos,
     createPostMutation,
     router,
@@ -325,6 +398,39 @@ const CreatePostScreen = () => {
           maxLength={2200}
         />
       </View>
+
+      {/* Optional location tag — tap to attach, tap again to clear */}
+      <Pressable
+        style={styles.locationRow}
+        onPress={handleToggleLocation}
+        disabled={isSubmitting}
+        accessibilityRole="button"
+        accessibilityLabel={postLocation ? "Remove location" : "Add location"}
+      >
+        <Ionicons
+          name={postLocation ? "location" : "location-outline"}
+          size={20}
+          color={postLocation ? "#111" : "#999"}
+        />
+        <Text
+          style={[
+            styles.locationText,
+            postLocation && styles.locationTextActive,
+          ]}
+          numberOfLines={1}
+        >
+          {isFetchingLocation
+            ? "Finding your location…"
+            : postLocation
+              ? (postLocation.name ?? "Location added")
+              : "Add location"}
+        </Text>
+        {isFetchingLocation ? (
+          <ActivityIndicator size="small" color="#999" />
+        ) : postLocation ? (
+          <Ionicons name="close-circle" size={20} color="#c7c7cc" />
+        ) : null}
+      </Pressable>
 
       {/* Album photos grid */}
       <View style={styles.gridSection}>
@@ -465,6 +571,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e0e0e0",
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e0e0e0",
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 15,
+    color: "#999",
+  },
+  locationTextActive: {
+    color: "#111",
   },
   captionInput: {
     fontSize: 16,

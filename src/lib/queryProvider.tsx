@@ -19,20 +19,51 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { queryClient, QUERY_CACHE_MAX_AGE_MS } from "./api/queryClient";
 
 /**
- * Key roots worth having offline. Everything else (library, chat,
- * comments, moments, activity, search) refetches fine and only bloats
- * the snapshot. Note "photos" also prefixes comment queries — those are
- * excluded by key length below.
+ * Key roots worth having offline — everything a cold offline launch needs
+ * to render real content: the album shelves (albums), each album's photo
+ * grid (photos), the feeds, "My Photos" (library), the profile (user),
+ * each album's moments and page tab, and the activity feed. Everything
+ * else (chat, comments, tags, search, invites, open-drop polling) is
+ * session data that refetches fine and only bloats the snapshot. Note
+ * some roots also prefix session sub-queries — those are excluded by key
+ * shape below.
  */
-const PERSISTED_ROOTS = new Set(["albums", "photos", "feed", "feedAlbums"]);
+const PERSISTED_ROOTS = new Set([
+  "albums",
+  "photos",
+  "feed",
+  "feedAlbums",
+  "user",
+  "library",
+  "moments",
+  "page",
+  "activity",
+  "pagePosts",
+]);
 
 const shouldPersistKey = (queryKey: readonly unknown[]): boolean => {
   const root = queryKey[0];
   if (typeof root !== "string" || !PERSISTED_ROOTS.has(root)) return false;
-  // ["photos", albumId] is an album's photo list; longer keys under the
-  // same root are comments/tags — session data, not offline content
-  if (root === "photos") return queryKey.length === 2;
-  return true;
+  switch (root) {
+    // ["photos", albumId] is an album's photo list; longer keys under the
+    // same root are comments/tags — session data, not offline content
+    case "photos":
+      return queryKey.length === 2;
+    // ["moments", albumId] only — ["moments", "open-drops"] is a live
+    // poll whose staleness would falsely announce an open drop offline
+    case "moments":
+      return queryKey[1] !== "open-drops";
+    // ["page", albumId] is the album's page; longer keys (view/members)
+    // are session data
+    case "page":
+      return queryKey.length === 2;
+    // ["pagePosts", albumId, pageId] is a page's post list; the 5-part
+    // keys under the same root are per-post comments
+    case "pagePosts":
+      return queryKey.length === 3;
+    default:
+      return true;
+  }
 };
 
 /** First-page cap for persisted infinite queries: 100 photos / 25 feed
@@ -102,7 +133,7 @@ export function QueryProvider({ children }: Props) {
         persister,
         maxAge: QUERY_CACHE_MAX_AGE_MS,
         // Bumped whenever the persisted shape changes incompatibly
-        buster: "v2",
+        buster: "v3",
         dehydrateOptions: {
           shouldDehydrateQuery: (query) =>
             query.state.status === "success" &&

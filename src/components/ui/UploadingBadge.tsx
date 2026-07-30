@@ -1,6 +1,7 @@
 /**
  * Corner chip marking a photo tile whose upload is still in flight — a
- * spinner while it transfers, a cloud-off glyph once it failed and is
+ * spinner while it transfers, a cloud-off glyph while it waits for the
+ * connection to return, an alert glyph once it actually failed and is
  * waiting on the queue's automatic retry.
  *
  * Positioned by the tile (absolute, top-right by convention); it never
@@ -16,25 +17,37 @@ const SIZE = 22;
 interface UploadingBadgeProps {
   /** Upload failed — awaiting the queue's backoff retry. */
   failed?: boolean;
+  /** Parked until the connection returns — queued, not an error. */
+  offline?: boolean;
   /** Extra positioning (top/right offsets differ per grid). */
   style?: object;
 }
 
-const UploadingBadge = memo<UploadingBadgeProps>(({ failed, style }) => (
-  <View
-    style={[styles.badge, style]}
-    pointerEvents="none"
-    accessibilityLabel={failed ? "Upload failed, will retry" : "Uploading"}
-  >
-    {failed ? (
-      <Ionicons name="cloud-offline" size={12} color="#fff" />
-    ) : (
-      // The small indicator is ~20pt — scaled down so it sits inside the
-      // chip with breathing room
-      <ActivityIndicator size="small" color="#fff" style={styles.spinner} />
-    )}
-  </View>
-));
+const UploadingBadge = memo<UploadingBadgeProps>(
+  ({ failed, offline, style }) => (
+    <View
+      style={[styles.badge, style]}
+      pointerEvents="none"
+      accessibilityLabel={
+        failed
+          ? "Upload failed, will retry"
+          : offline
+            ? "Waiting for internet connection"
+            : "Uploading"
+      }
+    >
+      {failed ? (
+        <Ionicons name="alert-circle" size={13} color="#fff" />
+      ) : offline ? (
+        <Ionicons name="cloud-offline" size={12} color="#fff" />
+      ) : (
+        // The small indicator is ~20pt — scaled down so it sits inside the
+        // chip with breathing room
+        <ActivityIndicator size="small" color="#fff" style={styles.spinner} />
+      )}
+    </View>
+  ),
+);
 UploadingBadge.displayName = "UploadingBadge";
 
 const styles = StyleSheet.create({

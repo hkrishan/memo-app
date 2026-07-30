@@ -219,7 +219,12 @@ const DropPostsScreen = () => {
   }>();
   const { user } = useUser();
   const { data: album } = useGetAlbumQuery(albumId ?? "");
-  const { data: moments, isLoading } = useGetMomentsQuery(albumId ?? "");
+  const {
+    data: moments,
+    isLoading,
+    isError,
+    refetch,
+  } = useGetMomentsQuery(albumId ?? "");
 
   const moment = useMemo(
     () => moments?.find((m) => m.momentId === momentId),
@@ -293,6 +298,26 @@ const DropPostsScreen = () => {
     body = (
       <View style={styles.center}>
         <ActivityIndicator />
+      </View>
+    );
+  } else if (!moment && isError) {
+    // The fetch never completed — the moment may be perfectly alive;
+    // "gone" would send people away from a live drop
+    body = (
+      <View style={styles.center}>
+        <Ionicons name="cloud-offline-outline" size={36} color="#C7C7CC" />
+        <Text style={styles.emptyTitle}>Couldn't load this moment</Text>
+        <Text style={styles.emptyHint}>Check your connection</Text>
+        <Pressable
+          onPress={() => refetch()}
+          style={({ pressed }) => [
+            styles.retryButton,
+            pressed && styles.retryButtonPressed,
+          ]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.retryButtonText}>Try again</Text>
+        </Pressable>
       </View>
     );
   } else if (!moment) {
@@ -457,6 +482,23 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
     textAlign: "center",
     lineHeight: 18,
+  },
+  retryButton: {
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 22,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+  },
+  retryButtonPressed: {
+    backgroundColor: "#F2F2F7",
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#000",
   },
   scrollContent: {
     paddingHorizontal: 16,

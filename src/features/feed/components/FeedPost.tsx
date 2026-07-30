@@ -67,6 +67,8 @@ const MediaPage = memo<{
   onAspect?: (ratio: number) => void;
 }>(({ item, height, onPress, onAspect }) => {
   const uri = displayUriFor(item);
+  // Whether the full-res image has painted — gates the thumbnail underlay
+  const [loaded, setLoaded] = useState(false);
 
   const handleLoad = useCallback(
     (event: { source?: { width?: number; height?: number } }) => {
@@ -77,9 +79,36 @@ const MediaPage = memo<{
         mediaAspectCache.set(uri, ratio);
         onAspect?.(ratio);
       }
+      setLoaded(true);
     },
     [uri, onAspect],
   );
+
+  // Full-res load failed (expired signed URL, network blip). Without this
+  // the slide sits on the gray blurhash placeholder forever — and never
+  // learns its aspect, which the viewer's dismiss return flight needs.
+  // Same remount-with-backoff as PhotoPage; a query refetch (fresh
+  // signature) changes the uri and resets the budget.
+  const [fullResRetry, setFullResRetry] = useState(0);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleError = useCallback(() => {
+    if (retryCountRef.current >= 3) return;
+    retryCountRef.current += 1;
+    const attempt = retryCountRef.current;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(
+      () => setFullResRetry((n) => n + 1),
+      400 * attempt,
+    );
+  }, []);
+  useEffect(() => {
+    setLoaded(false);
+    retryCountRef.current = 0;
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, [uri]);
 
   return (
     <Pressable style={[styles.mediaPage, { height }]} onPress={onPress}>
@@ -95,30 +124,46 @@ const MediaPage = memo<{
         showPlaceholder={false}
       />
       <View style={styles.mediaBackdropDim} pointerEvents="none" />
+      {/* Sharp thumbnail underlay until the full-res paints, so a slow or
+          failing full-res load never shows a flat gray slide (videos skip
+          this — their display uri IS the thumbnail) */}
+      {!loaded && item.thumbnailUrl && item.thumbnailUrl !== uri && (
+        <CachedImage
+          uri={item.thumbnailUrl}
+          style={StyleSheet.absoluteFill}
+          contentFit="contain"
+          showPlaceholder={false}
+        />
+      )}
       <CachedImage
+        key={`${uri}#${fullResRetry}`}
         uri={uri}
         style={styles.mediaImage}
         contentFit="contain"
         onLoad={handleLoad}
+        onError={handleError}
       />
     </Pressable>
   );
 });
 
 // ---------------------------------------------------------------------------
-// Carousel indicators: dots overlaid on the photo + "1/3" counter pill
+// Carousel indicators: segmented progress bars along the photo's bottom
+// edge (one segment per slide, the active one solid) + "1/3" counter pill
 // ---------------------------------------------------------------------------
 
-const Dots = memo<{ count: number; active: number }>(({ count, active }) => {
-  if (count <= 1) return null;
-  return (
-    <View style={styles.dotsPill} pointerEvents="none">
-      {Array.from({ length: count }, (_, i) => (
-        <View key={i} style={[styles.dot, i === active && styles.dotActive]} />
-      ))}
-    </View>
-  );
-});
+const ProgressBars = memo<{ count: number; active: number }>(
+  ({ count, active }) => {
+    if (count <= 1) return null;
+    return (
+      <View style={styles.barsRow} pointerEvents="none">
+        {Array.from({ length: count }, (_, i) => (
+          <View key={i} style={[styles.bar, i === active && styles.barActive]} />
+        ))}
+      </View>
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------
 // FeedPost (page_post)
@@ -133,10 +178,12 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   const [activeIdx, setActiveIdx] = useState(0);
   const activeIdxRef = useRef(0);
   // Same open/dismiss system as the album photo grid: tapped index plus
-  // the window frame the flight departs from and returns to
+  // the window frame the flight departs from and returns to. Assets are
+  // snapshotted at open (see buildViewerAssets)
   const [viewerSession, setViewerSession] = useState<{
     index: number;
     originFrame: Frame | null;
+    assets: MediaAsset[];
   } | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   // Set at first open and retained: the comments query keys off this, so
@@ -230,8 +277,12 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
   const mediaContainerRef = useRef<View>(null);
 
   // Viewer assets: dims come from the learned aspect (the viewer's flight
-  // needs only the ratio); unknown dims fall back to the viewer's fades
-  const viewerAssets = useMemo<MediaAsset[]>(() => {
+  // needs only the ratio); unknown dims fall back to the viewer's fades.
+  // Built at TAP time, not memoized — aspects are learned as each slide's
+  // image loads, and a memo (previously keyed on firstRatio) froze slides
+  // 2+ at 0×0 dims, which made the viewer skip getReturnFrame and dismiss
+  // off-screen instead of flying back to the carousel.
+  const buildViewerAssets = useCallback((): MediaAsset[] => {
     const createdMs = new Date(post.createdAt).getTime();
     return post.media.map((media) => {
       const ratio = mediaAspectCache.get(displayUriFor(media));
@@ -247,8 +298,7 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
         modificationTime: createdMs,
       };
     });
-    // firstRatio makes this recompute once real aspects are learned
-  }, [post.media, post.createdAt, firstRatio]);
+  }, [post.media, post.createdAt]);
 
   // The visible photo is contain-fitted inside the media container — the
   // flight should depart from/land on the FITTED rect, not the letterboxed
@@ -276,9 +326,10 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
 
   const openViewer = useCallback(
     (index: number) => {
+      const assets = buildViewerAssets();
       const node = mediaContainerRef.current;
       if (!node) {
-        setViewerSession({ index, originFrame: null });
+        setViewerSession({ index, originFrame: null, assets });
         return;
       }
       node.measureInWindow((x, y, width, height) => {
@@ -288,10 +339,11 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
             width > 0 && height > 0
               ? fittedFrame({ x, y, width, height }, index)
               : null,
+          assets,
         });
       });
     },
-    [fittedFrame],
+    [buildViewerAssets, fittedFrame],
   );
 
   // Dismiss flight returns to the carousel — but only when the carousel
@@ -355,6 +407,22 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
     mediaListRef.current?.scrollToIndex({ index: 1, animated: true });
   }, []);
 
+  // The carousel follows the viewer's swipes (settled index) so the
+  // dismiss flight always lands on the visible slide — without this,
+  // dismissing after swiping inside the viewer found a stale carousel
+  // page (getReturnFrame bailed) and fell back to a plain fade.
+  const handleViewerIndexChange = useCallback((index: number) => {
+    if (index === activeIdxRef.current) return;
+    activeIdxRef.current = index;
+    setActiveIdx(index);
+    // Keep the slide-1 gesture contract intact after the viewer closes
+    setCarouselLocked(index === 0);
+    mediaListRef.current?.scrollToOffset({
+      offset: index * MEDIA_WIDTH,
+      animated: false,
+    });
+  }, []);
+
   const firstSlideAdvanceGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -398,7 +466,7 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
     <FeedCard>
       <FeedCardHeader
         avatarName={page.pageTitle || page.pageHandle}
-        avatarUrl={author.avatarUrl}
+        avatarUrl={page.coverPhotoUrl ?? null}
         title={page.pageTitle || `@${page.pageHandle}`}
         subtitle={`@${page.pageHandle}`}
         createdAt={post.createdAt}
@@ -452,10 +520,23 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
             </Text>
           </View>
         )}
-        <Dots count={mediaCount} active={activeIdx} />
+        <ProgressBars count={mediaCount} active={activeIdx} />
       </View>
 
-      {/* Caption + actions */}
+      {/* Caption above the actions row (editorial order, per the feed
+          mockups) — plain ink text, no author prefix (the header already
+          carries the identity) */}
+      {post.caption ? <Text style={styles.caption}>{post.caption}</Text> : null}
+
+      {post.locationName ? (
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={13} color="#8e8e93" />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {post.locationName}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.actions}>
         <Pressable
           style={({ pressed }) => [
@@ -467,10 +548,11 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           accessibilityRole="button"
           accessibilityLabel={liked ? "Unlike" : "Like"}
         >
+          {/* Liked = solid ink, not red — the feed stays monochrome */}
           <Ionicons
             name={liked ? "heart" : "heart-outline"}
             size={24}
-            color={liked ? "#FF3B30" : "#1c1c1e"}
+            color="#111111"
           />
           {likeCount > 0 && <Text style={styles.actionCount}>{likeCount}</Text>}
         </Pressable>
@@ -484,7 +566,7 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           accessibilityRole="button"
           accessibilityLabel="Comments"
         >
-          <Ionicons name="chatbubble-outline" size={21} color="#1c1c1e" />
+          <Ionicons name="chatbubble-outline" size={21} color="#111111" />
           {post.commentCount > 0 && (
             <Text style={styles.actionCount}>{post.commentCount}</Text>
           )}
@@ -500,16 +582,9 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           accessibilityRole="button"
           accessibilityLabel="See who's in this album"
         >
-          <Ionicons name="people-outline" size={23} color="#1c1c1e" />
+          <Ionicons name="people-outline" size={23} color="#111111" />
         </Pressable>
       </View>
-
-      {post.caption ? (
-        <Text style={styles.caption}>
-          <Text style={styles.captionAuthor}>{author.name} </Text>
-          {post.caption}
-        </Text>
-      ) : null}
 
       {/* Fullscreen viewer — mounted only while a session is open (the
           2000-line viewer's hook tree is far too heavy to run per feed
@@ -518,10 +593,11 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
       {viewerSession !== null && (
         <PhotoViewer
           visible
-          assets={viewerAssets}
+          assets={viewerSession.assets}
           initialIndex={viewerSession.index}
           originFrame={viewerSession.originFrame}
           getReturnFrame={getReturnFrame}
+          onActiveIndexChange={handleViewerIndexChange}
           onClose={() => setViewerSession(null)}
           gridCornerRadius={0}
           onDoubleTapAsset={handleViewerDoubleTap}
@@ -538,6 +614,7 @@ const FeedPost = memo<FeedPostProps>(({ item }) => {
           visible={commentsOpen}
           onClose={closeComments}
           currentUserId={currentUserId}
+          postAuthorId={post.authorId}
         />
       )}
 
@@ -590,31 +667,34 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
-  dotsPill: {
+  barsRow: {
     position: "absolute",
-    bottom: 12,
-    alignSelf: "center",
+    bottom: 10,
+    left: 12,
+    right: 12,
     flexDirection: "row",
-    gap: 5,
-    backgroundColor: "rgba(0, 0, 0, 0.35)",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    gap: 6,
   },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "rgba(255, 255, 255, 0.45)",
+  bar: {
+    flex: 1,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    // Keeps the inactive segments legible over near-white photos
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 1,
   },
-  dotActive: {
+  barActive: {
     backgroundColor: "#fff",
   },
   actions: {
     flexDirection: "row",
-    marginTop: 10,
+    alignItems: "center",
+    marginTop: 14,
     paddingHorizontal: H_PADDING,
-    gap: 18,
+    gap: 20,
   },
   actionBtn: {
     flexDirection: "row",
@@ -634,23 +714,30 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   actionCount: {
-    color: "#1c1c1e",
-    fontSize: 13.5,
-    fontFamily: "InstrumentSans_500Medium",
-    fontWeight: "500",
+    color: "#111111",
+    fontSize: 14,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
   caption: {
-    color: "#1c1c1e",
-    fontSize: 14,
-    marginTop: 8,
+    color: "#111111",
+    fontSize: 15,
+    marginTop: 14,
     paddingHorizontal: H_PADDING,
-    lineHeight: 20,
+    lineHeight: 21,
   },
-  captionAuthor: {
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#000",
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 6,
+    paddingHorizontal: H_PADDING,
+  },
+  locationText: {
+    flexShrink: 1,
+    fontSize: 13,
+    color: "#8e8e93",
   },
 });
 

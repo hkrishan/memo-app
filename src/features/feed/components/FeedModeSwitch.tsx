@@ -1,52 +1,53 @@
 /**
- * Pages / Albums segmented control for the feed. A soft gray track with a
- * white sliding thumb (the app's pill language on the feed's light
- * canvas). Labels cross-fade between ink-on-white and muted gray as the
- * thumb passes under them.
+ * Pages / Albums tabs for the feed — editorial text tabs (ink label with a
+ * sliding underline) instead of a pill control, per the app's flat design
+ * language. The Albums tab carries a black count badge when albums have
+ * new photos. The underline slides between the measured label widths and
+ * labels cross-fade ink ↔ muted as it passes.
  */
 
-import React, { memo, useCallback, useEffect } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import React, { memo, useCallback, useEffect, useState } from "react";
+import { LayoutChangeEvent, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "react-native-paper";
 import Animated, {
   Easing,
+  interpolate,
   interpolateColor,
   useAnimatedStyle,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
-import { BlurView } from "expo-blur";
+import { color, font } from "@/lib/tokens";
 import type { FeedMode } from "../store/feedModeStore";
 
-const SEGMENT_WIDTH = 96;
-const TRACK_PADDING = 3;
-const TRACK_HEIGHT = 36;
-
 /**
- * Height of the floating switch row on the feed (the 36pt pill plus the
- * row's 10/4 vertical paddings). The feed lists reserve this much top
- * padding so content starts below the pill but scrolls underneath it.
+ * Height of the tabs row on the feed (labels + underline + paddings). The
+ * feed lists reserve this much top padding so content starts below the row.
  */
-export const SWITCH_ROW_HEIGHT = TRACK_HEIGHT + 14;
+export const SWITCH_ROW_HEIGHT = 46;
 
+const UNDERLINE_HEIGHT = 2;
 const TIMING = { duration: 220, easing: Easing.out(Easing.cubic) };
 
-const SegmentLabel = memo<{
+type LabelFrame = { x: number; width: number };
+
+const TabLabel = memo<{
   label: string;
   /** Thumb progress, 0 = pages, 1 = albums */
   progress: SharedValue<number>;
-  /** Progress value at which this segment sits under the thumb */
+  /** Progress value at which this tab is active */
   activeAt: 0 | 1;
 }>(({ label, progress, activeAt }) => {
   const textStyle = useAnimatedStyle(() => ({
     color: interpolateColor(
       Math.abs(progress.value - activeAt),
       [0, 1],
-      ["#111111", "#9a9aa0"],
+      [color.textPrimary, "#9a9aa0"],
     ),
   }));
   return (
-    <Animated.Text style={[styles.segmentLabel, textStyle]} numberOfLines={1}>
+    <Animated.Text style={[styles.tabLabel, textStyle]} numberOfLines={1}>
       {label}
     </Animated.Text>
   );
@@ -57,17 +58,70 @@ interface FeedModeSwitchProps {
   onChange: (mode: FeedMode) => void;
   /** Shared 0..1 progress (0 = pages, 1 = albums); this control drives it */
   progress: SharedValue<number>;
+  /** Albums with new photos — shown as a black count badge (hidden at 0) */
+  albumsBadge?: number;
 }
 
 const FeedModeSwitch = memo<FeedModeSwitchProps>(
-  ({ mode, onChange, progress }) => {
+  ({ mode, onChange, progress, albumsBadge = 0 }) => {
     useEffect(() => {
       progress.value = withTiming(mode === "albums" ? 1 : 0, TIMING);
     }, [mode, progress]);
 
-    const thumbStyle = useAnimatedStyle(() => ({
-      transform: [{ translateX: progress.value * SEGMENT_WIDTH }],
-    }));
+    // The underline needs each label's frame in ROW coordinates: the tab
+    // Pressable's x (row-relative) plus the label's width (the word only —
+    // the Albums badge must not stretch the underline). Two onLayouts per
+    // tab, merged here.
+    const [frames, setFrames] = useState<[LabelFrame | null, LabelFrame | null]>(
+      [null, null],
+    );
+    const mergeFrame = useCallback(
+      (index: 0 | 1, patch: Partial<LabelFrame>) => {
+        setFrames((prev) => {
+          const current = prev[index] ?? { x: 0, width: 0 };
+          const merged = { ...current, ...patch };
+          if (current.x === merged.x && current.width === merged.width) {
+            return prev;
+          }
+          const next: [LabelFrame | null, LabelFrame | null] = [...prev];
+          next[index] = merged;
+          return next;
+        });
+      },
+      [],
+    );
+    const onTabLayout = useCallback(
+      (index: 0 | 1) => (event: LayoutChangeEvent) =>
+        mergeFrame(index, { x: event.nativeEvent.layout.x }),
+      [mergeFrame],
+    );
+    const onLabelLayout = useCallback(
+      (index: 0 | 1) => (event: LayoutChangeEvent) =>
+        mergeFrame(index, { width: event.nativeEvent.layout.width }),
+      [mergeFrame],
+    );
+
+    const [pagesFrame, albumsFrame] = frames;
+    const underlineStyle = useAnimatedStyle(() => {
+      if (!pagesFrame?.width || !albumsFrame?.width) return { opacity: 0 };
+      return {
+        opacity: 1,
+        width: interpolate(
+          progress.value,
+          [0, 1],
+          [pagesFrame.width, albumsFrame.width],
+        ),
+        transform: [
+          {
+            translateX: interpolate(
+              progress.value,
+              [0, 1],
+              [pagesFrame.x, albumsFrame.x],
+            ),
+          },
+        ],
+      };
+    }, [pagesFrame, albumsFrame]);
 
     const select = useCallback(
       (next: FeedMode) => {
@@ -79,73 +133,91 @@ const FeedModeSwitch = memo<FeedModeSwitchProps>(
     );
 
     return (
-      <View style={styles.track}>
-        {/* Frosted backdrop — the pill floats over the scrolling feed */}
-        <BlurView intensity={25} tint="light" style={styles.trackBlur} />
-        <Animated.View style={[styles.thumb, thumbStyle]} />
+      <View style={styles.row}>
         <Pressable
-          style={styles.segment}
+          style={styles.tab}
+          onLayout={onTabLayout(0)}
           onPress={() => select("pages")}
+          hitSlop={{ top: 8, bottom: 8 }}
           accessibilityRole="button"
           accessibilityState={{ selected: mode === "pages" }}
           accessibilityLabel="Pages feed"
         >
-          <SegmentLabel label="Pages" progress={progress} activeAt={0} />
+          {/* The measured wrapper holds ONLY the word — the underline
+              matches the text width, not the tab's touch area */}
+          <View onLayout={onLabelLayout(0)}>
+            <TabLabel label="Pages" progress={progress} activeAt={0} />
+          </View>
         </Pressable>
         <Pressable
-          style={styles.segment}
+          style={styles.tab}
+          onLayout={onTabLayout(1)}
           onPress={() => select("albums")}
+          hitSlop={{ top: 8, bottom: 8 }}
           accessibilityRole="button"
           accessibilityState={{ selected: mode === "albums" }}
-          accessibilityLabel="Albums feed"
+          accessibilityLabel={
+            albumsBadge > 0
+              ? `Albums feed, ${albumsBadge} with new photos`
+              : "Albums feed"
+          }
         >
-          <SegmentLabel label="Albums" progress={progress} activeAt={1} />
+          <View onLayout={onLabelLayout(1)}>
+            <TabLabel label="Albums" progress={progress} activeAt={1} />
+          </View>
+          {albumsBadge > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {albumsBadge > 9 ? "9+" : albumsBadge}
+              </Text>
+            </View>
+          )}
         </Pressable>
+        <Animated.View style={[styles.underline, underlineStyle]} />
       </View>
     );
   },
 );
 
 const styles = StyleSheet.create({
-  track: {
+  row: {
     flexDirection: "row",
-    alignSelf: "center",
-    height: TRACK_HEIGHT,
-    padding: TRACK_PADDING,
-    borderRadius: TRACK_HEIGHT / 2,
-    backgroundColor: "rgba(255, 255, 255, 0.6)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0, 0, 0, 0.06)",
+    alignItems: "center",
+    height: SWITCH_ROW_HEIGHT,
   },
-  trackBlur: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: TRACK_HEIGHT / 2,
-    overflow: "hidden",
+  tab: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 20,
   },
-  thumb: {
+  tabLabel: {
+    fontSize: 17,
+    ...font.bold,
+    letterSpacing: 0.1,
+  },
+  underline: {
     position: "absolute",
-    top: TRACK_PADDING,
-    left: TRACK_PADDING,
-    width: SEGMENT_WIDTH,
-    height: TRACK_HEIGHT - TRACK_PADDING * 2,
-    borderRadius: (TRACK_HEIGHT - TRACK_PADDING * 2) / 2,
-    backgroundColor: "#fff",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
+    bottom: 6,
+    left: 0,
+    height: UNDERLINE_HEIGHT,
+    borderRadius: UNDERLINE_HEIGHT / 2,
+    backgroundColor: color.textPrimary,
   },
-  segment: {
-    width: SEGMENT_WIDTH,
+  badge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    marginLeft: 7,
+    backgroundColor: color.textPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
-  segmentLabel: {
-    fontSize: 13,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    letterSpacing: 0.2,
+  badgeText: {
+    color: color.textInverse,
+    fontSize: 11,
+    ...font.semibold,
+    fontVariant: ["tabular-nums"],
   },
 });
 

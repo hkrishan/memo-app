@@ -13,6 +13,10 @@ export type Page = {
   hasWebPassword?: boolean;
   /** Public web address of this page (domain/@handle). */
   webUrl?: string;
+  /** Lifetime views of the public web page. Absent until the API sends it. */
+  viewCount?: number;
+  /** Times visitors saved this page. Absent until the API sends it. */
+  saveCount?: number;
 };
 
 /** Viewer's relationship to a page in the standalone page view. */

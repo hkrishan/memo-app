@@ -205,12 +205,16 @@ const PostGrid = memo<PostGridProps>(
       );
     }
 
-    if (isError) {
+    // Cached posts beat an error wall — only a failure with nothing to
+    // show gets the message (the list's pull-to-refresh is the retry)
+    if (isError && posts.length === 0) {
       return (
         <View style={styles.centerContainer}>
           {ListHeaderComponent}
-          <Ionicons name="alert-circle-outline" size={48} color="#e53935" />
-          <Text style={styles.errorText}>Failed to load posts</Text>
+          <Ionicons name="cloud-offline-outline" size={48} color="#8E8E93" />
+          <Text style={styles.errorText}>
+            Couldn't load posts — check your connection
+          </Text>
         </View>
       );
     }

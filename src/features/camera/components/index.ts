@@ -14,6 +14,7 @@ export { CountdownOverlay } from './CountdownOverlay';
 export { FocusExposureControl } from './FocusExposureControl';
 export { LastCaptureThumbnail } from './LastCaptureThumbnail';
 export { CaptureDestinationButton } from './CaptureDestinationButton';
+export { SaveDestinationPill } from './SaveDestinationPill';
 export { DestinationPickerSheet } from './DestinationPickerSheet';
 export { CaptureExtrasSheet } from './CaptureExtrasSheet';
 export { default as LocationPrimerSheet } from './LocationPrimerSheet';

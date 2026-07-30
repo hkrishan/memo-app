@@ -3,10 +3,12 @@ import Constants from "expo-constants";
 type EnvConfig = {
   API_URL: string;
   SOCKET_URL: string;
+  WEB_URL: string;
   APP_ENV: "development" | "production" | "staging";
 };
 
 const DEFAULT_SOCKET_PORT = "3031";
+const DEFAULT_WEB_PORT = "3005";
 
 /**
  * Derive the socket server URL from the API url when no explicit
@@ -19,6 +21,18 @@ function deriveSocketUrl(apiUrl: string): string {
     return `${match[1]}:${DEFAULT_SOCKET_PORT}`;
   }
   return `http://localhost:${DEFAULT_SOCKET_PORT}`;
+}
+
+/**
+ * Derive the public website (memo-web) URL from the API url when no
+ * explicit WEB_URL is configured: same host, web port, no path.
+ */
+function deriveWebUrl(apiUrl: string): string {
+  const match = apiUrl.match(/^(https?:\/\/[^/:]+)(?::\d+)?/);
+  if (match) {
+    return `${match[1]}:${DEFAULT_WEB_PORT}`;
+  }
+  return `http://localhost:${DEFAULT_WEB_PORT}`;
 }
 
 class Env {
@@ -36,6 +50,7 @@ class Env {
     this.config = {
       API_URL: extra.apiUrl,
       SOCKET_URL: extra.socketUrl || deriveSocketUrl(extra.apiUrl),
+      WEB_URL: extra.webUrl || deriveWebUrl(extra.apiUrl),
       APP_ENV: extra.appEnv || "development",
     };
 
@@ -54,6 +69,10 @@ class Env {
 
   get socketUrl(): string {
     return this.config.SOCKET_URL;
+  }
+
+  get webUrl(): string {
+    return this.config.WEB_URL;
   }
 
   get environment(): string {

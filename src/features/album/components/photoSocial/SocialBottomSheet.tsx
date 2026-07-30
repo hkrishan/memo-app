@@ -23,6 +23,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import Animated, {
   Easing,
   runOnJS,
@@ -53,6 +54,14 @@ type SocialBottomSheetProps = {
   title: string;
   /** Sheet height as a fraction of the screen, applied via maxHeight */
   heightFraction?: number;
+  /**
+   * "dark" (default) keeps the photo-viewer chrome: near-black sheet,
+   * centered title. "light" is the editorial feed variant: white sheet
+   * with a left-aligned title row (muted count, X to close, hairline).
+   */
+  appearance?: "dark" | "light";
+  /** Muted count rendered beside the title (light appearance only) */
+  count?: number;
   children: React.ReactNode;
 };
 
@@ -61,6 +70,8 @@ const SocialBottomSheet: React.FC<SocialBottomSheetProps> = ({
   onClose,
   title,
   heightFraction = 0.62,
+  appearance = "dark",
+  count,
   children,
 }) => {
   const insets = useSafeAreaInsets();
@@ -199,16 +210,40 @@ const SocialBottomSheet: React.FC<SocialBottomSheetProps> = ({
           <Animated.View
             style={[
               styles.sheet,
+              appearance === "light" && styles.sheetLight,
               { paddingBottom: Math.max(insets.bottom, 12) },
               sheetLayoutStyle,
               sheetStyle,
             ]}
           >
             <GestureDetector gesture={panGesture}>
-              <View style={styles.grabArea}>
-                <View style={styles.handle} />
-                <Text style={styles.title}>{title}</Text>
-              </View>
+              {appearance === "light" ? (
+                <View style={styles.grabAreaLight}>
+                  <View style={[styles.handle, styles.handleLight]} />
+                  <View style={styles.lightHeaderRow}>
+                    <Text style={styles.titleLight}>
+                      {title}
+                      {count != null && count > 0 && (
+                        <Text style={styles.countLight}>{`  ${count}`}</Text>
+                      )}
+                    </Text>
+                    <Pressable
+                      onPress={onClose}
+                      hitSlop={10}
+                      style={({ pressed }) => [pressed && styles.closePressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close"
+                    >
+                      <Ionicons name="close" size={22} color="#111111" />
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.grabArea}>
+                  <View style={styles.handle} />
+                  <Text style={styles.title}>{title}</Text>
+                </View>
+              )}
             </GestureDetector>
             {children}
           </Animated.View>
@@ -252,6 +287,42 @@ const styles = StyleSheet.create({
     fontFamily: "InstrumentSans_600SemiBold",
     fontWeight: "600",
     marginTop: 12,
+  },
+  sheetLight: {
+    backgroundColor: "#FFFFFF",
+  },
+  grabAreaLight: {
+    alignItems: "stretch",
+    paddingTop: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0, 0, 0, 0.08)",
+  },
+  handleLight: {
+    alignSelf: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+  },
+  lightHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+  },
+  titleLight: {
+    color: "#111111",
+    fontSize: 18,
+    fontFamily: "InstrumentSans_700Bold",
+    fontWeight: "700",
+  },
+  countLight: {
+    color: "#8E8E93",
+    fontSize: 18,
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
+  },
+  closePressed: {
+    opacity: 0.5,
   },
 });
 

@@ -1,10 +1,13 @@
 /**
- * The Albums timeline: an infinite, pull-to-refresh list of cross-album
- * updates (photos added, members joined, moments started) from
- * GET /feed/albums.
+ * The Albums view: an editorial digest of cross-album updates from
+ * GET /feed/albums. Photo activity is grouped per album — an "N albums
+ * have new photos" headline (serif-italic accent), the freshest album as
+ * a hero section, the rest as compact strips — followed by the remaining
+ * updates (members joined, moments started) as quiet hairline rows.
+ * Infinite scroll and pull-to-refresh as before.
  */
 
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -15,21 +18,46 @@ import {
 import { Text } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
+import { color, font, scriptType } from "@/lib/tokens";
 import { useAlbumsFeedQuery } from "../api/feed.queries";
 import type { AlbumFeedUpdate } from "../types/feed.types";
+import {
+  groupAlbumsFeed,
+  type AlbumPhotoGroup,
+  type OtherAlbumUpdate,
+} from "../utils/albumGroups";
+import { AlbumGroupCompact, AlbumGroupHero } from "./AlbumGroupSection";
 import AlbumUpdateCard from "./AlbumUpdateCard";
+import { H_PADDING } from "./FeedCard";
 
 // Cast FlashList to bypass type definition mismatch with installed version
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const UpdatesFlashList = FlashList as any;
 
-/** topInset: clears the blurred top bar + floating pill; content scrolls
+type Row =
+  | { kind: "headline"; count: number }
+  | { kind: "hero"; group: AlbumPhotoGroup }
+  | { kind: "compact"; group: AlbumPhotoGroup }
+  | { kind: "update"; update: OtherAlbumUpdate };
+
+const Headline = memo<{ count: number }>(({ count }) => (
+  <Text style={styles.headline}>
+    <Text style={styles.headlineStrong}>
+      {count} {count === 1 ? "album" : "albums"}
+    </Text>
+    <Text style={styles.headlineAccent}>
+      {" "}
+      {count === 1 ? "has" : "have"} new photos
+    </Text>
+  </Text>
+));
+
+/** topInset: clears the blurred top bar + tabs row; content scrolls
  *  under both (the parent screen computes it from the safe-area inset). */
 const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
   const {
     data,
     refetch,
-    isRefetching,
     isLoading,
     isError,
     fetchNextPage,
@@ -37,17 +65,61 @@ const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
     isFetchingNextPage,
   } = useAlbumsFeedQuery();
 
+  // Pull-to-refresh only — background revalidations (mutations elsewhere
+  // invalidating this query) must not inset the list with a spinner
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setPullRefreshing(true);
+    refetch().finally(() => setPullRefreshing(false));
+  }, [refetch]);
+
   const items = useMemo(
     () => data?.pages.flatMap((page) => page.items) ?? [],
     [data],
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: AlbumFeedUpdate }) => <AlbumUpdateCard update={item} />,
-    [],
-  );
+  const rows = useMemo<Row[]>(() => {
+    const { groups, others } = groupAlbumsFeed(items);
+    const built: Row[] = [];
+    if (groups.length > 0) {
+      built.push({ kind: "headline", count: groups.length });
+      built.push({ kind: "hero", group: groups[0] });
+      for (const group of groups.slice(1)) {
+        built.push({ kind: "compact", group });
+      }
+    }
+    for (const update of others) {
+      built.push({ kind: "update", update });
+    }
+    return built;
+  }, [items]);
 
-  const keyExtractor = useCallback((item: AlbumFeedUpdate) => item.id, []);
+  const renderItem = useCallback(({ item }: { item: Row }) => {
+    switch (item.kind) {
+      case "headline":
+        return <Headline count={item.count} />;
+      case "hero":
+        return <AlbumGroupHero group={item.group} />;
+      case "compact":
+        return <AlbumGroupCompact group={item.group} />;
+      case "update":
+        return <AlbumUpdateCard update={item.update} />;
+    }
+  }, []);
+
+  const keyExtractor = useCallback((item: Row) => {
+    switch (item.kind) {
+      case "headline":
+        return "headline";
+      case "hero":
+      case "compact":
+        return `album-${item.group.albumId}`;
+      case "update":
+        return item.update.id;
+    }
+  }, []);
+
+  const getItemType = useCallback((item: Row) => item.kind, []);
 
   const onEndReached = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -116,12 +188,13 @@ const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
 
   return (
     <UpdatesFlashList
-      data={items}
+      data={rows}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
-      // Three very differently-sized row shapes must not share one
-      // recycling pool (photo collages vs one-line member rows)
-      getItemType={(item: AlbumFeedUpdate) => item.type}
+      // Four very differently-sized row shapes must not share one
+      // recycling pool (hero collages vs one-line member rows)
+      getItemType={getItemType}
+      estimatedItemSize={220}
       contentContainerStyle={contentStyle}
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={listEmpty}
@@ -130,10 +203,8 @@ const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
       onEndReachedThreshold={0.4}
       refreshControl={
         <RefreshControl
-          // isRefetching also flips during fetchNextPage; only show the
-          // pull spinner for genuine top refreshes
-          refreshing={isRefetching && !isFetchingNextPage}
-          onRefresh={refetch}
+          refreshing={pullRefreshing}
+          onRefresh={handleRefresh}
           tintColor="#888"
         />
       }
@@ -142,6 +213,20 @@ const AlbumsFeedList = memo<{ topInset: number }>(({ topInset }) => {
 });
 
 const styles = StyleSheet.create({
+  headline: {
+    paddingHorizontal: H_PADDING,
+    paddingTop: 20,
+    paddingBottom: 18,
+  },
+  headlineStrong: {
+    color: color.textPrimary,
+    fontSize: 24,
+    ...font.bold,
+  },
+  headlineAccent: {
+    color: color.textPrimary,
+    ...scriptType(24),
+  },
   footer: {
     paddingVertical: 24,
     alignItems: "center",

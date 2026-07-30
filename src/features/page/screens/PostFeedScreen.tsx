@@ -600,10 +600,14 @@ const PostFeedScreen = () => {
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#fff" />
         </View>
-      ) : isError ? (
+      ) : isError && posts.length === 0 ? (
+        // Cached posts beat an error wall — only a failure with nothing
+        // to show gets the message
         <View style={styles.centerContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color="#FF6B6B" />
-          <Text style={styles.errorText}>Failed to load posts</Text>
+          <Ionicons name="cloud-offline-outline" size={48} color="#8E8E93" />
+          <Text style={styles.errorText}>
+            Couldn't load posts — check your connection
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -642,6 +646,9 @@ const PostFeedScreen = () => {
         visible={commentsOpen}
         onClose={closeComments}
         currentUserId={currentUserId}
+        postAuthorId={
+          posts.find((p) => p.postId === sheetPostId)?.authorId
+        }
       />
     </View>
   );

@@ -206,12 +206,22 @@ const ChatMessageList = memo<ChatMessageListProps>(
       [],
     );
 
-    // For empty state, we render it outside the inverted list
+    // For empty state, we render it outside the inverted list.
+    // A first page that FAILED to load (offline open) must not read as
+    // "Start the conversation" — the chat may be full of messages.
     if (isEmpty) {
       return (
         <View style={styles.container}>
           <View style={[styles.emptyContainer, { paddingTop: contentTop }]}>
-            <EmptyState albumTitle={albumTitle} />
+            {loadOlderError || isLoadingOlder ? (
+              <LoadMoreRow
+                isLoading={isLoadingOlder}
+                hasError={loadOlderError}
+                onRetry={onRetryLoadOlder}
+              />
+            ) : (
+              <EmptyState albumTitle={albumTitle} />
+            )}
           </View>
         </View>
       );

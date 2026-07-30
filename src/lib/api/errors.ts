@@ -194,6 +194,19 @@ export function isServerError(error: unknown): error is ServerError {
 }
 
 /**
+ * True when the request never really completed — offline (status 0), timed
+ * out (408), or the server fell over (5xx). Such a failure says NOTHING
+ * about the resource itself, so screens should show a connection problem
+ * with a retry — never "this thing doesn't exist".
+ */
+export function isTransientError(error: unknown): boolean {
+  return (
+    isApiError(error) &&
+    (error.status === 0 || error.status === 408 || error.status >= 500)
+  );
+}
+
+/**
  * Get user-friendly error message
  */
 export function getErrorMessage(error: unknown): string {

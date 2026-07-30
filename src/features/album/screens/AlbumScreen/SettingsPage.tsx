@@ -1,5 +1,12 @@
 import React, { useCallback } from "react";
-import { View, ScrollView, StyleSheet, Text, Pressable } from "react-native";
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  Pressable,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useGetPageQuery } from "@/features/page/api/page.queries";
@@ -10,6 +17,14 @@ import {
   useGetAlbumQuery,
   useLeaveAlbumMutation,
 } from "../../api/album.queries";
+import {
+  selectGalleryVariant,
+  useGalleryVariantStore,
+} from "../../store/galleryVariantStore";
+import {
+  selectAlbumsVariant,
+  useAlbumsVariantStore,
+} from "../../store/albumsVariantStore";
 
 interface SettingsPageProps {
   contentTop: number;
@@ -53,6 +68,23 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ contentTop, albumId }) => {
   const { data: page } = useGetPageQuery(albumId ?? "");
   const { data: album } = useGetAlbumQuery(albumId!);
   const currentUserId = useAuthStore((state) => state.user?.id);
+
+  // Gallery layout A/B — the switch writes straight through to MMKV, and
+  // the album screen behind this one re-renders live off the store
+  const galleryVariant = useGalleryVariantStore(selectGalleryVariant);
+  const setGalleryVariant = useGalleryVariantStore((s) => s.setGalleryVariant);
+  const handleToggleGalleryVariant = useCallback(
+    (enabled: boolean) => setGalleryVariant(enabled ? "editorial" : "classic"),
+    [setGalleryVariant],
+  );
+
+  // Albums-tab A/B — same MMKV write-through contract as the gallery switch
+  const albumsVariant = useAlbumsVariantStore(selectAlbumsVariant);
+  const setAlbumsVariant = useAlbumsVariantStore((s) => s.setAlbumsVariant);
+  const handleToggleAlbumsVariant = useCallback(
+    (enabled: boolean) => setAlbumsVariant(enabled ? "editorial" : "classic"),
+    [setAlbumsVariant],
+  );
   const deleteAlbumMutation = useDeleteAlbumMutation();
   const leaveAlbumMutation = useLeaveAlbumMutation();
 
@@ -194,6 +226,52 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ contentTop, albumId }) => {
           />
         </View>
 
+        <Text style={styles.sectionTitle}>Gallery</Text>
+
+        <View style={styles.settingsGroup}>
+          <View style={styles.settingsRow}>
+            <View style={styles.settingsRowLeft}>
+              <View style={styles.iconContainer}>
+                <Ionicons name="images-outline" size={20} color="#000" />
+              </View>
+              <Text style={styles.settingsLabel}>New gallery layout</Text>
+            </View>
+            <Switch
+              value={galleryVariant === "editorial"}
+              onValueChange={handleToggleGalleryVariant}
+              trackColor={{ true: "#111111" }}
+              accessibilityLabel="New gallery layout"
+            />
+          </View>
+        </View>
+        <Text style={styles.settingsCaption}>
+          Cover-style gallery with day-grouped photos. Turn off to go back
+          to the classic layout.
+        </Text>
+
+        <Text style={styles.sectionTitle}>Home</Text>
+
+        <View style={styles.settingsGroup}>
+          <View style={styles.settingsRow}>
+            <View style={styles.settingsRowLeft}>
+              <View style={styles.iconContainer}>
+                <Ionicons name="albums-outline" size={20} color="#000" />
+              </View>
+              <Text style={styles.settingsLabel}>New albums tab</Text>
+            </View>
+            <Switch
+              value={albumsVariant === "editorial"}
+              onValueChange={handleToggleAlbumsVariant}
+              trackColor={{ true: "#111111" }}
+              accessibilityLabel="New albums tab"
+            />
+          </View>
+        </View>
+        <Text style={styles.settingsCaption}>
+          Editorial My albums tab with filter tabs and the new create and
+          join flows. Turn off to go back to the classic tab.
+        </Text>
+
         {page && (
           <>
             <Text style={styles.sectionTitle}>Public Page</Text>
@@ -287,6 +365,15 @@ const styles = StyleSheet.create({
   },
   destructiveLabel: {
     color: "#FF3B30",
+  },
+  settingsCaption: {
+    fontSize: 13,
+    fontFamily: "InstrumentSans_400Regular",
+    fontWeight: "400",
+    color: "#8E8E93",
+    lineHeight: 18,
+    marginTop: 8,
+    paddingHorizontal: 16,
   },
 });
 

@@ -21,6 +21,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useGetAlbumActivitiesQuery } from "../../api/album.queries";
 import { AlbumActivity, AlbumPhoto } from "../../types/album.types";
+import ActivityFilterBar, {
+  ActivityMediaFilter,
+  ActivityPerson,
+  ActivitySort,
+} from "../../components/ActivityFilterBar";
 import { PhotoViewer } from "@/features/photos/components";
 import { MediaAsset } from "@/features/album/hooks";
 import { useAlbumPhotoViewerExtras } from "../../hooks/useAlbumPhotoViewerExtras";
@@ -54,10 +59,15 @@ interface ActivityPageProps {
   isActive?: boolean;
 }
 
-// Pre-computed activity text based on type and count
-const getActivityText = (type: string, photoCount: number): string => {
+// Pre-computed activity text based on type and count. The noun follows the
+// active media filter ("added 2 videos" when only its videos are shown).
+const getActivityText = (
+  type: string,
+  photoCount: number,
+  noun: "photo" | "video" = "photo",
+): string => {
   if (type === "photos_added") {
-    return photoCount === 1 ? "added a photo" : `added ${photoCount} photos`;
+    return photoCount === 1 ? `added a ${noun}` : `added ${photoCount} ${noun}s`;
   }
   return "performed an action";
 };
@@ -152,12 +162,13 @@ const UserAvatar = memo<{ avatarUrl: string | null; activityType: string }>(
 const ActivityItem = memo<{
   activity: AlbumActivity;
   albumId?: string;
+  noun?: "photo" | "video";
   onOpenViewer: (photos: AlbumPhoto[]) => void;
 }>(
-  ({ activity, albumId, onOpenViewer }) => {
+  ({ activity, albumId, noun, onOpenViewer }) => {
     const router = useRouter();
     const { activityId, user, photos, photoCount, createdAt, type } = activity;
-    const activityText = getActivityText(type, photoCount);
+    const activityText = getActivityText(type, photoCount, noun);
     const timestamp = formatRelativeTime(createdAt);
 
     const canOpen = type === "photos_added" && !!albumId;
@@ -204,7 +215,10 @@ const ActivityItem = memo<{
   },
   (prev, next) =>
     prev.activity.activityId === next.activity.activityId &&
+    // Media-filtered copies shrink the photo set under a stable activityId
+    prev.activity.photos === next.activity.photos &&
     prev.albumId === next.albumId &&
+    prev.noun === next.noun &&
     prev.onOpenViewer === next.onOpenViewer,
 );
 
@@ -226,18 +240,49 @@ const LoadingState = memo(() => (
   </View>
 ));
 
-const ErrorState = memo(() => (
+const ErrorState = memo<{ onRetry: () => void }>(({ onRetry }) => (
   <View style={styles.emptyState}>
-    <Ionicons name="alert-circle-outline" size={48} color="#e53935" />
-    <Text style={styles.emptyTitle}>Failed to load activity</Text>
+    <Ionicons name="cloud-offline-outline" size={48} color="#ccc" />
+    <Text style={styles.emptyTitle}>Couldn't load activity</Text>
     <Text style={styles.emptySubtitle}>
-      Please check your connection and try again.
+      Check your connection and try again.
     </Text>
+    <Pressable
+      onPress={onRetry}
+      style={({ pressed }) => [
+        styles.resetButton,
+        pressed && styles.activityItemPressed,
+      ]}
+      accessibilityRole="button"
+    >
+      <Text style={styles.resetButtonLabel}>Try again</Text>
+    </Pressable>
   </View>
 ));
 
 const SectionHeader = memo(() => (
   <Text style={styles.sectionTitle}>Recent Activity</Text>
+));
+
+// Every filter combination can come up empty without the album being empty
+const FilteredEmptyState = memo<{ onReset: () => void }>(({ onReset }) => (
+  <View style={styles.emptyState}>
+    <Ionicons name="funnel-outline" size={40} color="#ccc" />
+    <Text style={styles.emptyTitle}>Nothing matches</Text>
+    <Text style={styles.emptySubtitle}>
+      No activity matches these filters.
+    </Text>
+    <Pressable
+      onPress={onReset}
+      style={({ pressed }) => [
+        styles.resetButton,
+        pressed && styles.activityItemPressed,
+      ]}
+      accessibilityRole="button"
+    >
+      <Text style={styles.resetButtonLabel}>Reset filters</Text>
+    </Pressable>
+  </View>
 ));
 
 // Main component - memoized
@@ -262,7 +307,60 @@ const ActivityPage = memo<ActivityPageProps>(
       data: activities,
       isLoading,
       isError,
+      refetch,
     } = useGetAlbumActivitiesQuery(albumId ?? "");
+
+    // Filters + sort — per-visit state, applied client-side (the activity
+    // payload already carries the actor and each photo's mediaType)
+    const [sort, setSort] = useState<ActivitySort>("newest");
+    const [personId, setPersonId] = useState<string | null>(null);
+    const [media, setMedia] = useState<ActivityMediaFilter>("all");
+    const resetFilters = useCallback(() => {
+      setSort("newest");
+      setPersonId(null);
+      setMedia("all");
+    }, []);
+
+    // Distinct actors, in order of first appearance
+    const people = useMemo<ActivityPerson[]>(() => {
+      const seen = new Map<string, ActivityPerson>();
+      for (const activity of activities ?? []) {
+        if (!seen.has(activity.user.userId)) {
+          seen.set(activity.user.userId, {
+            userId: activity.user.userId,
+            name: activity.user.name,
+          });
+        }
+      }
+      return [...seen.values()];
+    }, [activities]);
+
+    const displayActivities = useMemo<AlbumActivity[]>(() => {
+      let list = activities ?? [];
+      if (personId) {
+        list = list.filter((a) => a.user.userId === personId);
+      }
+      if (media !== "all") {
+        const wantVideo = media === "videos";
+        list = list
+          .map((a) => {
+            const photos = a.photos.filter(
+              (p) => (p.mediaType === "video") === wantVideo,
+            );
+            // photoCount follows the filtered set so row text and the "+n"
+            // overlay describe what's actually shown
+            return { ...a, photos, photoCount: photos.length };
+          })
+          .filter((a) => a.photos.length > 0);
+      }
+      const byCreatedAt = (a: AlbumActivity, b: AlbumActivity) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return [...list].sort(
+        sort === "oldest" ? byCreatedAt : (a, b) => byCreatedAt(b, a),
+      );
+    }, [activities, personId, media, sort]);
+
+    const noun = media === "videos" ? ("video" as const) : ("photo" as const);
 
     // Small-batch rows open their photos right here in the viewer
     const [viewerPhotos, setViewerPhotos] = useState<AlbumPhoto[] | null>(
@@ -308,11 +406,13 @@ const ActivityPage = memo<ActivityPageProps>(
       );
     }
 
-    if (isError) {
+    // Only an error with NOTHING to show gets the error screen — a failed
+    // background refetch must never replace loaded activity with a wall
+    if (isError && (!activities || activities.length === 0)) {
       return (
         <View style={styles.container}>
           <View style={[styles.centerContent, { paddingTop: contentTop }]}>
-            <ErrorState />
+            <ErrorState onRetry={refetch} />
           </View>
         </View>
       );
@@ -336,14 +436,28 @@ const ActivityPage = memo<ActivityPageProps>(
           removeClippedSubviews
         >
           <SectionHeader />
-          {activities.map((activity) => (
-            <ActivityItem
-              key={activity.activityId}
-              activity={activity}
-              albumId={albumId}
-              onOpenViewer={openViewer}
-            />
-          ))}
+          <ActivityFilterBar
+            sort={sort}
+            onSortChange={setSort}
+            people={people}
+            personId={personId}
+            onPersonChange={setPersonId}
+            media={media}
+            onMediaChange={setMedia}
+          />
+          {displayActivities.length === 0 ? (
+            <FilteredEmptyState onReset={resetFilters} />
+          ) : (
+            displayActivities.map((activity) => (
+              <ActivityItem
+                key={activity.activityId}
+                activity={activity}
+                albumId={albumId}
+                noun={media === "all" ? undefined : noun}
+                onOpenViewer={openViewer}
+              />
+            ))
+          )}
         </ScrollView>
 
         {/* Mounted only while open — the viewer's hook tree is too heavy
@@ -494,6 +608,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 80,
     gap: 12,
+  },
+  resetButton: {
+    marginTop: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    backgroundColor: "#F1F1F3",
+  },
+  resetButtonLabel: {
+    fontSize: 13,
+    fontFamily: "InstrumentSans_600SemiBold",
+    fontWeight: "600",
+    color: "#111",
   },
   loadingText: {
     fontSize: 14,

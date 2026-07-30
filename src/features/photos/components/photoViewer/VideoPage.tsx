@@ -148,6 +148,16 @@ export const VideoPage = memo<VideoPageProps>(
     onActivePlayerChange,
     onFirstImageLoad,
   }) => {
+    // NOTE (2026-07-29): do NOT defer the adjacent source attach off the
+    // settle frame (tried as a `sourceEnabled` timer to shave swipe-settle
+    // JS stalls, reverted same day). useVideoPlayer RELEASES and recreates
+    // the player whenever its source argument changes — deferral let the
+    // flip happen AT activation, after the player was registered with the
+    // viewer chrome, and the scrub bar then read `player.playing` on the
+    // released object (NativeSharedObjectNotFoundException). The current
+    // shape is safe precisely because the source attaches while the page
+    // is still adjacent, before anything else holds the player.
+
     // ph:// URIs are not reliably playable — resolve to a local file URI
     const { resolvedUri } = useResolvedAssetUri({
       assetId: asset.id,

@@ -28,6 +28,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { isTransientError } from "@/lib/api/errors";
 import useAuth, { sanitizeRedirect } from "../../hooks/useAuth";
 import {
   CODE_LENGTH,
@@ -104,6 +105,12 @@ const PhoneCodeScreen = () => {
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Error,
         ).catch(() => {});
+        // A verify that never reached the server says nothing about the
+        // code — keep it typed in and blame the connection, not the user
+        if (isTransientError(err)) {
+          setError("Couldn't verify — check your connection and try again.");
+          return;
+        }
         shakeX.value = withSequence(
           withTiming(-10, { duration: 45 }),
           withTiming(8, { duration: 45 }),

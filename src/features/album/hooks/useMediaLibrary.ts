@@ -28,6 +28,9 @@ export interface MediaAsset {
   pending?: boolean;
   /** A pending capture whose upload failed and is awaiting auto-retry. */
   uploadFailed?: boolean;
+  /** A pending capture parked until the connection returns — not an error;
+   *  it uploads automatically once the device is back online. */
+  uploadOffline?: boolean;
   /**
    * A local file holding the very same image as `uri`, shown underneath it
    * while the remote one downloads. Set for photos that were just uploaded
@@ -40,6 +43,12 @@ export interface MediaAsset {
    * device-library assets and videos, where `uri` is already right.
    */
   displayUrl?: string | null;
+  /**
+   * Base64 ThumbHash of the thumbnail — painted as the tile placeholder
+   * before any bytes arrive. Absent for device-library assets and media
+   * processed before the server generated hashes.
+   */
+  thumbHash?: string | null;
   /** Server-side custom media metadata (e.g. memoCreate). Device assets
    *  and older cached responses omit it. */
   metadata?: MediaMetadata | null;

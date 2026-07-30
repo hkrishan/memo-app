@@ -22,6 +22,7 @@ export const libraryPhotoToAsset = (photo: LibraryPhoto): MediaAsset => {
         : (photo.thumbnailUrl ?? photo.url),
     mediaType: photo.mediaType === "video" ? "video" : "photo",
     displayUrl: photo.displayUrl ?? null,
+    thumbHash: photo.thumbHash ?? null,
     width: photo.width ?? 0,
     height: photo.height ?? 0,
     duration: 0,

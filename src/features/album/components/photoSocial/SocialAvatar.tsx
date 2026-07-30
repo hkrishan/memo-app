@@ -16,6 +16,12 @@ type SocialAvatarProps = {
   avatarUrl: string | null;
   size?: number;
   borderColor?: string;
+  /**
+   * Surface the avatar sits on. "dark" (default) keeps the translucent
+   * white fallback for the photo viewer; "light" flips the fallback to
+   * an ink circle so initials stay visible on white sheets.
+   */
+  surface?: "dark" | "light";
 };
 
 const SocialAvatar: React.FC<SocialAvatarProps> = ({
@@ -23,6 +29,7 @@ const SocialAvatar: React.FC<SocialAvatarProps> = ({
   avatarUrl,
   size = 32,
   borderColor,
+  surface = "dark",
 }) => {
   const radius = size / 2;
   const borderStyle = borderColor
@@ -48,6 +55,7 @@ const SocialAvatar: React.FC<SocialAvatarProps> = ({
     <View
       style={[
         styles.fallback,
+        surface === "light" && styles.fallbackOnLight,
         { width: size, height: size, borderRadius: radius },
         borderStyle,
       ]}
@@ -65,6 +73,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.18)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  fallbackOnLight: {
+    backgroundColor: "#111111",
   },
   initials: {
     color: "#fff",

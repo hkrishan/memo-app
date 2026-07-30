@@ -15,6 +15,7 @@ export const photoToMediaAsset = (photo: PhotoWithUploader): MediaAsset => ({
   mediaType: photo.mediaType === "video" ? "video" : "photo",
   // The viewer paints this instead of the original upload
   displayUrl: photo.displayUrl ?? null,
+  thumbHash: photo.thumbHash ?? null,
   width: 0,
   height: 0,
   duration: 0,

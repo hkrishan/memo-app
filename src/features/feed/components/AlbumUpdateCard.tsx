@@ -1,9 +1,10 @@
 /**
- * Cards for the Albums timeline (GET /feed/albums): rich "photos added"
- * cards with a rounded collage, compact "member joined" rows, and accent-
- * badged "moment started" cards that mirror the moment registry's colors.
- * All variants share one dark surface (radius 16, hairline) and navigate
- * into the album on tap.
+ * Rows for the Albums timeline (GET /feed/albums): compact "member joined"
+ * rows and accent-badged "moment started" rows that mirror the moment
+ * registry's colors. ("Photos added" updates are grouped per album and
+ * rendered by AlbumGroupSection instead.) All variants share one flat
+ * editorial row — hairline divider, no card surface — and navigate into
+ * the album on tap.
  */
 
 import React, { memo, useCallback } from "react";
@@ -234,16 +235,13 @@ const AlbumUpdateCard = memo<{ update: AlbumFeedUpdate }>(({ update }) => {
 
 const styles = StyleSheet.create({
   surface: {
-    backgroundColor: "#F7F7F8",
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0, 0, 0, 0.06)",
-    padding: CARD_PADDING,
-    marginHorizontal: H_PADDING,
-    marginBottom: 12,
+    paddingHorizontal: H_PADDING,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0, 0, 0, 0.08)",
   },
   surfacePressed: {
-    backgroundColor: "#EFEFF1",
+    backgroundColor: "rgba(0, 0, 0, 0.03)",
   },
   headerRow: {
     flexDirection: "row",
@@ -299,7 +297,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#30B15C",
     borderWidth: 2,
-    borderColor: "#F7F7F8",
+    borderColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
   },

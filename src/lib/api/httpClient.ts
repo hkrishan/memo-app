@@ -25,7 +25,12 @@ import {
   TokenRefreshFn,
 } from "./types";
 
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
+// A JSON API call that hasn't answered in 15s isn't going to — failing
+// fast is what lets screens fall back to cached content instead of
+// spinning. Uploads are different: a photo on a slow cell link can
+// legitimately take minutes, so they get their own budget.
+const DEFAULT_TIMEOUT = 15000;
+const DEFAULT_UPLOAD_TIMEOUT = 120000;
 const DEFAULT_RETRIES = 2;
 
 /**
@@ -294,11 +299,19 @@ class HttpClient {
     this.refreshPromise = (async () => {
       const hadTokens = !!(await tokenStorage.getTokens());
       let refreshed = false;
+      // A refresh that THROWS failed in transit (offline, timeout, server
+      // down) — that is not a verdict on the session, so the tokens stay
+      // and the caller's request just fails; a later request will refresh
+      // again. Only a `null` RETURN (the server rejected the refresh
+      // token) may end the session.
+      let sessionRejected = false;
       try {
         const tokens = await this.tokenRefreshFn!();
         if (tokens) {
           await tokenStorage.setTokens(tokens);
           refreshed = true;
+        } else {
+          sessionRejected = true;
         }
       } catch {
         refreshed = false;
@@ -307,7 +320,7 @@ class HttpClient {
         this.refreshPromise = null;
       }
 
-      if (!refreshed && hadTokens) {
+      if (sessionRejected && hadTokens) {
         // The session is dead — clear it and let the app route to login
         await tokenStorage.clearTokens();
         this.onSessionExpired?.();
@@ -429,8 +442,9 @@ class HttpClient {
         throw new TimeoutError();
       }
 
-      // Handle network errors
-      if (error instanceof TypeError && error.message.includes("fetch")) {
+      // Handle network errors — RN's fetch throws TypeError("Network
+      // request failed") on any transport failure (offline, DNS, TLS)
+      if (error instanceof TypeError) {
         throw new NetworkError();
       }
 
@@ -595,11 +609,12 @@ class HttpClient {
       }
     }
 
-    // Create abort controller for timeout
+    // Create abort controller for timeout (uploads get the long budget —
+    // a multipart body on a slow link is not a hung request)
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      config?.timeout ?? this.config.timeout ?? DEFAULT_TIMEOUT,
+      config?.timeout ?? DEFAULT_UPLOAD_TIMEOUT,
     );
 
     const onExternalAbort = () => controller.abort();
@@ -642,7 +657,7 @@ class HttpClient {
         throw new TimeoutError();
       }
 
-      if (error instanceof TypeError && error.message.includes("fetch")) {
+      if (error instanceof TypeError) {
         throw new NetworkError();
       }
 

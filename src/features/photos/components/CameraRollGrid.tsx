@@ -1,6 +1,7 @@
 /**
  * CameraRollGrid Component
- * Performant N-column photo grid (iOS Photos look, 3 columns by default).
+ * Performant N-column photo grid (4 columns of portrait tiles by default —
+ * the app's universal width × 1.4 tile ratio).
  *
  * Perf notes:
  * - Cells are memoized and only re-render when their props change (callbacks
@@ -82,8 +83,15 @@ import { hasRenderableStill } from "@/lib/mediaStill";
 import { GridScrubber, type MonthRange } from "./GridScrubber";
 import { Frame } from "./types";
 
-const DEFAULT_NUM_COLUMNS = 3;
+const DEFAULT_NUM_COLUMNS = 4;
 const GRID_GAP = 2;
+/**
+ * Cell height = cell width × this — the app's universal portrait tile
+ * ratio (GalleryPageB, GallerySectionRow, GalleryCarousel all share it).
+ * ALL the deterministic geometry below (return frames, scrubber ranges,
+ * reflow shifts) derives row height from it.
+ */
+export const GRID_TILE_ASPECT = 1.4;
 /** Default bottom padding of the list content. */
 const DEFAULT_BOTTOM_PADDING = 40;
 /**
@@ -143,21 +151,22 @@ const accessibilityLabelForAsset = (asset: MediaAsset): string => {
  */
 const cellImageRect = (
   index: number,
-  cellSize: number,
+  cellWidth: number,
   headerHeight: number,
   numColumns: number,
 ) => {
+  const cellHeight = cellWidth * GRID_TILE_ASPECT;
   const col = index % numColumns;
   const row = Math.floor(index / numColumns);
   const paddingLeft = col === 0 ? 0 : GRID_GAP / 2;
   const paddingRight = col === numColumns - 1 ? 0 : GRID_GAP / 2;
   const paddingTop = row === 0 ? 0 : GRID_GAP;
-  const rowTop = headerHeight + row * cellSize;
+  const rowTop = headerHeight + row * cellHeight;
   return {
-    x: col * cellSize + paddingLeft,
+    x: col * cellWidth + paddingLeft,
     y: rowTop + paddingTop,
-    width: cellSize - paddingLeft - paddingRight,
-    height: cellSize - paddingTop,
+    width: cellWidth - paddingLeft - paddingRight,
+    height: cellHeight - paddingTop,
     rowTop,
   };
 };
@@ -341,10 +350,11 @@ const buildSectionedLayout = (
  */
 const sectionedCellImageRect = (
   placement: AssetPlacement,
-  cellSize: number,
+  cellWidth: number,
   headerHeight: number,
   numColumns: number,
 ) => {
+  const cellHeight = cellWidth * GRID_TILE_ASPECT;
   const { col, rowsBefore, yearHeadersBefore, monthHeadersBefore } = placement;
   const paddingLeft = col === 0 ? 0 : GRID_GAP / 2;
   const paddingRight = col === numColumns - 1 ? 0 : GRID_GAP / 2;
@@ -353,14 +363,14 @@ const sectionedCellImageRect = (
   const paddingTop = placement.sectionRow === 0 ? 0 : GRID_GAP;
   const rowTop =
     headerHeight +
-    rowsBefore * cellSize +
+    rowsBefore * cellHeight +
     yearHeadersBefore * YEAR_HEADER_HEIGHT +
     monthHeadersBefore * MONTH_HEADER_HEIGHT;
   return {
-    x: col * cellSize + paddingLeft,
+    x: col * cellWidth + paddingLeft,
     y: rowTop + paddingTop,
-    width: cellSize - paddingLeft - paddingRight,
-    height: cellSize - paddingTop,
+    width: cellWidth - paddingLeft - paddingRight,
+    height: cellHeight - paddingTop,
     rowTop,
   };
 };
@@ -444,7 +454,7 @@ const GridCell = memo<GridCellProps>(
         // began a new row) come from the row below's first column.
         const wraps = (index + 1) % numColumns === 0;
         shiftX.value = wraps ? -(numColumns - 1) * cellSize : cellSize;
-        shiftY.value = wraps ? cellSize : 0;
+        shiftY.value = wraps ? cellSize * GRID_TILE_ASPECT : 0;
         const easing = { duration: 320, easing: Easing.out(Easing.cubic) };
         shiftX.value = withTiming(0, easing);
         shiftY.value = withTiming(0, easing);
@@ -580,8 +590,11 @@ const GridCell = memo<GridCellProps>(
               </View>
             )}
             {/* Local-first tile whose upload is still in flight */}
-            {(asset.pending || asset.uploadFailed) && (
-              <UploadingBadge failed={asset.uploadFailed} />
+            {(asset.pending || asset.uploadFailed || asset.uploadOffline) && (
+              <UploadingBadge
+                failed={asset.uploadFailed}
+                offline={asset.uploadOffline}
+              />
             )}
             {dimmed && <View style={styles.dimmedOverlay} />}
           </Animated.View>
@@ -634,7 +647,7 @@ export interface CameraRollGridHandle {
 interface CameraRollGridProps {
   assets: MediaAsset[];
   onPressItem: (index: number, originFrame: Frame | null) => void;
-  /** Grid columns (default 3) — gaps, return-frame math derive from it. */
+  /** Grid columns (default 4) — gaps, return-frame math derive from it. */
   numColumns?: number;
   /**
    * iOS-Photos-style month/year sections + fast-scroll scrubber (default
@@ -809,6 +822,7 @@ export const CameraRollGrid = forwardRef<
         const columns = numColumnsRef.current;
         const cellSize = container.width / columns;
         if (cellSize <= 0) return null;
+        const cellHeight = cellSize * GRID_TILE_ASPECT;
         // Sectioned mode swaps in the placement-table math (headers offset
         // every row); flat mode keeps the pure index math untouched
         const layout = sectionedLayoutRef.current;
@@ -848,15 +862,15 @@ export const CameraRollGrid = forwardRef<
           // scrollable range so the list never overshoots its content
           const contentHeight = layout
             ? headerHeightRef.current +
-              layout.totalAssetRows * cellSize +
+              layout.totalAssetRows * cellHeight +
               layout.yearHeaderCount * YEAR_HEADER_HEIGHT +
               layout.monthHeaderCount * MONTH_HEADER_HEIGHT +
               bottomPaddingRef.current
             : headerHeightRef.current +
-              Math.ceil(assetCountRef.current / columns) * cellSize +
+              Math.ceil(assetCountRef.current / columns) * cellHeight +
               bottomPaddingRef.current;
           const maxOffset = Math.max(0, contentHeight - container.height);
-          const desired = rect.rowTop + cellSize / 2 - container.height / 2;
+          const desired = rect.rowTop + cellHeight / 2 - container.height / 2;
           const offset = Math.min(Math.max(desired, 0), maxOffset);
           scrubberSuppress.value = true;
           list.scrollToOffset({ offset, animated: false });
@@ -1057,7 +1071,7 @@ export const CameraRollGrid = forwardRef<
     ) {
       return null;
     }
-    const cellSize = containerSize.width / numColumns;
+    const cellHeight = (containerSize.width / numColumns) * GRID_TILE_ASPECT;
     const {
       sections,
       totalAssetRows,
@@ -1066,12 +1080,12 @@ export const CameraRollGrid = forwardRef<
     } = sectionedLayout;
     const sectionTopY = (section: (typeof sections)[number]): number =>
       measuredHeaderHeight +
-      section.rowsBefore * cellSize +
+      section.rowsBefore * cellHeight +
       section.yearHeadersBefore * YEAR_HEADER_HEIGHT +
       section.monthHeadersBefore * MONTH_HEADER_HEIGHT;
     const endY =
       measuredHeaderHeight +
-      totalAssetRows * cellSize +
+      totalAssetRows * cellHeight +
       yearHeaderCount * YEAR_HEADER_HEIGHT +
       monthHeaderCount * MONTH_HEADER_HEIGHT;
     const monthRanges: MonthRange[] = sections.map((section, i) => ({
@@ -1196,7 +1210,7 @@ const styles = StyleSheet.create({
   },
   cell: {
     width: "100%",
-    aspectRatio: 1,
+    aspectRatio: 1 / GRID_TILE_ASPECT,
   },
   cellInner: {
     flex: 1,

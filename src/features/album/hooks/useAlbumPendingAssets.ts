@@ -93,7 +93,8 @@ export const useAlbumPendingAssets = (
         creationTime: upload.startedAt,
         modificationTime: upload.startedAt,
         pending: !upload.uploaded && !upload.failed,
-        uploadFailed: upload.failed,
+        uploadFailed: upload.failed && !upload.offline,
+        uploadOffline: upload.failed && upload.offline,
       });
     }
 
@@ -128,8 +129,12 @@ export const useAlbumPendingAssets = (
         modificationTime: capturedAt,
         // The copy call having returned means the photo IS in the album now
         // (only the refetch is outstanding) — the badge stops there
-        pending: target.albumPhotoId == null && entry.status !== "failed",
+        pending:
+          target.albumPhotoId == null &&
+          entry.status !== "failed" &&
+          entry.status !== "offline",
         uploadFailed: entry.status === "failed",
+        uploadOffline: entry.status === "offline",
       });
     }
 

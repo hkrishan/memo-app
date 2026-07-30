@@ -41,6 +41,8 @@ const endpoints = {
     list: "/album",
     create: "/album",
     join: "/album/join-requests",
+    // The caller's own outbound join requests still awaiting approval
+    myPendingJoinRequests: "/album/join-requests/pending/me",
     pendingJoinRequests: (albumId: string) =>
       `/album/${albumId}/join-requests/pending`,
     acceptJoinRequest: (albumId: string, requestId: string) =>

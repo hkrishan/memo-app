@@ -88,6 +88,7 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
     data: photos,
     refetch: refetchPhotos,
     isRefetching: isRefetchingPhotos,
+    isError: isPhotosError,
   } = useGetPhotosQuery(albumId ?? "");
   const { data: moments, refetch: refetchMoments } = useGetMomentsQuery(
     albumId ?? "",
@@ -357,7 +358,12 @@ const GalleryPage: React.FC<GalleryPageProps> = ({
             while its blurred backdrop runs behind it */}
         <AlbumHeader album={album} assets={assets} topInset={contentTop} />
 
-        {!isLoading && assets.length === 0 && <EmptyGallery />}
+        {/* A failed fetch must never read as "no photos yet" — an album
+            opened offline with no cached photos gets the connection
+            message (pull-to-refresh above is the retry) */}
+        {!isLoading &&
+          assets.length === 0 &&
+          (isPhotosError ? <GalleryLoadError /> : <EmptyGallery />)}
 
         {sections.slice(0, peopleInsertIndex).map(({ key, ...section }) => (
           <GallerySectionRow
@@ -475,6 +481,17 @@ const EmptyGallery = memo(() => (
 ));
 EmptyGallery.displayName = "EmptyGallery";
 
+const GalleryLoadError = memo(() => (
+  <View style={styles.emptyContainer}>
+    <Ionicons name="cloud-offline-outline" size={48} color="#ccc" />
+    <Text style={styles.emptyText}>Couldn't load photos</Text>
+    <Text style={styles.emptyHint}>
+      Check your connection, then pull down to retry.
+    </Text>
+  </View>
+));
+GalleryLoadError.displayName = "GalleryLoadError";
+
 const styles = StyleSheet.create({
   pageGallery: {
     flex: 1,
@@ -491,6 +508,10 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: "#888",
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: "#aaa",
   },
   peopleSection: {
     marginTop: 24,

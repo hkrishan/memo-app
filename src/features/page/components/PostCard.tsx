@@ -254,6 +254,16 @@ const PostCard = memo<PostCardProps>(
           </Text>
         )}
 
+        {/* Location tag */}
+        {post.locationName && (
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={13} color="#666" />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {post.locationName}
+            </Text>
+          </View>
+        )}
+
         {/* Caption */}
         {post.caption && (
           <Text style={styles.caption} numberOfLines={3}>
@@ -354,6 +364,18 @@ const styles = StyleSheet.create({
     color: "#000",
     paddingHorizontal: 16,
     marginBottom: 4,
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  locationText: {
+    flexShrink: 1,
+    fontSize: 13,
+    color: "#666",
   },
   caption: {
     fontSize: 14,

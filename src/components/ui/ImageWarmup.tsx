@@ -57,13 +57,20 @@ export const ImageWarmup = memo<ImageWarmupProps>(
       });
     }, []);
 
-    const inFlight = useMemo(
-      () =>
-        items
-          .filter((item) => item.uri && !done.has(item.uri))
-          .slice(0, concurrency),
-      [items, done, concurrency],
-    );
+    // Deduped by uri: the same URL can appear twice legitimately (two album
+    // photos referencing one library media object, or a pressed-tile warmup
+    // colliding with the base list) and the render below keys on it
+    const inFlight = useMemo(() => {
+      const seen = new Set<string>();
+      const unique: WarmupItem[] = [];
+      for (const item of items) {
+        if (!item.uri || seen.has(item.uri) || done.has(item.uri)) continue;
+        seen.add(item.uri);
+        unique.push(item);
+        if (unique.length >= concurrency) break;
+      }
+      return unique;
+    }, [items, done, concurrency]);
 
     if (inFlight.length === 0) return null;
 

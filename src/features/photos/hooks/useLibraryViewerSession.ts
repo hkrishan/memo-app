@@ -26,8 +26,13 @@ const SIZE_RESOLVE_CAP_MS = 250;
 export interface LibraryViewerSession {
   /** Everything the viewer pages over, newest (and pending) first. */
   assets: MediaAsset[];
-  /** The newest item, for a "last capture" style thumbnail. */
-  newest: { uri: string; mediaType: "photo" | "video" } | null;
+  /** The newest item, for a "last capture" style thumbnail. Videos carry
+   *  their poster separately — `uri` is always the media itself. */
+  newest: {
+    uri: string;
+    posterUri: string | null;
+    mediaType: "photo" | "video";
+  } | null;
   /** Spread straight onto <PhotoViewer />. */
   viewerProps: {
     visible: boolean;
@@ -129,9 +134,13 @@ export const useLibraryViewerSession = (
   const newest = useMemo(() => {
     const first = photos[0];
     if (!first) return null;
+    // uri stays the MEDIA itself; a video's poster travels separately —
+    // handing a poster JPEG to a video player renders nothing
     return {
-      uri: first.thumbnailUrl ?? first.url,
-      mediaType: first.mediaType === "video" ? ("video" as const) : ("photo" as const),
+      uri: first.url,
+      posterUri: first.thumbnailUrl ?? null,
+      mediaType:
+        first.mediaType === "video" ? ("video" as const) : ("photo" as const),
     };
   }, [photos]);
 

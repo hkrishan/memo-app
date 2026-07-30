@@ -29,35 +29,19 @@ const inferMimeType = (fileName: string): string => {
   return "image/jpeg";
 };
 
-interface GalleryFabsProps {
-  albumId: string | undefined;
-  /**
-   * Distance from the screen bottom. Defaults to clearing the album
-   * tab bar; screens without one (the pushed full gallery) pass less.
-   */
-  bottom?: number;
-}
-
-export const GalleryFabs: React.FC<GalleryFabsProps> = ({
-  albumId,
-  bottom = 110,
-}) => {
+/**
+ * The add-photos flow, shared by the FAB pair and the editorial variant's
+ * pill: system picker → pending-uploads store → review screen. Launch the
+ * picker from the settled gallery screen — not from a just-mounted modal,
+ * where iOS silently fails to present it. While the picker's post-"Add"
+ * transcode resolves (seconds for a big batch), `preparing` drives the
+ * PreparingPhotosModal.
+ */
+export const useAddPhotosPicker = (albumId: string | undefined) => {
   const setPendingAssets = usePendingUploadsStore((s) => s.setAssets);
-  // While the system picker's post-"Add" transcode resolves (seconds for a
-  // big batch) we show a light overlay here — then push the review screen.
   const [preparing, setPreparing] = useState(false);
   const router = useRouter();
 
-  // Opens the app's own camera scoped to this album — after a snap, its
-  // save sheet asks before anything is uploaded here
-  const handleTakePhoto = useCallback(() => {
-    if (albumId) router.push(`/album/${albumId}/camera`);
-  }, [router, albumId]);
-
-  // Launch the system picker HERE, on the settled gallery screen — not from
-  // a just-mounted modal, where iOS silently fails to present it (leaving
-  // the old "Preparing photos" screen hung). Once photos are picked, stash
-  // them and push the review screen.
   const handleAddPhoto = useCallback(async () => {
     if (!albumId) return;
     try {
@@ -98,6 +82,45 @@ export const GalleryFabs: React.FC<GalleryFabsProps> = ({
     }
   }, [router, albumId, setPendingAssets]);
 
+  return { handleAddPhoto, preparing };
+};
+
+/** Light overlay while the picker's post-"Add" transcode resolves. */
+export const PreparingPhotosModal: React.FC<{ visible: boolean }> = ({
+  visible,
+}) => (
+  <Modal visible={visible} transparent animationType="fade">
+    <View style={styles.preparingBackdrop}>
+      <View style={styles.preparingCard}>
+        <ActivityIndicator size="small" color="#666" />
+        <Text style={styles.preparingText}>Preparing photos…</Text>
+      </View>
+    </View>
+  </Modal>
+);
+
+interface GalleryFabsProps {
+  albumId: string | undefined;
+  /**
+   * Distance from the screen bottom. Defaults to clearing the album
+   * tab bar; screens without one (the pushed full gallery) pass less.
+   */
+  bottom?: number;
+}
+
+export const GalleryFabs: React.FC<GalleryFabsProps> = ({
+  albumId,
+  bottom = 110,
+}) => {
+  const { handleAddPhoto, preparing } = useAddPhotosPicker(albumId);
+  const router = useRouter();
+
+  // Opens the app's own camera scoped to this album — after a snap, its
+  // save sheet asks before anything is uploaded here
+  const handleTakePhoto = useCallback(() => {
+    if (albumId) router.push(`/album/${albumId}/camera`);
+  }, [router, albumId]);
+
   return (
     <View style={[styles.fabRow, { bottom }]} pointerEvents="box-none">
       <IconButton
@@ -116,14 +139,7 @@ export const GalleryFabs: React.FC<GalleryFabsProps> = ({
         <View style={styles.shutterRing} />
       </Pressable>
 
-      <Modal visible={preparing} transparent animationType="fade">
-        <View style={styles.preparingBackdrop}>
-          <View style={styles.preparingCard}>
-            <ActivityIndicator size="small" color="#666" />
-            <Text style={styles.preparingText}>Preparing photos…</Text>
-          </View>
-        </View>
-      </Modal>
+      <PreparingPhotosModal visible={preparing} />
     </View>
   );
 };

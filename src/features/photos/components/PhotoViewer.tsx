@@ -88,8 +88,11 @@ const PAGE_RADIUS = 12;
 const DISMISS_RADIUS = 24;
 const DISMISS_RADIUS_TRAVEL = 100;
 // Longest the open flight waits for an overlay image to paint before
-// starting anyway — remote thumbnails can outlive the two-frame head start
-const OPEN_FLIGHT_PAINT_CAP_MS = 150;
+// starting anyway. The thumbnail underlay now reuses the grid's decoded
+// bitmap (same "tile" cache key), so the paint normally arrives within a
+// frame or two — this cap is a pure safety net, and keeping it short bounds
+// the tap→motion dead time when a paint event goes missing.
+const OPEN_FLIGHT_PAINT_CAP_MS = 80;
 const SPRING_CONFIG = { damping: 30, stiffness: 300, mass: 0.6 };
 /** How far the chrome gradient extends below the chrome content row. */
 const CHROME_GRADIENT_EXTENSION = 36;
@@ -275,6 +278,12 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   onDoubleTapAsset,
 }) => {
   const insets = useSafeAreaInsets();
+  // PERF-PROBE (temporary): first-render mark for the open waterfall
+  const probeRenderMarkedRef = useRef(false);
+  if (!probeRenderMarkedRef.current) {
+    probeRenderMarkedRef.current = true;
+    (globalThis as any).__memoPerfMark?.("viewer_render_start");
+  }
   // Actual window size (excludes Android status/nav bars where relevant) so
   // gesture math and paging stay correct across devices and rotation
   const { width: pageWidth, height: pageHeight } = useWindowDimensions();
@@ -293,6 +302,11 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   const activeVideoPlayerRef = useRef<VideoPlayer | null>(null);
   const [phase, setPhase] = useState<ViewerPhase>("closed");
   const [flight, setFlight] = useState<FlightSession | null>(null);
+  // The filmstrip's micro-thumbnails (one per asset in the window) used to
+  // mount during "opening" — a JS burst competing with the flight overlay
+  // for the exact frames the open animation needs. Defer them to just
+  // after landing; until then the bottom chrome shows only its gradient.
+  const [filmstripReady, setFilmstripReady] = useState(false);
   // Latched synchronously when a dismiss/close is requested, before any
   // await — the pager must be inert from that very moment, not only after
   // the async landing resolution
@@ -472,6 +486,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   /** Fade the held overlay out over the (already painted) pager. */
   const dropOpenOverlay = useCallback(() => {
     if (!openHoldRef.current) return;
+    // PERF-PROBE (temporary)
+    (globalThis as any).__memoPerfMark?.("overlay_dropped");
     openHoldRef.current = false;
     clearOpenOverlayTimer();
     if (phaseRef.current !== "open") return;
@@ -598,6 +614,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
 
   /** Plain 200ms fade-in of the fully-assembled viewer (no flight). */
   const startFadeOpen = useCallback(() => {
+    // PERF-PROBE (temporary)
+    (globalThis as any).__memoPerfMark?.("fade_open");
     onOpenTransitionStartRef.current?.();
     pagerLandedRef.current = true;
     setPhaseBoth("open");
@@ -617,6 +635,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   ]);
 
   const finishOpenFlight = useCallback(() => {
+    // PERF-PROBE (temporary)
+    (globalThis as any).__memoPerfMark?.("flight_end");
     // Backdrop control returns to the gesture-driven value — the timing's
     // completion worklet set backdropOpacity to 1 on the UI thread before
     // scheduling this callback, so the branch switch is seamless
@@ -665,6 +685,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     scheduleOverlayFlight(() => {
       // Aborted (Android back) between mount and start
       if (phaseRef.current !== "opening") return;
+      // PERF-PROBE (temporary)
+      (globalThis as any).__memoPerfMark?.("flight_start");
       // The overlay's transform has been applied and its image painted —
       // reveal it exactly over the cell and dim the cell in the same frame
       flightOpacity.value = 1;
@@ -693,6 +715,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
 
   /** An overlay image painted — an armed open flight can start now. */
   const handleFlightImagePaint = useCallback(() => {
+    // PERF-PROBE (temporary)
+    (globalThis as any).__memoPerfMark?.("flight_image_paint");
     beginOpenFlightAnimation();
   }, [beginOpenFlightAnimation]);
 
@@ -780,12 +804,16 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       base,
       open: true,
     });
+    // PERF-PROBE (temporary)
+    (globalThis as any).__memoPerfMark?.("flight_set");
     // Armed: the flight begins when an overlay image paints (or the cap
     // expires) — never over a still-empty overlay
     openFlightArmedRef.current = true;
     clearOpenFlightCapTimer();
     openFlightCapTimerRef.current = setTimeout(() => {
       openFlightCapTimerRef.current = null;
+      // PERF-PROBE (temporary)
+      (globalThis as any).__memoPerfMark?.("cap_fired");
       beginOpenFlightAnimation();
     }, OPEN_FLIGHT_PAINT_CAP_MS);
   }, [
@@ -808,6 +836,8 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
   const handleRootLayout = useCallback(() => {
     const node = rootRef.current;
     if (!node) return;
+    // PERF-PROBE (temporary)
+    (globalThis as any).__memoPerfMark?.("root_layout");
     node.measureInWindow((x, y, width, height) => {
       const { pageWidth: pw, pageHeight: ph } = pageSizeRef.current;
       rootMetricsRef.current = {
@@ -833,6 +863,14 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     },
     [clearOpenOverlayTimer, clearOpenFlightCapTimer],
   );
+
+  // Mount the filmstrip shortly after landing — after the overlay
+  // crossover fade, while the viewer is at rest — never during the flight.
+  useEffect(() => {
+    if (phase !== "open" || filmstripReady) return undefined;
+    const timer = setTimeout(() => setFilmstripReady(true), 150);
+    return () => clearTimeout(timer);
+  }, [phase, filmstripReady]);
 
   useEffect(() => {
     if (visible) {
@@ -1329,6 +1367,7 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     flightProgress,
   ]);
 
+
   // -------------------------------------------------------------------------
   // Pager
   // -------------------------------------------------------------------------
@@ -1448,6 +1487,19 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
     (index: number) => jumpToIndex(index),
     [jumpToIndex],
   );
+
+  // PERF-PROBE (temporary): expose paging/closing so the probe can drive
+  // the open viewer without touch input
+  useEffect(() => {
+    if (!__DEV__) return;
+    (globalThis as any).__memoViewerDrive = {
+      jump: (delta: number) => jumpToIndex(activeIndexRef.current + delta),
+      close: () => handleClosePress(),
+    };
+    return () => {
+      delete (globalThis as any).__memoViewerDrive;
+    };
+  }, [jumpToIndex, handleClosePress]);
 
   /**
    * Keeps the open viewer coherent when `assets` shrinks under it — deleting
@@ -1767,7 +1819,12 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
       animationType="none"
       onRequestClose={handleRequestClose}
     >
-      {/* Modal creates a new native root — gestures need their own root view */}
+      {/* Modal creates a new native root — gestures need their own root view.
+          NOTE (measured 2026-07-29): replacing this Modal with a @gorhom/portal
+          overlay was tried and reverted — the Modal's window mount is NOT the
+          open-latency cost (tree commit+layout is, ~90ms either way), and the
+          portal DOUBLED the viewer's per-settle reconciliation cost (swipe JS
+          stalls 702ms → 1220ms). Don't retry without new evidence. */}
       <GestureHandlerRootView style={styles.root}>
         <Animated.View style={[styles.root, contentStyle]}>
           {/* Measured root: the flight overlay's coordinate base */}
@@ -1820,7 +1877,10 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                   getItemLayout={getItemLayout}
                   windowSize={3}
                   initialNumToRender={1}
-                  maxToRenderPerBatch={2}
+                  // One page per batch: a page mount is the pager's largest
+                  // JS chunk (gestures + shared values + two image layers),
+                  // and two of them in one batch was the swipe-settle stall
+                  maxToRenderPerBatch={1}
                   showsHorizontalScrollIndicator={false}
                   onScroll={pagerScrollHandler}
                   scrollEventThrottle={16}
@@ -1859,7 +1919,14 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                     <Image
                       source={{
                         uri: flight.thumbUri,
-                        cacheKey: stableCacheKey(flight.thumbUri, "full"),
+                        // The SAME cache entry the grid cell just painted —
+                        // a fresh "full"-bucket decode of this thumbnail
+                        // cost ~200ms of dead time between the tap and the
+                        // flight's first frame. The tile-size bitmap is
+                        // soft at fullscreen, but it only carries the
+                        // 300ms flight; the full-res layer above paints
+                        // over it in identical framing.
+                        cacheKey: stableCacheKey(flight.thumbUri, "tile"),
                       }}
                       style={styles.media}
                       contentFit={flight.contain ? "contain" : "cover"}
@@ -1956,15 +2023,21 @@ export const PhotoViewer: React.FC<PhotoViewerProps> = ({
                   style={styles.bottomChromeGradient}
                   pointerEvents="none"
                 />
-                <Filmstrip
-                  assets={assets}
-                  pageWidth={pageWidth}
-                  scrollX={scrollX}
-                  activeIndex={activeIndex}
-                  onSelect={handleThumbSelect}
-                  onScrub={handleScrub}
-                  onScrubEnd={handleScrubEnd}
-                />
+                {/* Fixed-height slot so the gradient/chrome layout is
+                    identical before and after the deferred strip mounts */}
+                <View style={styles.filmstripSlot}>
+                  {filmstripReady && (
+                    <Filmstrip
+                      assets={assets}
+                      pageWidth={pageWidth}
+                      scrollX={scrollX}
+                      activeIndex={activeIndex}
+                      onSelect={handleThumbSelect}
+                      onScrub={handleScrub}
+                      onScrubEnd={handleScrubEnd}
+                    />
+                  )}
+                </View>
               </Animated.View>
             )}
             {/* Video scrub bar — part of the chrome (fades with it via the
@@ -2133,6 +2206,10 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     top: -BOTTOM_CHROME_GRADIENT_EXTENSION,
+  },
+  // Reserves the strip's box while its thumbnails mount deferred
+  filmstripSlot: {
+    height: FILMSTRIP_HEIGHT,
   },
 });
 

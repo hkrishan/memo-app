@@ -1,32 +1,40 @@
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
   Text,
-  Image,
   Pressable,
   Modal,
   Dimensions,
+  ActivityIndicator,
+  Platform,
+  RefreshControl,
+  Share,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { Button } from "react-native-paper";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
+import * as WebBrowser from "expo-web-browser";
 import * as Haptics from "expo-haptics";
 import Animated, {
   Easing,
   runOnJS,
   type SharedValue,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 import { useGetPageQuery } from "@/features/page/api/page.queries";
+import { usePagePostsQuery } from "@/features/page/api/pagePost.queries";
 import { Page } from "@/features/page/types/page.types";
-import PostGrid from "@/features/page/components/PostGrid";
+import { AlbumPagePost } from "@/features/page/types/post.types";
 import { stableCacheKey } from "@/lib/imageCache";
+import { color, font, radius, screenH, size } from "@/lib/tokens";
 
 /** Cover frame geometry — the preview scales this exact shape up. */
 const COVER_SIZE = 72;
@@ -38,16 +46,60 @@ const PREVIEW_SIZE = Math.min(
 /** Same corner-to-size ratio as the small frame, so the shape reads identical */
 const PREVIEW_RADIUS = PREVIEW_SIZE * (COVER_RADIUS / COVER_SIZE);
 
+/** "On your page" grid: two portrait tiles per row. */
+const GRID_GAP = 14;
+const TILE_WIDTH =
+  (Dimensions.get("window").width - screenH * 2 - GRID_GAP) / 2;
+const TILE_HEIGHT = TILE_WIDTH * (4 / 3);
+const TILE_RADIUS = 18;
+
+const formatCount = (count: number): string => {
+  if (count < 1000) return `${count}`;
+  if (count < 10_000) {
+    return `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
+  return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+};
+
 interface PagePageProps {
   contentTop: number;
-  /** Mirrors the post grid's scroll offset — drives the nav bar's fade */
+  /** Mirrors the scroll offset — drives the nav bar's fade */
   pageScrollY?: SharedValue<number>;
 }
 
 const PagePage: React.FC<PagePageProps> = ({ contentTop, pageScrollY }) => {
   const { albumId }: { albumId: string } = useLocalSearchParams();
-  const { data: page } = useGetPageQuery(albumId);
+  const { data: page, isLoading, isError, refetch } = useGetPageQuery(albumId);
 
+  // Only a RESOLVED "no page" may show the create hero — while the query
+  // is loading or failed, "make a page!" would be a lie about an album
+  // that might have one
+  if (page == null && isLoading) {
+    return (
+      <View style={[styles.gridStateContainer, { paddingTop: contentTop + 40 }]}>
+        <ActivityIndicator size="small" color={color.textTertiary} />
+      </View>
+    );
+  }
+  if (page == null && isError) {
+    return (
+      <Pressable
+        style={[styles.gridStateContainer, { paddingTop: contentTop + 40 }]}
+        onPress={() => refetch()}
+        accessibilityRole="button"
+      >
+        <Ionicons
+          name="cloud-offline-outline"
+          size={40}
+          color={color.textTertiary}
+        />
+        <Text style={styles.errorText}>
+          Couldn't load this page — tap to retry
+        </Text>
+      </Pressable>
+    );
+  }
   if (page == null) {
     return <NoPage albumId={albumId} />;
   }
@@ -76,6 +128,61 @@ const PageContent = ({
   page: Page;
   pageScrollY?: SharedValue<number>;
 }) => {
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      if (pageScrollY) pageScrollY.value = event.contentOffset.y;
+    },
+  });
+
+  const {
+    data: postsData,
+    isLoading,
+    isError,
+    refetch,
+    isRefetching,
+  } = usePagePostsQuery(albumId, pageId);
+  const posts = useMemo(
+    () => postsData?.pages.flatMap((batch) => batch.posts) ?? [],
+    [postsData],
+  );
+
+  // ----- Link actions -----
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyResetRef.current) clearTimeout(copyResetRef.current);
+    },
+    [],
+  );
+
+  const handleCopyLink = useCallback(async () => {
+    if (!page.webUrl) return;
+    try {
+      await Clipboard.setStringAsync(page.webUrl);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setLinkCopied(true);
+      if (copyResetRef.current) clearTimeout(copyResetRef.current);
+      copyResetRef.current = setTimeout(() => setLinkCopied(false), 1600);
+    } catch {
+      // Clipboard unavailable — nothing to do
+    }
+  }, [page.webUrl]);
+
+  const handleShareLink = useCallback(() => {
+    if (!page.webUrl) return;
+    Share.share(
+      Platform.OS === "ios"
+        ? { url: page.webUrl }
+        : { message: page.webUrl },
+    ).catch(() => {});
+  }, [page.webUrl]);
+
+  const handlePreview = useCallback(() => {
+    if (!page.webUrl) return;
+    WebBrowser.openBrowserAsync(page.webUrl).catch(() => {});
+  }, [page.webUrl]);
+
   const handleCreatePost = useCallback(() => {
     router.push(`/album/${albumId}/page/${pageId}/create-post`);
   }, [albumId, pageId]);
@@ -84,69 +191,267 @@ const PageContent = ({
     router.push(`/album/${albumId}/page/${pageId}/settings`);
   }, [albumId, pageId]);
 
-  const coverUri =
-    page?.coverPhoto?.thumbnailUrl ?? page?.coverPhoto?.url ?? null;
-
-  const headerComponent = useMemo(
-    () => (
-      // The header owns the top inset so its blurred-cover backdrop reaches
-      // the very top of the screen and slides under the frosted nav bar
-      <View style={[styles.headerSection, { paddingTop: contentTop + 20 }]}>
-        {coverUri != null && (
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            {/* The page's own cover, blown up and heavily blurred, as the
-                header's hero backdrop; a light frost keeps text legible */}
-            <ExpoImage
-              source={{ uri: coverUri, cacheKey: stableCacheKey(coverUri) }}
-              style={styles.headerBackdropImage}
-              contentFit="cover"
-              blurRadius={45}
-              transition={200}
-              cachePolicy="memory-disk"
-            />
-            <View style={styles.headerBackdropFrost} />
-          </View>
-        )}
-        <View style={styles.profileRow}>
-          <PageCoverPhoto page={page} />
-          <View style={styles.profileInfo}>
-            <Text style={styles.pageTitle}>{page?.pageTitle}</Text>
-            <Text style={styles.pageHandle}>@{page?.pageHandle}</Text>
-          </View>
-          <Pressable
-            onPress={handleOpenSettings}
-            style={styles.settingsButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="ellipsis-horizontal" size={22} color="#000" />
-          </Pressable>
-        </View>
-        {!!page?.bio && <Text style={styles.pageBio}>{page.bio}</Text>}
-      </View>
-    ),
-    [page, coverUri, contentTop, handleOpenSettings]
+  const handleOpenPost = useCallback(
+    (postId: string, flatIndex: number) => {
+      router.push(
+        `/album/${albumId}/page/${pageId}/post/${postId}?index=${flatIndex}`,
+      );
+    },
+    [albumId, pageId],
   );
+
+  /** "memo.app/@handle" — the address as people read it, no scheme. */
+  const linkLabel = page.webUrl?.replace(/^https?:\/\//, "") ?? null;
+  const hasLink = !!page.webUrl;
 
   return (
     <View style={styles.pagePlain}>
-      <PostGrid
-        albumId={albumId}
-        pageId={pageId}
-        ListHeaderComponent={headerComponent}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        scrollY={pageScrollY}
-      />
+      <Animated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor={color.textPrimary}
+            progressViewOffset={contentTop}
+          />
+        }
+      >
+        {/* ----- Header ----- */}
+        <View style={[styles.headerSection, { paddingTop: contentTop + 24 }]}>
+          <View style={styles.profileRow}>
+            <PageCoverPhoto page={page} />
+            <View style={styles.profileInfo}>
+              <Text style={styles.pageTitle} numberOfLines={2}>
+                {page.pageTitle ?? `@${page.pageHandle}`}
+              </Text>
+              <View style={styles.linkLine}>
+                {linkLabel != null && (
+                  <Text style={styles.linkLabel} numberOfLines={1}>
+                    {linkLabel}
+                  </Text>
+                )}
+                <View style={styles.statusPill}>
+                  <Ionicons
+                    name={page.isPublic ? "globe-outline" : "lock-closed"}
+                    size={11}
+                    color={color.textPrimary}
+                  />
+                  <Text style={styles.statusPillText}>
+                    {page.isPublic ? "LIVE" : "PRIVATE"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            <Pressable
+              onPress={handleOpenSettings}
+              style={({ pressed }) => [
+                styles.settingsButton,
+                pressed && styles.pressedDim,
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Page settings"
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={22}
+                color={color.textPrimary}
+              />
+            </Pressable>
+          </View>
 
-      {/* FAB for creating posts */}
+          {!!page.bio && <Text style={styles.pageBio}>{page.bio}</Text>}
+
+          {/* Copy link + share + preview */}
+          <View style={styles.actionsRow}>
+            <Pressable
+              onPress={handleCopyLink}
+              disabled={!hasLink}
+              style={({ pressed }) => [
+                styles.copyLinkButton,
+                !hasLink && styles.actionDisabled,
+                pressed && styles.pressedDim,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Copy page link"
+            >
+              <Ionicons
+                name={linkCopied ? "checkmark" : "link"}
+                size={17}
+                color={color.textInverse}
+              />
+              <Text style={styles.copyLinkText}>
+                {linkCopied ? "Copied" : "Copy link"}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={handleShareLink}
+              disabled={!hasLink}
+              style={({ pressed }) => [
+                styles.circleButton,
+                !hasLink && styles.actionDisabled,
+                pressed && styles.pressedDim,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Share page link"
+            >
+              <Ionicons
+                name="share-outline"
+                size={19}
+                color={color.textPrimary}
+              />
+            </Pressable>
+            <Pressable
+              onPress={handlePreview}
+              disabled={!hasLink}
+              style={({ pressed }) => [
+                styles.circleButton,
+                !hasLink && styles.actionDisabled,
+                pressed && styles.pressedDim,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Preview public page"
+            >
+              <Ionicons name="eye-outline" size={19} color={color.textPrimary} />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* ----- Stats ----- */}
+        <View style={styles.rule} />
+        <View style={styles.statsRow}>
+          <View style={styles.statCell}>
+            {isLoading ? (
+              <ActivityIndicator
+                size="small"
+                color={color.textTertiary}
+                style={styles.statSpinner}
+              />
+            ) : (
+              <Text style={styles.statNumber}>{formatCount(posts.length)}</Text>
+            )}
+            <Text style={styles.statLabel}>Public</Text>
+          </View>
+          <View style={styles.statRule} />
+          <View style={styles.statCell}>
+            <Text style={styles.statNumber}>
+              {formatCount(page.viewCount ?? 0)}
+            </Text>
+            <Text style={styles.statLabel}>Views</Text>
+          </View>
+          <View style={styles.statRule} />
+          <View style={styles.statCell}>
+            <Text style={styles.statNumber}>
+              {formatCount(page.saveCount ?? 0)}
+            </Text>
+            <Text style={styles.statLabel}>Saves</Text>
+          </View>
+        </View>
+        <View style={styles.rule} />
+
+        {/* ----- On your page ----- */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>On your page</Text>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.gridStateContainer}>
+            <ActivityIndicator size="large" color={color.textPrimary} />
+          </View>
+        ) : isError && posts.length === 0 ? (
+          // Cached posts beat an error wall — only a truly empty failure
+          // gets the message (pull-to-refresh above is the retry)
+          <View style={styles.gridStateContainer}>
+            <Ionicons
+              name="cloud-offline-outline"
+              size={40}
+              color={color.textTertiary}
+            />
+            <Text style={styles.errorText}>
+              Couldn't load your page — check your connection
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.grid}>
+            {posts.map((post, flatIndex) => (
+              <PageTile
+                key={post.postId}
+                post={post}
+                flatIndex={flatIndex}
+                onOpen={handleOpenPost}
+              />
+            ))}
+            <Pressable
+              onPress={handleCreatePost}
+              style={({ pressed }) => [
+                styles.addTile,
+                pressed && styles.pressedDim,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Add photos to your page"
+            >
+              <Ionicons name="add" size={24} color={color.textTertiary} />
+              <Text style={styles.addTileText}>Add from album</Text>
+            </Pressable>
+          </View>
+        )}
+      </Animated.ScrollView>
+
       <Pressable
         onPress={handleCreatePost}
-        style={styles.fab}
+        style={({ pressed }) => [styles.actionPill, pressed && styles.pressedDim]}
+        accessibilityRole="button"
+        accessibilityLabel="Add to page"
       >
-        <Ionicons name="add" size={28} color="#fff" />
+        <Ionicons name="add" size={20} color={color.textInverse} />
+        <Text style={styles.actionPillText}>Add to page</Text>
       </Pressable>
     </View>
   );
 };
+
+/** One post on the page: fixed portrait crop. */
+const PageTile = React.memo<{
+  post: AlbumPagePost;
+  flatIndex: number;
+  onOpen: (postId: string, flatIndex: number) => void;
+}>(({ post, flatIndex, onOpen }) => {
+  const firstMedia = post.media[0];
+
+  const handlePress = useCallback(() => {
+    onOpen(post.postId, flatIndex);
+  }, [onOpen, post.postId, flatIndex]);
+
+  if (!firstMedia) return null;
+  const uri = firstMedia.thumbnailUrl ?? firstMedia.url;
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [styles.tile, pressed && styles.pressedDim]}
+      accessibilityRole="imagebutton"
+    >
+      <ExpoImage
+        source={{ uri, cacheKey: stableCacheKey(uri) }}
+        style={styles.tileImage}
+        contentFit="cover"
+        transition={180}
+        cachePolicy="memory-disk"
+      />
+      {post.media.length > 1 && (
+        <View style={styles.multipleIndicator}>
+          <Ionicons name="copy" size={14} color="#fff" />
+        </View>
+      )}
+    </Pressable>
+  );
+});
+PageTile.displayName = "PageTile";
 
 const NoPage = ({ albumId }: { albumId: string }) => {
   const handleCreatePage = () => {
@@ -173,8 +478,7 @@ const NoPage = ({ albumId }: { albumId: string }) => {
         <Text
           style={{
             fontSize: 22,
-            fontFamily: "InstrumentSans_600SemiBold",
-            fontWeight: "600",
+            ...font.semibold,
             textAlign: "center",
           }}
         >
@@ -360,24 +664,17 @@ const styles = StyleSheet.create({
   pagePlain: {
     flex: 1,
     width: "100%",
-    backgroundColor: "#fff",
+    backgroundColor: color.bg,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 180,
   },
   headerSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#e0e0e0",
-    marginBottom: 2,
-    overflow: "hidden",
-  },
-  headerBackdropImage: {
-    ...StyleSheet.absoluteFillObject,
-    // Overscale so the blur never shows hard edges at the borders
-    transform: [{ scale: 1.25 }],
-  },
-  headerBackdropFrost: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255, 255, 255, 0.62)",
+    paddingHorizontal: screenH,
+    paddingBottom: 20,
   },
   profileRow: {
     flexDirection: "row",
@@ -388,32 +685,187 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingsButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#f5f5f5",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
+    alignSelf: "flex-start",
+    marginTop: 4,
   },
   pageTitle: {
-    fontSize: 20,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#000",
-    marginBottom: 4,
+    fontSize: 24,
+    ...font.bold,
+    letterSpacing: -0.4,
+    color: color.textPrimary,
+    marginBottom: 5,
   },
-  pageHandle: {
-    fontSize: 14,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
-    color: "#666",
+  linkLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  linkLabel: {
+    flexShrink: 1,
+    fontSize: 15,
+    ...font.medium,
+    color: color.textTertiary,
+  },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: color.surface1,
+    borderRadius: radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusPillText: {
+    fontSize: 11,
+    ...font.semibold,
+    letterSpacing: 0.8,
+    color: color.textPrimary,
   },
   pageBio: {
     fontSize: 14,
     lineHeight: 20,
-    color: "#333",
+    ...font.regular,
+    color: color.textSecondary,
     marginTop: 12,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 20,
+  },
+  copyLinkButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: size.btnLg,
+    borderRadius: radius.full,
+    backgroundColor: color.bgDark,
+  },
+  copyLinkText: {
+    fontSize: 16,
+    ...font.semibold,
+    color: color.textInverse,
+  },
+  circleButton: {
+    width: size.btnLg,
+    height: size.btnLg,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: color.separator,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionDisabled: {
+    opacity: 0.35,
+  },
+  pressedDim: {
+    opacity: 0.7,
+  },
+  rule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: color.separator,
+    marginHorizontal: screenH,
+  },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: screenH,
+  },
+  statCell: {
+    flex: 1,
+    alignItems: "center",
+  },
+  statRule: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: "stretch",
+    backgroundColor: color.separator,
+  },
+  statNumber: {
+    fontSize: 20,
+    ...font.bold,
+    letterSpacing: -0.4,
+    color: color.textPrimary,
+  },
+  statSpinner: {
+    height: 24,
+  },
+  statLabel: {
+    fontSize: 10,
+    ...font.semibold,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: color.textTertiary,
+    marginTop: 4,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    paddingHorizontal: screenH,
+    paddingTop: 24,
+    paddingBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    ...font.semibold,
+    color: color.textPrimary,
+  },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: GRID_GAP,
+    paddingHorizontal: screenH,
+  },
+  gridStateContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    gap: 12,
+  },
+  errorText: {
+    fontSize: 15,
+    ...font.regular,
+    color: color.danger,
+  },
+  tile: {
+    width: TILE_WIDTH,
+    height: TILE_HEIGHT,
+    borderRadius: TILE_RADIUS,
+    overflow: "hidden",
+    backgroundColor: color.surface1,
+  },
+  tileImage: {
+    width: "100%",
+    height: "100%",
+  },
+  multipleIndicator: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.5,
+    shadowRadius: 2,
+  },
+  addTile: {
+    width: TILE_WIDTH,
+    height: TILE_HEIGHT,
+    borderRadius: TILE_RADIUS,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: "#C9C9C6",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  addTileText: {
+    fontSize: 13,
+    ...font.medium,
+    color: color.textSecondary,
   },
   coverPhotoFrame: {
     width: COVER_SIZE,
@@ -456,21 +908,27 @@ const styles = StyleSheet.create({
     shadowRadius: 32,
     elevation: 16,
   },
-  fab: {
+  actionPill: {
     position: "absolute",
     bottom: 100,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#000",
+    alignSelf: "center",
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    height: 52,
+    paddingHorizontal: 24,
+    borderRadius: radius.full,
+    backgroundColor: color.bgDark,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
     elevation: 8,
+  },
+  actionPillText: {
+    fontSize: 16,
+    ...font.semibold,
+    color: color.textInverse,
   },
 });
 

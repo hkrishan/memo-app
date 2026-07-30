@@ -22,6 +22,9 @@ const CreateAlbumScreen: React.FC = () => {
   const [step, setStep] = useState<ScreenStep>("choice");
   const [albumName, setAlbumName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  // The rejected code — shown inline because the toast host renders
+  // beneath this modal; clears as soon as the code is edited
+  const [invalidCode, setInvalidCode] = useState<string | null>(null);
 
   const router = useRouter();
 
@@ -35,7 +38,9 @@ const CreateAlbumScreen: React.FC = () => {
     if (!canCreate) return;
 
     try {
-      const result = await createAlbumMutation.mutateAsync(albumName);
+      const result = await createAlbumMutation.mutateAsync({
+        title: albumName,
+      });
 
       router.back();
       setTimeout(() => {
@@ -60,7 +65,8 @@ const CreateAlbumScreen: React.FC = () => {
         "The album owner will review your request",
       );
     } catch (error) {
-      notify.error("Invalid invite code. Please check and try again.");
+      setInvalidCode(inviteCode);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
 
@@ -85,7 +91,10 @@ const CreateAlbumScreen: React.FC = () => {
     // Only allow alphanumeric characters and limit to 8
     const cleaned = text.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 8);
     setInviteCode(cleaned);
+    setInvalidCode(null);
   }, []);
+
+  const isInvalidCode = invalidCode !== null && invalidCode === inviteCode;
 
   // Choice screen
   if (step === "choice") {
@@ -157,7 +166,7 @@ const CreateAlbumScreen: React.FC = () => {
               Ask the album owner for the 8-character code
             </Text>
             <TextInput
-              style={styles.codeInput}
+              style={[styles.codeInput, isInvalidCode && styles.codeInputInvalid]}
               placeholder="XXXXXXXX"
               placeholderTextColor="#ccc"
               value={inviteCode}
@@ -170,6 +179,15 @@ const CreateAlbumScreen: React.FC = () => {
             {inviteCode.length > 0 && inviteCode.length < 8 && (
               <Text style={styles.helper}>
                 {8 - inviteCode.length} more character{8 - inviteCode.length !== 1 ? "s" : ""} needed
+              </Text>
+            )}
+            {isInvalidCode && (
+              <Text
+                style={styles.invalidHelper}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                That code didn't match an album. Check it and try again.
               </Text>
             )}
           </View>
@@ -393,6 +411,16 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 12,
     marginTop: 8,
+    textAlign: "center",
+  },
+  codeInputInvalid: {
+    borderColor: "#E5484D",
+    color: "#E5484D",
+  },
+  invalidHelper: {
+    color: "#E5484D",
+    fontSize: 13,
+    marginTop: 10,
     textAlign: "center",
   },
   footer: {

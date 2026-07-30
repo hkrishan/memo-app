@@ -131,6 +131,7 @@ export const newStudioProject = (
   id: string,
   ratioId: string,
   pageCount: number,
+  backgroundColor = "#FFFFFF",
 ): StudioProject => {
   const now = new Date().toISOString();
   return {
@@ -139,7 +140,7 @@ export const newStudioProject = (
     version: 1,
     ratioId,
     pageCount: Math.min(Math.max(pageCount, 1), MAX_PAGES),
-    background: { type: "solid", color: "#FFFFFF" },
+    background: { type: "solid", color: backgroundColor },
     layers: [],
     createdAt: now,
     updatedAt: now,

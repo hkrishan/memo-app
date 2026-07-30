@@ -122,6 +122,7 @@ const MomentsPage: React.FC<MomentsPageProps> = ({ contentTop, albumId }) => {
   const {
     data: moments,
     isLoading,
+    isError,
     isRefetching,
     refetch,
   } = useGetMomentsQuery(albumId ?? "");
@@ -218,7 +219,10 @@ const MomentsPage: React.FC<MomentsPageProps> = ({ contentTop, albumId }) => {
   );
 
   const hasActive = activeMoments.length > 0;
-  const showHero = !isLoading && !hasActive;
+  // A failed fetch with nothing cached must not pose as "no moments
+  // running" — a live drop could be hiding behind the dead connection
+  const loadFailed = isError && !moments;
+  const showHero = !isLoading && !hasActive && !loadFailed;
 
   return (
     <View style={styles.page}>
@@ -255,6 +259,16 @@ const MomentsPage: React.FC<MomentsPageProps> = ({ contentTop, albumId }) => {
             />
           );
         })}
+
+        {loadFailed && (
+          <View style={styles.loadFailed}>
+            <Ionicons name="cloud-offline-outline" size={40} color="#ccc" />
+            <Text style={styles.loadFailedText}>
+              Couldn't load moments — check your connection, then pull down
+              to retry.
+            </Text>
+          </View>
+        )}
 
         {/* Start a moment — full hero when nothing is running */}
         {showHero ? (
@@ -329,6 +343,17 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: "center",
     paddingTop: 28,
+  },
+  loadFailed: {
+    alignItems: "center",
+    paddingVertical: 48,
+    gap: 10,
+  },
+  loadFailedText: {
+    fontSize: 14,
+    color: "#888",
+    textAlign: "center",
+    paddingHorizontal: 24,
   },
   heroBadge: {
     width: 64,

@@ -92,9 +92,15 @@ export const MediaTile = memo<MediaTileProps>(
       <Image
         source={{ uri, cacheKey: stableCacheKey(uri, sizeBucket) }}
         // A just-uploaded photo keeps its local original underneath while
-        // the remote image downloads (see useAlbumLocalPlaceholders)
+        // the remote image downloads (see useAlbumLocalPlaceholders);
+        // otherwise the server's ThumbHash paints an instant blurred
+        // preview instead of a blank tile
         placeholder={
-          asset.placeholderUri ? { uri: asset.placeholderUri } : undefined
+          asset.placeholderUri
+            ? { uri: asset.placeholderUri }
+            : asset.thumbHash
+              ? { thumbhash: asset.thumbHash }
+              : undefined
         }
         placeholderContentFit="cover"
         style={[styles.fill, style]}

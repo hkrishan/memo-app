@@ -1,10 +1,13 @@
 /**
  * PostCommentsSheet — bottom sheet listing a page post's comments with a
- * composer pinned above the keyboard. Mirrors the photo CommentsSheet
- * (same dark styling, long-press-your-own-comment inline delete, empty
- * state) on top of the shared SocialBottomSheet chrome. Adds via the
- * mutation hooks; the hooks own the cache updates (comment list + the
- * post's commentCount on both the page-posts list and the home feed).
+ * composer pinned above the keyboard. Uses the shared SocialBottomSheet
+ * chrome in its light editorial appearance (white sheet, "Comments N"
+ * header, hairline dividers): ink-on-white rows, an AUTHOR badge on the
+ * post author's comments, and a composer with the viewer's avatar and a
+ * black send button. Long-press-your-own-comment inline delete as before.
+ * Adds via the mutation hooks; the hooks own the cache updates (comment
+ * list + the post's commentCount on both the page-posts list and the home
+ * feed).
  */
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -29,6 +32,8 @@ import Animated, {
 import SocialAvatar from "@/features/album/components/photoSocial/SocialAvatar";
 import SocialBottomSheet from "@/features/album/components/photoSocial/SocialBottomSheet";
 import { formatRelativeTime } from "@/features/album/components/photoSocial/socialUtils";
+import { useAuthStore } from "@/features/auth/store/authStore";
+import { color, font } from "@/lib/tokens";
 import {
   useAddPostCommentMutation,
   useDeletePostCommentMutation,
@@ -45,11 +50,14 @@ export type PostCommentsSheetProps = {
   visible: boolean;
   onClose: () => void;
   currentUserId?: string;
+  /** The post author's userId — their comments get an AUTHOR badge. */
+  postAuthorId?: string;
 };
 
 type CommentRowProps = {
   comment: PostComment;
   isOwn: boolean;
+  isAuthor: boolean;
   confirmingDelete: boolean;
   onLongPress: (commentId: string) => void;
   onConfirmDelete: (commentId: string) => void;
@@ -59,6 +67,7 @@ type CommentRowProps = {
 const CommentRow: React.FC<CommentRowProps> = ({
   comment,
   isOwn,
+  isAuthor,
   confirmingDelete,
   onLongPress,
   onConfirmDelete,
@@ -85,13 +94,19 @@ const CommentRow: React.FC<CommentRowProps> = ({
         <SocialAvatar
           name={comment.author.name}
           avatarUrl={comment.author.avatarUrl}
-          size={32}
+          size={36}
+          surface="light"
         />
         <View style={styles.commentBody}>
           <View style={styles.commentMeta}>
             <Text style={styles.authorName} numberOfLines={1}>
               {comment.author.name}
             </Text>
+            {isAuthor && (
+              <View style={styles.authorBadge}>
+                <Text style={styles.authorBadgeText}>AUTHOR</Text>
+              </View>
+            )}
             <Text style={styles.timestamp}>
               {formatRelativeTime(comment.createdAt)}
             </Text>
@@ -122,7 +137,7 @@ const CommentRow: React.FC<CommentRowProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Cancel delete"
             >
-              <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
+              <Ionicons name="close" size={16} color="#6E6E73" />
             </Pressable>
           </Animated.View>
         )}
@@ -138,10 +153,12 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
   visible,
   onClose,
   currentUserId,
+  postAuthorId,
 }) => {
   const commentsQuery = usePostCommentsQuery(albumId, pageId, postId);
   const addComment = useAddPostCommentMutation(albumId, pageId);
   const deleteComment = useDeletePostCommentMutation(albumId, pageId);
+  const currentUser = useAuthStore((state) => state.user);
 
   const [draft, setDraft] = useState("");
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -200,13 +217,14 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
       <CommentRow
         comment={item}
         isOwn={!!currentUserId && item.author.userId === currentUserId}
+        isAuthor={!!postAuthorId && item.author.userId === postAuthorId}
         confirmingDelete={confirmingId === item.commentId}
         onLongPress={setConfirmingId}
         onConfirmDelete={handleConfirmDelete}
         onCancelDelete={() => setConfirmingId(null)}
       />
     ),
-    [currentUserId, confirmingId, handleConfirmDelete],
+    [currentUserId, postAuthorId, confirmingId, handleConfirmDelete],
   );
 
   return (
@@ -214,18 +232,20 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
       visible={visible}
       onClose={onClose}
       title="Comments"
+      count={comments.length}
+      appearance="light"
       heightFraction={0.68}
     >
       {commentsQuery.isLoading ? (
         <View style={styles.emptyState}>
-          <ActivityIndicator color="rgba(255,255,255,0.6)" />
+          <ActivityIndicator color="#8E8E93" />
         </View>
       ) : comments.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons
             name="chatbubble-ellipses-outline"
             size={36}
-            color="rgba(255, 255, 255, 0.35)"
+            color="#C7C7CC"
           />
           <Text style={styles.emptyText}>Be the first to say something</Text>
         </View>
@@ -246,21 +266,30 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
           exiting={FadeOut.duration(120)}
           style={styles.sendErrorRow}
         >
-          <Ionicons name="alert-circle" size={14} color="#FF3B30" />
+          <Ionicons name="alert-circle" size={14} color={color.danger} />
           <Text style={styles.sendErrorText}>
             {"Couldn't send your comment. Try again."}
           </Text>
         </Animated.View>
       )}
 
-      {/* Composer */}
+      {/* Composer — the viewer's avatar, a hairline-bordered field and a
+          black send button */}
       <View style={styles.composer}>
+        <View style={styles.composerAvatar}>
+          <SocialAvatar
+            name={currentUser?.name ?? "You"}
+            avatarUrl={currentUser?.avatarUrl ?? null}
+            size={36}
+            surface="light"
+          />
+        </View>
         <TextInput
           style={styles.input}
           value={draft}
           onChangeText={setDraft}
           placeholder="Add a comment…"
-          placeholderTextColor="rgba(255, 255, 255, 0.4)"
+          placeholderTextColor={color.textTertiary}
           multiline
           maxLength={MAX_COMMENT_LENGTH}
           accessibilityLabel="Comment input"
@@ -277,7 +306,7 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
           <Ionicons
             name="arrow-up"
             size={18}
-            color={canSend ? "#000" : "rgba(255,255,255,0.4)"}
+            color={canSend ? color.textInverse : color.textTertiary}
           />
         </Pressable>
       </View>
@@ -288,14 +317,14 @@ export const PostCommentsSheet: React.FC<PostCommentsSheetProps> = ({
 const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 12,
   },
   commentRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
-    paddingVertical: 8,
+    gap: 12,
+    paddingVertical: 10,
   },
   commentRowPressed: {
     opacity: 0.75,
@@ -309,21 +338,34 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   authorName: {
-    color: "#fff",
-    fontSize: 13,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
+    color: color.textPrimary,
+    fontSize: 14,
+    ...font.semibold,
     flexShrink: 1,
   },
+  authorBadge: {
+    backgroundColor: color.textPrimary,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  authorBadgeText: {
+    color: color.textInverse,
+    fontSize: 9,
+    ...font.bold,
+    letterSpacing: 0.5,
+  },
   timestamp: {
-    color: "rgba(255, 255, 255, 0.45)",
-    fontSize: 11,
+    color: color.textTertiary,
+    fontSize: 12,
+    ...font.regular,
   },
   commentText: {
-    color: "rgba(255, 255, 255, 0.92)",
-    fontSize: 14,
-    lineHeight: 19,
-    marginTop: 2,
+    color: color.textPrimary,
+    fontSize: 15,
+    lineHeight: 21,
+    ...font.regular,
+    marginTop: 3,
   },
   deleteActions: {
     flexDirection: "row",
@@ -335,7 +377,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#FF3B30",
+    backgroundColor: color.danger,
     borderRadius: 14,
     paddingHorizontal: 10,
     height: 28,
@@ -343,14 +385,13 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     color: "#fff",
     fontSize: 12,
-    fontFamily: "InstrumentSans_600SemiBold",
-    fontWeight: "600",
+    ...font.semibold,
   },
   cancelButton: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: color.surface1,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -361,8 +402,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   emptyText: {
-    color: "rgba(255, 255, 255, 0.5)",
+    color: color.textSecondary,
     fontSize: 14,
+    ...font.regular,
   },
   sendErrorRow: {
     flexDirection: "row",
@@ -372,40 +414,46 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sendErrorText: {
-    color: "#FF3B30",
+    color: color.danger,
     fontSize: 12,
+    ...font.regular,
   },
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 12,
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255, 255, 255, 0.12)",
+    borderTopColor: color.separator,
+  },
+  composerAvatar: {
+    marginBottom: 3,
   },
   input: {
     flex: 1,
-    minHeight: 38,
+    minHeight: 42,
     maxHeight: 110,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 19,
-    paddingHorizontal: 14,
-    paddingTop: 9,
-    paddingBottom: 9,
-    color: "#fff",
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.12)",
+    borderRadius: 21,
+    paddingHorizontal: 16,
+    paddingTop: 11,
+    paddingBottom: 11,
+    color: color.textPrimary,
     fontSize: 15,
+    ...font.regular,
   },
   sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#fff",
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: color.textPrimary,
     alignItems: "center",
     justifyContent: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    backgroundColor: color.surface2,
   },
 });
 

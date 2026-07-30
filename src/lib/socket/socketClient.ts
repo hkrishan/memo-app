@@ -5,6 +5,7 @@
 // refreshes are picked up automatically on reconnect without any extra wiring.
 
 import { Platform } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
 import type { Socket } from "socket.io-client";
 import { io } from "socket.io-client";
 import { env } from "@/lib/env";
@@ -46,6 +47,17 @@ export const getSocket = (): Socket => {
  * the app-wide realtime connection.
  */
 const holds = new Set<string>();
+
+// socket.io gives up for good after reconnectionAttempts (10 tries ≈ under
+// a minute) — a longer offline stretch would leave chat dead until the app
+// restarts. Reconnect explicitly whenever the network comes back while
+// someone still holds the connection.
+NetInfo.addEventListener((state) => {
+  if (!state.isConnected) return;
+  if (holds.size > 0 && socket && !socket.connected) {
+    socket.connect();
+  }
+});
 
 /** Registers a holder and ensures the socket is connected. Idempotent. */
 export const holdSocket = (holderId: string): Socket => {

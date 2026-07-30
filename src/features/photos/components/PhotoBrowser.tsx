@@ -28,7 +28,10 @@ import { MediaAsset } from "@/features/album/hooks";
 import { CameraRollGrid, CameraRollGridHandle } from "./CameraRollGrid";
 import { PhotoViewer } from "./PhotoViewer";
 import { Frame } from "./types";
-import { retryAllFailedUploads } from "@/features/photos/uploadRetry";
+import {
+  retryAllFailedUploads,
+  showWaitingForConnectionNotice,
+} from "@/features/photos/uploadRetry";
 
 /** Viewer session: the tapped index plus the grid cell it expands from. */
 interface ViewerSession {
@@ -38,7 +41,7 @@ interface ViewerSession {
 
 export interface PhotoBrowserProps {
   assets: MediaAsset[];
-  /** Grid columns (default 3). */
+  /** Grid columns (default 4). */
   numColumns?: number;
   /**
    * iOS-Photos-style month/year sections + fast-scroll scrubber in the
@@ -84,7 +87,7 @@ export interface PhotoBrowserProps {
 
 export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
   assets,
-  numColumns = 3,
+  numColumns = 4,
   sectioned = false,
   onEndReached,
   refreshing,
@@ -210,6 +213,12 @@ export const PhotoBrowser: React.FC<PhotoBrowserProps> = ({
   const handlePressItem = useCallback(
     (index: number, originFrame: Frame | null) => {
       const current = assetsRef.current;
+      // Parked for the network: the tap explains the wait (upload resumes
+      // by itself on reconnect)
+      if (current[index]?.uploadOffline) {
+        showWaitingForConnectionNotice();
+        return;
+      }
       // Tapping a failed upload IS the retry (Snapchat's tap-to-retry)
       if (current[index]?.uploadFailed) {
         retryAllFailedUploads();
